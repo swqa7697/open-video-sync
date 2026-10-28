@@ -1,4 +1,11 @@
-import { decodeProfilePatch, decodeRoomSettings, type RoomSettings } from './contracts';
+import {
+  decodeProfilePatch,
+  decodeRoomSettings,
+  decodeMedia,
+  type MediaDescriptor,
+  type RoomSettings,
+} from './contracts';
+import { decodeReadiness, type Readiness } from './protocol-values';
 
 export interface Session {
   identity: { identityId: string; displayName: string };
@@ -9,10 +16,10 @@ export interface Member {
   memberId: string;
   displayName: string;
   role: 'host' | 'participant';
-  presence: 'offline';
-  playbackActive: false;
-  excludedFromWaiting: false;
-  readiness: null;
+  presence: 'offline' | 'connected';
+  playbackActive: boolean;
+  excludedFromWaiting: boolean;
+  readiness: Readiness | null;
 }
 export interface Snapshot {
   roomId: string;
@@ -22,16 +29,22 @@ export interface Snapshot {
   hostMemberId: string;
   selfMemberId: string;
   settings: RoomSettings;
-  mediaGeneration: 0;
-  media: null;
+  mediaGeneration: number;
+  media: MediaDescriptor | null;
   playback: {
-    phase: 'empty';
-    positionMs: 0;
-    anchorServerMs: 0;
+    phase: 'empty' | 'paused' | 'waiting' | 'playing' | 'ended';
+    positionMs: number;
+    anchorServerMs: number;
     baseRate: 1;
-    desiredPlaying: false;
+    desiredPlaying: boolean;
   };
-  barrier: null;
+  barrier: {
+    barrierId: string;
+    requiredMemberIds: string[];
+    reason: 'play' | 'buffering';
+    targetPositionMs: number;
+    deadlineServerMs: number;
+  } | null;
   serverNowMs: number;
   members: Member[];
 }
@@ -59,7 +72,7 @@ export function object(value: unknown): Record<string, unknown> {
     throw new Error('Invalid server response.');
   return value as Record<string, unknown>;
 }
-function shape(value: Record<string, unknown>, fields: string[]): void {
+export function shape(value: Record<string, unknown>, fields: string[]): void {
   if (
     Object.keys(value).length !== fields.length ||
     fields.some((field) => !Object.hasOwn(value, field))
@@ -71,11 +84,11 @@ function positive(value: unknown): number {
   if (n < 1) throw new Error('Invalid server response.');
   return n;
 }
-function text(value: unknown): string {
+export function text(value: unknown): string {
   if (typeof value !== 'string') throw new Error('Invalid server response.');
   return value;
 }
-function integer(value: unknown): number {
+export function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
     throw new Error('Invalid server response.');
   return value;
@@ -132,25 +145,48 @@ export function decodeSnapshot(value: unknown): Snapshot {
     'members',
     'serverNowMs',
   ]);
-  if (
-    !Array.isArray(v.members) ||
-    v.members.length < 1 ||
-    v.members.length > 32 ||
-    v.media !== null ||
-    v.barrier !== null ||
-    v.mediaGeneration !== 0
-  )
+  if (!Array.isArray(v.members) || v.members.length < 1 || v.members.length > 32)
     throw new Error('Invalid server response.');
   const playback = object(v.playback);
   shape(playback, ['phase', 'positionMs', 'anchorServerMs', 'baseRate', 'desiredPlaying']);
+  const media = v.media === null ? null : decodeMedia(v.media);
+  const generation = integer(v.mediaGeneration);
   if (
-    playback.phase !== 'empty' ||
-    playback.positionMs !== 0 ||
-    playback.anchorServerMs !== 0 ||
+    !['empty', 'paused', 'waiting', 'playing', 'ended'].includes(text(playback.phase)) ||
     playback.baseRate !== 1 ||
-    playback.desiredPlaying !== false
+    typeof playback.desiredPlaying !== 'boolean'
   )
-    throw new Error('Invalid server response.');
+    throw new Error('Invalid playback.');
+  const positionMs = integer(playback.positionMs),
+    anchorServerMs = integer(playback.anchorServerMs);
+  if (
+    (!media &&
+      (playback.phase !== 'empty' ||
+        generation !== 0 ||
+        positionMs !== 0 ||
+        playback.desiredPlaying)) ||
+    (media && (generation < 1 || playback.phase === 'empty' || positionMs > media.durationMs))
+  )
+    throw new Error('Invalid timeline.');
+  let barrier: Snapshot['barrier'] = null;
+  if (v.barrier !== null) {
+    const b = object(v.barrier);
+    shape(b, ['barrierId', 'requiredMemberIds', 'reason', 'targetPositionMs', 'deadlineServerMs']);
+    if (
+      !Array.isArray(b.requiredMemberIds) ||
+      b.requiredMemberIds.length > 32 ||
+      !['play', 'buffering'].includes(text(b.reason))
+    )
+      throw new Error('Invalid barrier.');
+    barrier = {
+      barrierId: id(b.barrierId),
+      requiredMemberIds: b.requiredMemberIds.map(id),
+      reason: b.reason as 'play' | 'buffering',
+      targetPositionMs: integer(b.targetPositionMs),
+      deadlineServerMs: integer(b.deadlineServerMs),
+    };
+  }
+  if ((playback.phase === 'waiting') !== (barrier !== null)) throw new Error('Invalid barrier.');
   const members: Member[] = v.members.map((value: unknown) => {
     const m = object(value);
     shape(m, [
@@ -163,24 +199,30 @@ export function decodeSnapshot(value: unknown): Snapshot {
       'readiness',
     ]);
     if (
-      m.presence !== 'offline' ||
-      m.playbackActive !== false ||
-      m.excludedFromWaiting !== false ||
-      m.readiness !== null
+      !['offline', 'connected'].includes(text(m.presence)) ||
+      typeof m.playbackActive !== 'boolean' ||
+      typeof m.excludedFromWaiting !== 'boolean'
     )
-      throw new Error('Invalid server response.');
+      throw new Error('Invalid member.');
     const displayName = text(m.displayName);
     decodeProfilePatch({ displayName });
     return {
       memberId: id(m.memberId),
       displayName,
       role: role(m.role),
-      presence: 'offline',
-      playbackActive: false,
-      excludedFromWaiting: false,
-      readiness: null,
+      presence: m.presence as Member['presence'],
+      playbackActive: m.playbackActive,
+      excludedFromWaiting: m.excludedFromWaiting,
+      readiness: m.readiness === null ? null : decodeReadiness(m.readiness),
     };
   });
+  if (
+    barrier &&
+    (barrier.requiredMemberIds.some((mid) => !members.some((m) => m.memberId === mid)) ||
+      new Set(barrier.requiredMemberIds).size !== barrier.requiredMemberIds.length ||
+      barrier.targetPositionMs > (media?.durationMs ?? 0))
+  )
+    throw new Error('Invalid barrier members.');
   const hostMemberId = id(v.hostMemberId),
     selfMemberId = id(v.selfMemberId);
   if (
@@ -199,15 +241,15 @@ export function decodeSnapshot(value: unknown): Snapshot {
     selfMemberId,
     settings: decodeRoomSettings(v.settings),
     members,
-    mediaGeneration: 0,
-    media: null,
-    barrier: null,
+    mediaGeneration: generation,
+    media,
+    barrier,
     playback: {
-      phase: 'empty',
-      positionMs: 0,
-      anchorServerMs: 0,
+      phase: playback.phase as Snapshot['playback']['phase'],
+      positionMs,
+      anchorServerMs,
       baseRate: 1,
-      desiredPlaying: false,
+      desiredPlaying: playback.desiredPlaying,
     },
     serverNowMs: integer(v.serverNowMs),
   };
@@ -266,6 +308,7 @@ export function decodeList(value: unknown): { rooms: RoomSummary[]; nextCursor: 
 
 const errors: Record<string, string> = {
   invalid_input: 'Check the entered values.',
+  invalid_command: 'This playback action is unavailable. Check room state and choose a new action.',
   session_required: 'Your identity session ended. Reload to start a new identity.',
   forbidden: 'You do not have permission for this action.',
   not_found: 'This room is unavailable.',

@@ -2,6 +2,9 @@ package contracts
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -100,5 +103,44 @@ func TestStrictJSONBoundary(t *testing.T) {
 	}
 	if _, err := DecodeMedia([]byte(`{"kind":"local","fingerprintVersion":1,"digest":"` + strings.Repeat("a", 64) + `","sizeBytes":1e3,"durationMs":1000}`)); err == nil {
 		t.Fatal("noncanonical integer literal accepted")
+	}
+}
+
+// Shared fingerprint fixtures protect the length prefixes and overlap ordering.
+// This reference hashes synthetic bytes only; production servers never receive file samples.
+func TestLocalFingerprintVectors(t *testing.T) {
+	data, err := os.ReadFile("../../specs/fixtures/local-fingerprints-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors []struct {
+		RoomID    string
+		SizeBytes int64
+		Digest    string
+	}
+	if err := json.Unmarshal(data, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vectors {
+		h := sha256.New()
+		put := func(n int64) { var b [8]byte; binary.BigEndian.PutUint64(b[:], uint64(n)); h.Write(b[:]) }
+		for _, value := range []string{"ovs-local-v1", v.RoomID} {
+			put(int64(len(value)))
+			h.Write([]byte(value))
+		}
+		put(v.SizeBytes)
+		length := min(v.SizeBytes, 1048576)
+		for _, offset := range []int64{0, (v.SizeBytes - length) / 2, v.SizeBytes - length} {
+			put(offset)
+			put(length)
+			sample := make([]byte, length)
+			for i := range sample {
+				sample[i] = byte((offset + int64(i)) * 31 % 251)
+			}
+			h.Write(sample)
+		}
+		if hex.EncodeToString(h.Sum(nil)) != v.Digest {
+			t.Fatalf("fingerprint encoding differs for size %d", v.SizeBytes)
+		}
 	}
 }

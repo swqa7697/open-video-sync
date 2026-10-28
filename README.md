@@ -4,8 +4,8 @@ OVS is a private, self-hosted application for synchronized viewing. Each partici
 
 This repository includes persistent anonymous identities and private rooms with invitation links and codes.
 Hosts can save room preferences, rotate invitations, remove participants, and close rooms. Participants can leave rooms.
-The Go application embeds the Vue frontend and stores identities, membership, and room settings in SQLite.
-Playback and the room WebSocket protocol are not implemented. Bilibili and danmaku require the separate proof of concept described in [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept).
+The Go application embeds the Vue frontend and stores identities, memberships, room settings, media descriptors, and playback checkpoints in SQLite.
+Authenticated room sockets and local synchronized playback are available as a development milestone. Bilibili and danmaku require the separate proof of concept described in [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept).
 This intermediate stage does not complete the [PRD](specs/PRD.md).
 
 ## Use identities and rooms
@@ -13,13 +13,31 @@ This intermediate stage does not complete the [PRD](specs/PRD.md).
 Open OVS to restore or create your identity automatically. A display name is optional.
 Create a room with a title, or enter a private invitation code. Invitation links use `/join#invite=...`; the page removes the fragment before mounting components.
 Links and codes expire after seven days. Replacement invalidates both previous secrets. Removing a participant also invalidates previous invitations.
-Membership survives browser reload and server restart. Room pages use **Refresh room** to retrieve changes made by other participants.
-Host preferences are saved for later playback stages. They do not enable playback in this version.
+Membership survives browser reload and server restart. Room sockets deliver changes automatically; **Refresh room** also retrieves a snapshot.
 
 Sessions use a host-only HttpOnly cookie with a rolling 365-day expiry, renewed at most once daily on bootstrap.
 **Forget this identity** revokes the current session. Owned rooms may become inaccessible; ownership does not transfer.
 Cookies are scoped to the browser profile and OVS origin. Private profiles receive independent identities.
 Invitation secrets appear only when created or replaced. If a response is lost, retry the original request; replace the invitation to obtain new sharing details.
+
+## Watch a local video
+
+The host selects a file under **Watch local video**. Each participant selects the same file independently.
+The optional shared label comes from host input. File names, timestamps, paths, handles, samples, and video bytes stay in each browser.
+A worker computes a room-specific sampled SHA-256 digest with pinned `@noble/hashes`; matching works on ordinary HTTP without SubtleCrypto.
+Equal size and digest plus duration within 250 ms permit matching. Sampled matching detects accidental differences; it does not prove identical content.
+
+Use **Play together**, **Pause together**, **Seek together**, or **Replay**. The server enforces host/everyone control permissions.
+Volume and mute remain local. Playback starts muted. If a browser blocks playback, select **Enable playback**.
+**Use this tab** explicitly transfers playback ownership and disposes the previous tab's player.
+A disconnected browser pauses after five seconds without server liveness, reconnects, obtains state, and recalibrates its clock.
+An uncertain command can be checked with its original ID; controls are never queued for offline replay.
+
+Startup waiting requires active participants to report current readiness. Full buffering, late-join, and exclusion policies remain planned.
+For the Stage 2 development journey, select **Do not wait**. This intermediate milestone does not complete the default waiting-policy acceptance.
+Reloading requires local file selection again. Server restart restores the saved checkpoint paused, with a new room epoch.
+Chromium VP8/WebM playback is checked with synthetic media; an Opus audio track checks autoplay permission handling.
+Other browsers, codecs, mobile suspension, physical displays, and impaired networks need separate evidence. OVS does not transcode unsupported files.
 
 ## Start development
 
@@ -47,7 +65,7 @@ make dev
 
 Open `http://127.0.0.1:8080` to use the embedded application. The development command stores local data in ignored `data/`.
 For frontend hot reload, run `make dev-web` in another terminal and open `http://127.0.0.1:5173`.
-Vite+ proxies health and API requests to `127.0.0.1:8080`. The API proxy maps the exact development Origin to the backend Origin.
+Vite+ proxies health, API, and WebSocket requests to `127.0.0.1:8080`. The API and WebSocket proxies map the exact development Origin to the backend Origin.
 Keep the default backend public origin when using this development proxy.
 
 Go embedding requires generated frontend files. Run `make web-build` before direct `go vet`, `go test`, or `go build` commands.
@@ -72,7 +90,7 @@ Run `make help` to list the available targets.
 | `dev` | Run Go with loopback defaults and local storage |
 | `dev-web` | Run the Vite+ development server |
 | `browser-install` | Install the Chromium version selected by Playwright |
-| `test-e2e` | Build and check identity and room journeys in Chromium over direct HTTP |
+| `test-e2e` | Check identities, rooms, local playback, and decoded-frame measurements in Chromium |
 | `image` | Build the single application container |
 | `image-smoke` | Check the built image with an isolated persistent volume |
 | `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations |
@@ -133,16 +151,19 @@ The effective client address comes from the direct connection. Behind a proxy, a
 Both return `204` when successful. Readiness returns `503` on a database connection failure, a latched transaction failure, or shutdown.
 After a transaction failure, restore storage health and restart OVS. Automated storage recovery remains later work.
 Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA HTML.
-No production route upgrades to WebSocket before session and membership authorization exists.
+`GET /ws/v1/rooms/{roomId}` upgrades only after exact-Origin, cookie, membership, and socket admission checks.
 
 ## Storage and deployment
 
 SQLite uses WAL, foreign keys, a five-second busy timeout, and `synchronous=FULL`.
 The application uses one database connection and one writer with 128 pending transactions.
-Room coordinators admit 64 pending operations each and expire after one minute without operations.
+Room coordinators admit 64 pending operations each. They retain live sockets and expire after one idle minute without sockets.
 Durable operations have a five-second deadline. Saturated queues return `busy`.
 Defaults also cap stored rooms at 1,000 and owned rooms at 20 per identity. These bounds are resource controls, not capacity guarantees.
-Three migrations create the ledger, identities/sessions, and rooms/memberships/invitations/idempotency outcomes.
+Four migrations create application state, versioned local media, playback checkpoints, and transactional command receipts.
+Accepted controls commit before acknowledgement and publication. Playing checkpoints save every ten seconds and on shutdown.
+Sockets have 64-frame/256-KiB outputs, five-second write deadlines, five-second heartbeats, and a 15-second liveness expiry.
+The instance admits at most 500 sockets and four tabs per membership.
 Add each DDL change as a new numbered SQL file under `migrations/`.
 Startup checks applied checksums and rejects newer schemas. A second process cannot own the same data directory.
 
@@ -166,12 +187,17 @@ make image image-smoke
 ```
 
 The tests cover migration upgrades and rollback, identity continuity/expiry/reset, authorization, strict requests, private membership, invitation expiry/rotation, capacity races, serialized revisions, bounded queues, and secret exclusion.
-The browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
+Browser scenarios run serially because they share one server and its address-based admission budgets.
+The identity browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
 Browser screenshots cover light/dark themes and 375/768/1440-pixel widths. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
-The isolated WebSocket test checks transport setup only.
+Real WebSocket tests check admission, serialized HTTP/socket mutations, retry deduplication, stale/changed intents, lease replacement, and paused restart.
+Local player journeys cover matching, mismatch, unsupported decoding, replacement cancellation, play/pause/seek, reconnect, and tab ownership.
+Three independent timing trials read decoded source-frame pixels in separate foreground headless Chromium processes.
+They report control application latency separately from frame skew, with calibration, uncertainty, and sparse-tail limits under `.misc/e2e/results/`.
+This method does not measure physical display presentation or establish cross-region acceptance.
 Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
-There is no synchronized playback, media transfer, platform credential handling, or live-platform test in this stage.
-Room expiry cleanup, automatic storage recovery, sockets, and playback remain later-stage work.
+No video transfer or platform credential handling exists. Live Bilibili/danmaku validation remains required.
+Complete waiting policies, lifecycle/expiry recovery, automatic storage recovery, and release acceptance remain later-stage work.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
 Linux/amd64 and Chromium were checked during scaffolding. macOS, other architectures, other browsers, TLS, and live Caddy topologies remain unverified.

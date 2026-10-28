@@ -35,6 +35,9 @@ type Room struct {
 	Revision, CreatedAtMs, LastActiveAtMs int64
 	Settings                              contracts.RoomSettings
 	Members                               []Member
+	Media                                 *contracts.MediaDescriptor
+	MediaGeneration                       int64
+	Playback                              Playback
 	Invite                                InvitationRecord
 }
 
@@ -64,6 +67,9 @@ type Tx interface {
 	LoadRoom(string) (Room, error)
 	InsertRoom(Room) error
 	SaveRoom(Room) error
+	SavePlayback(Room, int64) error
+	Command(roomID, identityID, commandID string, now int64) (CommandRecord, bool, error)
+	SaveCommand(roomID, identityID, commandID string, record CommandRecord) error
 	DeleteRoom(string) error
 	Counts(identityID string) (stored, owned int, err error)
 	Outcome(identityID, operation, key string, now int64) (Outcome, bool, error)
@@ -89,16 +95,16 @@ type Summary struct {
 
 // RosterMember excludes identity IDs and all credentials.
 type RosterMember struct {
-	MemberID            string `json:"memberId"`
-	DisplayName         string `json:"displayName"`
-	Role                string `json:"role"`
-	Presence            string `json:"presence"`
-	PlaybackActive      bool   `json:"playbackActive"`
-	ExcludedFromWaiting bool   `json:"excludedFromWaiting"`
-	Readiness           any    `json:"readiness"`
+	MemberID            string               `json:"memberId"`
+	DisplayName         string               `json:"displayName"`
+	Role                string               `json:"role"`
+	Presence            string               `json:"presence"`
+	PlaybackActive      bool                 `json:"playbackActive"`
+	ExcludedFromWaiting bool                 `json:"excludedFromWaiting"`
+	Readiness           *contracts.Readiness `json:"readiness"`
 }
 
-// Playback is empty until P3 adds media and an authoritative timeline.
+// Playback anchors the authoritative timeline in this process clock domain.
 type Playback struct {
 	Phase          string `json:"phase"`
 	PositionMs     int64  `json:"positionMs"`
@@ -107,21 +113,21 @@ type Playback struct {
 	DesiredPlaying bool   `json:"desiredPlaying"`
 }
 
-// Snapshot is the exact v1 empty-room snapshot. P3 owns media/playback extensions.
+// Snapshot is a credential-free, caller-specific v1 room snapshot.
 type Snapshot struct {
-	RoomID          string                 `json:"roomId"`
-	Title           string                 `json:"title"`
-	Epoch           string                 `json:"epoch"`
-	Revision        int64                  `json:"revision"`
-	MediaGeneration int64                  `json:"mediaGeneration"`
-	HostMemberID    string                 `json:"hostMemberId"`
-	SelfMemberID    string                 `json:"selfMemberId"`
-	Settings        contracts.RoomSettings `json:"settings"`
-	Media           any                    `json:"media"`
-	Playback        Playback               `json:"playback"`
-	Barrier         any                    `json:"barrier"`
-	Members         []RosterMember         `json:"members"`
-	ServerNowMs     int64                  `json:"serverNowMs"`
+	RoomID          string                     `json:"roomId"`
+	Title           string                     `json:"title"`
+	Epoch           string                     `json:"epoch"`
+	Revision        int64                      `json:"revision"`
+	MediaGeneration int64                      `json:"mediaGeneration"`
+	HostMemberID    string                     `json:"hostMemberId"`
+	SelfMemberID    string                     `json:"selfMemberId"`
+	Settings        contracts.RoomSettings     `json:"settings"`
+	Media           *contracts.MediaDescriptor `json:"media"`
+	Playback        Playback                   `json:"playback"`
+	Barrier         *Barrier                   `json:"barrier"`
+	Members         []RosterMember             `json:"members"`
+	ServerNowMs     int64                      `json:"serverNowMs"`
 }
 
 // Result is a create/redeem or management response.

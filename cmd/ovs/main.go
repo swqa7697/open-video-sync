@@ -19,6 +19,7 @@ import (
 	"github.com/swqa7697/open-video-sync/internal/rooms"
 	"github.com/swqa7697/open-video-sync/internal/storage"
 	transport "github.com/swqa7697/open-video-sync/internal/transport/http"
+	"github.com/swqa7697/open-video-sync/internal/transport/ws"
 	"github.com/swqa7697/open-video-sync/internal/web"
 )
 
@@ -85,9 +86,10 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 		return err
 	}
 	defer roomService.Close()
-	api := transport.NewAPI(cfg.origin.String(), &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}).WithRooms(roomService)
+	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}
+	api := transport.NewAPI(cfg.origin.String(), identities).WithRooms(roomService)
 	server := &http.Server{
-		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api),
+		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, ws.NewHandler(cfg.origin.String(), identities, roomService)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -109,6 +111,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	case <-ctx.Done():
 		stopping.Store(true)
+		roomService.Close()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		shutdownErr := server.Shutdown(shutdown)

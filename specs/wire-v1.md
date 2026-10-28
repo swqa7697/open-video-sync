@@ -2,7 +2,7 @@
 
 This document resolves P0 decisions in [DESIGN](DESIGN.md). The PRD remains the product source of truth.
 Identity and room-management HTTP routes are implemented, with shared value validation in Go and TypeScript.
-P1/P2 implement identity, membership, invitations, bounded writes, and empty-room snapshots. P3 owns snapshot and command integration. P4 owns local matching.
+P1/P2 implement identity, membership, invitations, and bounded writes. P3–P5 implement snapshots, authenticated commands, local matching, and clock-based playback. Complete waiting policies remain P6.
 The Bilibili descriptor remains provisional until B0 confirms identifiers and duration behavior. Syntax validation proves neither access nor player compatibility.
 
 ## Encoding and bounds
@@ -203,7 +203,7 @@ Readiness uses `{v:1,type:"member.readiness",epoch,payload:Readiness}`. Observat
 Bind room, identity, connection generation, and lease server-side; client frames cannot override them.
 
 Server room envelopes have exactly `{v:1,type,epoch,eventSeq,payload}`; sequence starts at 1 per connection.
-`session.welcome` carries `{connectionId,connectionGeneration,snapshot}`. `room.snapshot` carries the snapshot directly.
+`session.welcome` carries `{connectionId,connectionGeneration,playbackLease,snapshot}`. `playbackLease` is a boolean for this connection; roster activity alone cannot identify which tab owns the lease. Successful explicit activation sends another welcome with the same connection identity and current lease. `room.snapshot` carries the snapshot directly.
 `command.result` carries `{commandId,accepted,revision:integer|null,error:PublicError|null}`.
 Accepted results contain the original committed revision and no error. Rejections contain an error and no committed revision.
 Follow stale-command rejection with a current snapshot. Never replay rejected intent automatically.
@@ -242,7 +242,7 @@ Old epochs require new intent. Deduplication expires after 24 hours; no offline 
 ## Runtime bounds and ownership decisions
 
 Room resource limits use `rooms.Limits`, validated at startup. `OVS_MAX_ACTIVE_ROOMS` and `OVS_MAX_ROOM_MEMBERS` expose the selected room bounds.
-Coordinators evict after one minute without operations; activation creates a fresh epoch. P3 must account for live sockets before eviction.
+Coordinators evict after one minute without operations; activation creates a fresh epoch. P3 retains coordinators with live sockets.
 The initial storage failure latch stops writes and fails readiness until restart; P7 owns automated recovery.
 Keep remaining runtime admission limits in one validated configuration as their owning packages add admission. Wire bounds stay in contracts and shared fixtures.
 Initial bounds are resource controls, not capacity or latency guarantees.
@@ -266,7 +266,7 @@ Initial bounds are resource controls, not capacity or latency guarantees.
 | Usable estimate | At least three samples since reset; subset median offset; uncertainty = largest half-RTT plus subset offset spread | P5 |
 | Clock degradation | Uncertainty >250 ms or no usable estimate; no synchronized readiness or small rate correction | P5 |
 
-Calibration collects five samples even though three usable samples can establish an estimate. Reject negative network delay; do not clamp it.
+Calibration collects five samples even though three usable samples can establish an estimate. Quantize client sends down and receives up to integer milliseconds; symmetric rounding can produce negative apparent RTT on sub-millisecond loopback paths. Timestamp quantization adds up to one millisecond of clock error per endpoint. Reject negative network delay; do not clamp it.
 Asymmetric path error remains unobservable. Estimator uncertainty is not a verified bound on actual player skew.
 DESIGN's existing member, room, socket, telemetry, heartbeat, reconnect, waiting, and checkpoint limits still apply.
 
@@ -288,7 +288,7 @@ P4 uses DESIGN §7.2's three samples. Encode every length prefix and unsigned in
 Hash `LP(UTF8("ovs-local-v1"))`, `LP(UTF8(roomId))`, `U64(sizeBytes)`, then three repetitions of `U64(offset), U64(length), sampleBytes`.
 `LP(bytes)` means `U64(byteLength)` followed by bytes. Preserve start/middle/end order even when ranges overlap or coincide.
 Emit lowercase SHA-256 hex. Include no filename, timestamp, duration, or label. Probe duration separately; matching allows a 250 ms difference.
-P4 must add shared small-file/overlap vectors and select a pinned HTTP-compatible incremental hash implementation before shipping matching.
+The [shared fingerprint vectors](fixtures/local-fingerprints-v1.json) cover tiny, overlapping, and separated samples with independent Go and browser checks. The worker uses pinned `@noble/hashes` 2.0.1 incremental SHA-256 without SubtleCrypto.
 
 Prepare synthetic video with visible frame numbers and source timecode. Use only generated geometric patterns and text, without third-party media.
 Keep the fixture, recipe, hash, environment, and measurement protocol in ignored `.misc/` as implementation evidence.
@@ -296,3 +296,15 @@ P5 needs two actual foreground players, independent displayed-time observations,
 Neither `currentTime`, ACKs, nor predicted targets alone prove displayed convergence.
 Test loopback HTTP and an ordinary LAN HTTP origin. Assert `isSecureContext === false` on the latter.
 This prevents localhost exceptions from hiding unavailable randomness, file-selection, or hashing APIs. Stage 0 preparation does not establish P4/P5 acceptance.
+
+## P3–P5 implementation limits
+
+The socket route is `/ws/v1/rooms/{roomId}`. Exact Origin, session cookie, membership, and resource admission precede upgrade.
+A membership may open four sockets; the instance may open 500. Welcome explicitly identifies playback lease ownership.
+Accepted media selection currently permits only local descriptors. Bilibili syntax validation does not enable Bilibili playback.
+Startup waiting freezes active participants and the host, requires current-barrier readiness, and pauses at its deadline.
+`waiting.exclude` validates its envelope but returns `invalid_command` until P6 completes policy handling.
+Full buffering, late-join, disconnected-cohort handling, and waiting-settings transitions remain P6.
+Readiness transitions currently publish bounded complete snapshots; observation frames are validated and never change the timeline.
+Periodic checkpoints and shutdown preserve position. Reactivation restores paused without advancing through downtime.
+The storage failure latch requires restart; P7 owns automatic recovery.

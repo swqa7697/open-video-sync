@@ -14,6 +14,9 @@ func NewHandler(publicHost string, ready func(context.Context) error, frontend h
 	if len(api) > 0 {
 		mux.Handle("/api/v1/", api[0])
 	}
+	if len(api) > 1 {
+		mux.Handle("GET /ws/v1/rooms/{roomId}", api[1])
+	}
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)
@@ -35,7 +38,7 @@ func NewHandler(publicHost string, ready func(context.Context) error, frontend h
 	}
 	mux.Handle("/", frontend)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		// Container probes may use loopback rather than the public host.

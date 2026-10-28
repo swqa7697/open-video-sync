@@ -19,6 +19,7 @@ type coordinator struct {
 	queue  chan operation
 	done   chan struct{}
 	closed bool
+	live   *liveRoom
 }
 
 // Service owns the lazy coordinator registry and serializes every room operation.
@@ -33,6 +34,9 @@ type Service struct {
 	stop         chan struct{}
 	wg           sync.WaitGroup
 	started      time.Time
+	// Monotonic returns process time independently of wall-clock expiry. Set before admission.
+	Monotonic func() int64
+	sockets   int
 	// OnRemoved and OnClosed are synchronous post-commit connection revocation hooks.
 	OnRemoved func(roomID, memberID string)
 	OnClosed  func(roomID string)
@@ -57,6 +61,9 @@ func (s *Service) Close() {
 	s.wg.Wait()
 }
 func (s *Service) submit(ctx context.Context, id string, run func(context.Context, string) error) error {
+	return s.dispatch(ctx, id, run, true)
+}
+func (s *Service) dispatch(ctx context.Context, id string, run func(context.Context, string) error, activate bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	s.mu.Lock()
@@ -66,6 +73,10 @@ func (s *Service) submit(ctx context.Context, id string, run func(context.Contex
 	}
 	c := s.coordinators[id]
 	if c == nil {
+		if !activate {
+			s.mu.Unlock()
+			return contracts.Failure("not_found")
+		}
 		if len(s.coordinators) >= s.Limits.MaxActive {
 			s.mu.Unlock()
 			return contracts.Failure("capacity_reached")
@@ -109,6 +120,8 @@ func (s *Service) submit(ctx context.Context, id string, run func(context.Contex
 func (s *Service) serve(id string, c *coordinator) {
 	defer s.wg.Done()
 	defer close(c.done)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
 	timer := time.NewTimer(s.Limits.CoordinatorIdle)
 	defer timer.Stop()
 	finish := func() {
@@ -121,11 +134,17 @@ func (s *Service) serve(id string, c *coordinator) {
 	for {
 		select {
 		case <-s.stop:
+			s.finishLive(id, c)
 			finish()
 			return
+		case <-tick.C:
+			s.tickLive(id, c)
 		case <-timer.C:
 			s.mu.Lock()
-			if len(c.queue) == 0 {
+			if len(c.queue) == 0 && (c.live == nil || len(c.live.connections) == 0) {
+				s.mu.Unlock()
+				s.finishLive(id, c)
+				s.mu.Lock()
 				delete(s.coordinators, id)
 				s.mu.Unlock()
 				return
@@ -138,7 +157,11 @@ func (s *Service) serve(id string, c *coordinator) {
 			} else if c.closed {
 				job.result <- contracts.Failure("not_found")
 			} else {
-				job.result <- job.run(job.ctx, c.epoch)
+				err := job.run(job.ctx, c.epoch)
+				job.result <- err
+				if err == nil {
+					s.refreshLive(id, c)
+				}
 			}
 			if c.closed {
 				finish()
@@ -154,4 +177,9 @@ func (s *Service) serve(id string, c *coordinator) {
 		}
 	}
 }
-func (s *Service) monotonicMs() int64 { return time.Since(s.started).Milliseconds() }
+func (s *Service) monotonicMs() int64 {
+	if s.Monotonic != nil {
+		return s.Monotonic()
+	}
+	return time.Since(s.started).Milliseconds()
+}

@@ -141,7 +141,7 @@ func (s *Service) Snapshot(ctx context.Context, p identity.Session, id string) (
 					return err
 				}
 			}
-			result = snapshot(r, epoch, s.monotonicMs(), p.IdentityID)
+			result = s.roomSnapshot(r, epoch, p.IdentityID)
 			return nil
 		})
 	})
@@ -238,14 +238,14 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 					return err
 				}
 			}
-			result = Result{Snapshot: snapshot(r, epoch, s.monotonicMs(), p.IdentityID), Replayed: replay}
+			result = Result{Snapshot: s.roomSnapshot(r, epoch, p.IdentityID), Replayed: replay}
 			return nil
 		})
 	})
 	return result, err
 }
 
-// Mutate is the shared management path for HTTP and future WebSocket entry points.
+// Mutate serializes management with socket commands in the same room coordinator.
 func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m Mutation) (Result, Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -338,11 +338,12 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 			if err := tx.SaveRoom(r); err != nil {
 				return err
 			}
-			result.Snapshot = snapshot(r, epoch, s.monotonicMs(), p.IdentityID)
+			result.Snapshot = s.roomSnapshot(r, epoch, p.IdentityID)
 			receipt = Receipt{RoomID: id, Revision: r.Revision, RemovedMemberID: removed}
 			return nil
 		})
 		if err == nil {
+			s.managementCommitted(id, epoch, m.Operation, removed, receipt.Revision)
 			if removed != "" && s.OnRemoved != nil {
 				s.OnRemoved(id, removed)
 			}

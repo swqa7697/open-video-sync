@@ -60,6 +60,9 @@ defineProps<{ disabled: boolean }>();
       ><input v-model="settings.waitOnBuffering" type="checkbox" /> Wait when a participant
       buffers</label
     >
-    <p class="hint">Preferences are saved now. Playback will be added in a later stage.</p>
+    <p class="hint">
+      Startup waiting and drift correction are available. Buffering and late-join policies remain in
+      development.
+    </p>
   </fieldset>
 </template>

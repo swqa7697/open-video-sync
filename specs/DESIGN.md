@@ -4,9 +4,9 @@
 
 This document defines the proposed first-release architecture for Open Video Sync (OVS). The [PRD](PRD.md) is the product source of truth. [AGENTS.md](../AGENTS.md) defines development guidelines.
 
-[Version-1 implementation contracts](wire-v1.md) define exact wire shapes, bounds, HTTP revision rules, request normalization, and ownership decisions from P0. Identity and room-management routes, empty-room snapshots, and value validators exist. The room WebSocket protocol remains unimplemented.
+[Version-1 implementation contracts](wire-v1.md) define exact wire shapes, bounds, HTTP revision rules, request normalization, and ownership decisions from P0. Identity and room-management routes, full snapshots, local descriptors, and the authenticated room WebSocket protocol exist.
 
-The repository implements process configuration and shutdown, health routing, embedded Vue/Pinia identity and room screens, SQLite ownership and migrations, anonymous sessions, private invitations and memberships, serialized room management, tooling, and container packaging. Synchronization, player adapters, room sockets, retention cleanup, and automated recovery remain unimplemented. Unless explicitly identified as implemented behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
+The repository implements process configuration and shutdown, health routing, embedded Vue/Pinia identity and room screens, SQLite ownership and migrations, anonymous sessions, private invitations and memberships, serialized room management, tooling, and container packaging. Local player adapters, sampled matching, clock estimation, playback correction, and transactional room controls are implemented as the P3–P5 development milestone. Complete waiting/buffering/late-join policies, retention cleanup, platform adapters, and automated recovery remain unimplemented. Unless explicitly identified as implemented behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
 
 OVS is a private, self-hosted web application for synchronized viewing. Each participant obtains and plays their own media. The Go server coordinates rooms and playback; it never carries video content or platform credentials.
 
@@ -329,7 +329,7 @@ Server restart restores the last checkpoint paused, with a new epoch and no read
 
 ### 7.1 Adapter contract
 
-The following TypeScript describes the intended boundary, not an existing package:
+The following TypeScript describes the common boundary. The local adapter implements this boundary; platform adapters remain proposed:
 
 ```typescript
 interface PlayerCapabilities {
@@ -535,7 +535,7 @@ Use per-connection output limits of 64 frames and 256 KiB, whichever is reached 
 
 ### 10.1 Logical schema
 
-The following is the schema contract. Migrations 0001–0003 implement the ledger, identities, sessions, rooms, memberships, invitations, and HTTP idempotency. Media, checkpoints, and command results remain proposed.
+The following is the schema contract. Migrations 0001–0004 implement the ledger, identities, sessions, rooms, memberships, invitations, HTTP idempotency, versioned media, checkpoints, and accepted command results.
 
 | Table | Key fields and constraints |
 | --- | --- |

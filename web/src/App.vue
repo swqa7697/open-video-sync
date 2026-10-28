@@ -19,6 +19,7 @@ import {
 import { decodeRoomSettings, type RoomSettings } from './transport/contracts';
 import IdentityPanel from './features/identity/IdentityPanel.vue';
 import RoomPanel from './features/rooms/RoomPanel.vue';
+import PlayerPanel from './features/player/PlayerPanel.vue';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
@@ -218,6 +219,12 @@ onUnmounted(() => {
         <p>The request outcome is uncertain. Retry the original request to check its result.</p>
         <button :disabled="busy" @click="perform(submitAttempt)">Retry original request</button>
       </div>
+      <PlayerPanel
+        v-if="room"
+        :key="room.roomId"
+        :room="room"
+        @snapshot="(value) => (room = value)"
+      />
       <RoomPanel
         v-if="room"
         :room="room"
@@ -289,8 +296,7 @@ onUnmounted(() => {
       </template>
     </template>
     <footer>
-      Identity and private rooms are available. Playback, Bilibili, and danmaku remain in
-      development.
+      Local synchronized viewing is in development. Bilibili and danmaku remain planned.
     </footer>
   </main>
 </template>

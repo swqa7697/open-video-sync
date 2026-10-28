@@ -1,4 +1,4 @@
-// Package ws provides the WebSocket transport boundary, without a room protocol.
+// Package ws provides authenticated room sockets and bounded WebSocket transport.
 package ws
 
 import (
@@ -12,7 +12,6 @@ import (
 
 // Accept upgrades a browser connection after exact-origin validation.
 // The caller MUST authorize the session, membership, and admission limits first.
-// No production route uses Accept until those application services exist.
 // The caller owns reads, writes, cancellation, and closing the connection.
 func Accept(w http.ResponseWriter, r *http.Request, publicOrigin string) (*websocket.Conn, error) {
 	if publicOrigin == "" || r.Header.Get("Origin") != publicOrigin {

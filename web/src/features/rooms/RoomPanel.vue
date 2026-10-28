@@ -21,9 +21,9 @@ const emit = defineEmits<{
 const settings = ref<RoomSettings>({ ...props.room.settings });
 const closeConfirmation = ref(false);
 watch(
-  () => props.room,
-  (room) => {
-    settings.value = { ...room.settings };
+  () => JSON.stringify(props.room.settings),
+  () => {
+    settings.value = { ...props.room.settings };
     closeConfirmation.value = false;
   },
 );
@@ -40,12 +40,18 @@ const shareURL = (secret: string) => `${location.origin}/join#invite=${secret}`;
     </div>
     <p class="eyebrow">{{ host ? 'Your room' : 'Private room' }}</p>
     <h2 id="room-title">{{ room.title }}</h2>
-    <p class="notice">Your room is ready. Synchronized playback is coming in a later stage.</p>
+    <p class="notice">
+      Room updates arrive automatically. Each participant must select the same local video.
+    </p>
     <h3>Participants</h3>
     <ul class="roster">
       <li v-for="member in room.members" :key="member.memberId">
         <span
-          >{{ member.displayName }} <small>({{ member.role }})</small></span
+          >{{ member.displayName }}
+          <small
+            >({{ member.role }} · {{ member.presence }} ·
+            {{ member.readiness?.status ?? 'no media' }})</small
+          ></span
         ><button
           v-if="host && member.role !== 'host'"
           class="quiet"

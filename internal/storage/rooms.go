@@ -74,6 +74,9 @@ func (t roomTx) LoadRoom(id string) (rooms.Room, error) {
 	if err != nil {
 		return r, err
 	}
+	if err := t.loadPlayback(&r); err != nil {
+		return r, err
+	}
 	return r, validRoom(r)
 }
 func validRoom(r rooms.Room) error {
