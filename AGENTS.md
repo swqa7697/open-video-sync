@@ -3,7 +3,7 @@
 ## Scope and sources of truth
 
 - OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository currently contains design documents, not a working application. Do not describe proposed packages, commands, dependencies, or performance targets as implemented or verified.
+- The repository contains a working infrastructure template: Go/Vue shell, embedded assets, SQLite migration ledger, tooling, and container packaging. Identity, rooms, playback, and platform adapters remain proposed. Do not describe unimplemented contracts or performance targets as verified.
 - Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.
@@ -21,15 +21,15 @@
 
 ## Architecture and ownership
 
-| Proposed location | Responsibility |
-| --- | --- |
-| `cmd/ovs` | Composition, configuration, process lifecycle |
-| `internal/identity` | Anonymous identity, OVS sessions, profile lifecycle |
-| `internal/rooms` | Membership, host rules, media, policies, timelines, room coordinators |
-| `internal/transport/http`, `internal/transport/ws` | Transport authentication, decoding, framing, connection bounds |
-| `internal/contracts`, `internal/storage` | Wire validation; SQLite setup, migrations, transaction support |
-| `internal/web`, `web` | Embedded assets; Vue UI, browser adapters, synchronization engine |
-| `migrations`, `tests`, `scripts`, `deploy` | Recorded DDL, integration harnesses, automation, deployment examples |
+| Proposed location                                  | Responsibility                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------- |
+| `cmd/ovs`                                          | Composition, configuration, process lifecycle                         |
+| `internal/identity`                                | Anonymous identity, OVS sessions, profile lifecycle                   |
+| `internal/rooms`                                   | Membership, host rules, media, policies, timelines, room coordinators |
+| `internal/transport/http`, `internal/transport/ws` | Transport authentication, decoding, framing, connection bounds        |
+| `internal/contracts`, `internal/storage`           | Wire validation; SQLite setup, migrations, transaction support        |
+| `internal/web`, `web`                              | Embedded assets; Vue UI, browser adapters, synchronization engine     |
+| `migrations`, `tests`, `scripts`, `deploy`         | Recorded DDL, integration harnesses, automation, deployment examples  |
 
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
@@ -55,9 +55,9 @@
 
 - Use `gofmt` for Go. Follow idiomatic Go naming, document exported contracts, return errors for operational failures, and wrap errors when callers need their cause.
 - Propagate `context.Context` through blocking operations. Every goroutine needs an owner and a termination path. Do not panic on malformed user input.
-- Prefer standard-library primitives where suitable. Pin third-party libraries and tools in manifests/lockfiles; do not use floating dependency versions in builds.
+- Prefer standard-library primitives where suitable. Pin third-party dependencies in manifests/lockfiles. Select container images and CI actions by tags. Use the latest stable Go compiler in CI and Docker; keep only the minimum Go version in `go.mod`.
 - Use Vue Composition API with `<script setup lang="ts">`, strict TypeScript, typed adapter boundaries, and runtime validation for network/platform data. Do not use `any` to bypass contract checking.
-- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Keep one package-manager declaration and lockfile.
+- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Use pnpm with one lockfile; do not pin or require a specific pnpm version.
 - Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select and pin the formatter during scaffolding; avoid competing tools for the same rule.
 - Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep reusable automation under `scripts/`.
 - Prefer Go for standalone repository automation when no existing tool fits. Keep native frontend tests in the frontend test framework.
@@ -78,7 +78,9 @@
 
 ## Development commands and validation
 
-There is no `go.mod`, frontend manifest, Makefile, or CI configuration yet. Do not invent working setup commands. Add verified commands here when scaffolding lands.
+Use `make help` for the command list. Run `make install` to install locked dependencies and build the template. Run `make dev` for Go and `make dev-web` for frontend hot reload. See README for tool prerequisites.
+
+Run `make check`, `make test test-race`, and `make build` in that order. Run `make browser-install` before `make test-e2e`. Use `make image image-smoke` for container checks. Direct Go commands require `make web-build` first because frontend assets are embedded at compile time. CI is configured; hosted success requires an actual successful run.
 
 - For documentation-only changes, check references and contract consistency, then run `git diff --check`. Do not add application tests for documentation text.
 - Use Make as the common developer entry point once implemented. Separate mutation-only formatting from read-only format/lint checks; avoid targets that silently stage or commit.
@@ -116,6 +118,7 @@ Before adding a test, read the regressions that own the affected behavior and st
 ## Git, review, and documentation
 
 - Preserve unrelated staged and working-tree changes. Never run `git add`, `git commit`, or `git push` without an explicit user request; ask before planning those actions. This also applies to wrappers that perform them.
+- Use a focused topic branch or `dev` branch. Never commit directly to `main`.
 - Write English Conventional Commit subjects: `type(scope): imperative summary`, lowercase, no trailing period. Use concise bullet points for any body. Add an optional short summary above the bullets only when it really helps.
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Example subjects: `feat(rooms): add readiness barriers`; `fix(sync): reject stale media events`.
 - PR descriptions explain the problem, resulting behavior, validation, and material limitations. Distinguish implementation from proposals and verified behavior from assumptions.

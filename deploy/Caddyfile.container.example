@@ -1,0 +1,5 @@
+# Put Caddy and OVS on the same private Docker network.
+# Merge this site into your existing Caddy configuration.
+watch.example.com {
+    reverse_proxy ovs:8080
+}

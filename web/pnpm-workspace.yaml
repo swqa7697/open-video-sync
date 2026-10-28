@@ -1,0 +1,8 @@
+packages:
+  - .
+overrides:
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.4.0
+# Vite+ core uses its release number while providing the Vite 8 API.
+peerDependencyRules:
+  allowedVersions:
+    vite: '1.4.0'

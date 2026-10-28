@@ -217,3 +217,9 @@ dist
 # Dev artifacts
 .misc/
 .tmp/
+
+# Generated application output and local state
+/build/
+/internal/web/dist/
+/data/
+/web/.vitest/

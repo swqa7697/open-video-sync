@@ -4,7 +4,7 @@
 
 This document defines the proposed first-release architecture for Open Video Sync (OVS). The [PRD](PRD.md) is the product source of truth. [AGENTS.md](../AGENTS.md) defines development guidelines.
 
-The repository currently has no application implementation. Package names, API contracts, defaults, deployment examples, and performance targets below are design decisions, not claims of implemented or verified behavior. Exact dependency versions belong in manifests and lockfiles when implementation begins.
+The repository now includes an infrastructure template: process configuration and shutdown, health routing, an embedded Vue/Pinia shell, SQLite ownership and migrations, development tooling, and a non-root application container. Identity, rooms, synchronization, player adapters, and the room protocol remain unimplemented. Unless explicitly identified as template behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
 
 OVS is a private, self-hosted web application for synchronized viewing. Each participant obtains and plays their own media. The Go server coordinates rooms and playback; it never carries video content or platform credentials.
 
@@ -422,7 +422,7 @@ Prefer danmaku rendering inside the validated platform player. If a separate ren
 
 ### 9.1 HTTP API
 
-All paths below are proposed version-1 contracts. Require JSON bodies and bounded strict decoding for mutations. Reject unknown fields, duplicate keys, unsupported content types, and oversized inputs. Successful mutation responses include the resulting revision where applicable.
+The template implements the health paths below. Application API and WebSocket paths remain proposed version-1 contracts and currently return 404. Require JSON bodies and bounded strict decoding for mutations. Reject unknown fields, duplicate keys, unsupported content types, and oversized inputs. Successful mutation responses include the resulting revision where applicable.
 
 | Method and path | Purpose and authority |
 | --- | --- |
@@ -494,7 +494,7 @@ Use per-connection output limits of 64 frames and 256 KiB, whichever is reached 
 
 ### 10.1 Logical schema
 
-The following is the schema contract. Implementation must provide actual ordered SQL migrations, indexes, and constraints.
+The following is the schema contract. The template implements only `schema_migrations` through its first ordered SQL migration. Application tables, indexes, and constraints remain unimplemented.
 
 | Table | Key fields and constraints |
 | --- | --- |
@@ -573,15 +573,17 @@ All controls need keyboard operation, visible focus, text labels, and status ann
 
 Build the Vue application first, copy its distribution into `internal/web/dist/`, and then compile the Go executable with embedded assets. Go embedding requires assets to exist at compile time; see [Go embed](https://pkg.go.dev/embed). Production must not require Node, a frontend dev server, a CDN for OVS scripts, or an external database.
 
-Use a multi-stage Docker build with pinned toolchains and dependencies. The final image contains the Go application, required runtime trust material, and license notices. Run as a non-root UID with writable `/data`; keep the root filesystem read-only where practical. Do not include `.misc`, `.tmp`, source credentials, tests, or build caches in the image.
+Use a multi-stage Docker build with the latest stable Go compiler and dependencies recorded in manifests and lockfiles. Select container images and CI actions by tags. CI resolves Go with `stable`, and the container build uses `golang:latest` with fresh base-image pulls. Keep only the minimum supported Go version in `go.mod`. The final image contains the Go application, required runtime trust material, and license notices. Run as a non-root UID with writable `/data`; keep the root filesystem read-only where practical. Do not include `.misc`, `.tmp`, source credentials, tests, or build caches in the image.
 
-Choose and pin the SQLite driver and WebSocket library during scaffolding after checking maintenance, license, cancellation, and deployment requirements. Verify the SQLite engine version bundled by the driver, not just its Go module version. If the driver needs cgo, declare the compiler/runtime requirements and test the resulting image. Do not claim a static binary without verifying it.
+The template selects [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) for a cgo-free `database/sql` driver and [coder/websocket](https://github.com/coder/websocket) for a context-aware WebSocket transport. Both are pinned in `go.mod`; distributed notices include the compiled Go and frontend production dependencies. The actual SQLite engine is checked through `sqlite_version()`. The transport helper has an isolated origin/upgrade test but no production room route until authorization exists. Linux/amd64 static linking and non-root container operation were verified during scaffolding; other target platforms remain unverified.
+
+Vite+ passed the required Vue plugin, TypeScript, Pinia, Vitest, and embedded production-build checks. The template uses its integrated Vite, Oxlint, and Oxfmt tools with pnpm. ESLint owns Vue template rules only; `vue-tsc --noEmit` runs independently. The Vite+ core alias uses the Vite+ release number, so a narrowly scoped pnpm peer rule accepts that pinned alias. Versions and the single frontend lockfile remain under `web/`.
 
 The SPA serves hashed assets with long immutable caching and the HTML entry with revalidation. API, health, and WS paths must never fall through to `index.html`. An old frontend receives a protocol-version error and a controlled reload path.
 
 ### 12.3 Configuration
 
-Use a small environment/CLI surface; validate it before startup. Proposed variables:
+Use a small environment/CLI surface; validate it before startup. The template implements `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`. Proxy trust, room limits, and retention variables remain proposed:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

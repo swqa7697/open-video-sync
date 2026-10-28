@@ -1,0 +1,4 @@
+# Merge this site into your existing Caddy configuration.
+watch.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
