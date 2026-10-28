@@ -8,7 +8,16 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:8080',
+      '/api': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (outgoing, incoming) => {
+            if (incoming.headers.origin === 'http://127.0.0.1:5173')
+              outgoing.setHeader('Origin', 'http://127.0.0.1:8080');
+          });
+        },
+      },
       '/health': 'http://127.0.0.1:8080',
     },
   },

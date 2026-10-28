@@ -1,0 +1,92 @@
+package storage
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/swqa7697/open-video-sync/internal/contracts"
+)
+
+type writeJob struct {
+	ctx    context.Context
+	run    func(*sql.Tx) error
+	result chan error
+}
+
+type writer struct {
+	queue  chan writeJob
+	stop   chan struct{}
+	done   chan struct{}
+	once   sync.Once
+	failed atomic.Bool
+}
+
+func newWriter(db *sql.DB) *writer {
+	w := &writer{queue: make(chan writeJob, 128), stop: make(chan struct{}), done: make(chan struct{})}
+	go func() {
+		defer close(w.done)
+		for {
+			select {
+			case <-w.stop:
+				return
+			case job := <-w.queue:
+				if err := job.ctx.Err(); err != nil {
+					job.result <- err
+					continue
+				}
+				if w.failed.Load() {
+					job.result <- contracts.Failure("storage_unavailable")
+					continue
+				}
+				tx, err := db.BeginTx(job.ctx, nil)
+				if err == nil {
+					err = job.run(tx)
+					if err == nil {
+						err = tx.Commit()
+					} else {
+						_ = tx.Rollback()
+					}
+				}
+				var failure contracts.Failure
+				if err != nil && job.ctx.Err() == nil && !errors.As(err, &failure) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					w.failed.Store(true)
+				}
+				job.result <- err
+			}
+		}
+	}()
+	return w
+}
+
+func (s *Store) write(ctx context.Context, run func(*sql.Tx) error) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	job := writeJob{ctx, run, make(chan error, 1)}
+	select {
+	case <-s.writer.stop:
+		return contracts.Failure("storage_unavailable")
+	default:
+	}
+	select {
+	case s.writer.queue <- job:
+	default:
+		return contracts.Failure("busy")
+	}
+	select {
+	case err := <-job.result:
+		return err
+	case <-ctx.Done():
+		// Join admitted work: no caller may observe a result while its callback is still running.
+		select {
+		case <-job.result:
+		case <-s.writer.done:
+		}
+		return ctx.Err()
+	case <-s.writer.done:
+		return contracts.Failure("storage_unavailable")
+	}
+}

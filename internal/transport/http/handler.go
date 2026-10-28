@@ -7,10 +7,13 @@ import (
 	"time"
 )
 
-// NewHandler serves health and the web shell. Application routes remain absent.
+// NewHandler serves health, application routes, and the embedded frontend.
 // ready must return an error after shutdown admission closes or storage fails.
-func NewHandler(publicHost string, ready func(context.Context) error, frontend http.Handler) http.Handler {
+func NewHandler(publicHost string, ready func(context.Context) error, frontend http.Handler, api ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	if len(api) > 0 {
+		mux.Handle("/api/v1/", api[0])
+	}
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)

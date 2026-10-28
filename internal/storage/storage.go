@@ -18,8 +18,9 @@ import (
 
 // Store owns one database and its data-directory lock. Close it before reuse.
 type Store struct {
-	db   *sql.DB
-	lock *flock.Flock
+	db     *sql.DB
+	lock   *flock.Flock
+	writer *writer
 }
 
 // Open acquires exclusive ownership, configures SQLite, and applies migrations.
@@ -69,11 +70,14 @@ func Open(ctx context.Context, directory string) (_ *Store, err error) {
 	if err := migrate(ctx, db, migrations.Files); err != nil {
 		return nil, err
 	}
-	return &Store{db: db, lock: lock}, nil
+	return &Store{db: db, lock: lock, writer: newWriter(db)}, nil
 }
 
 // Ready checks the database connection without exposing application metadata.
 func (s *Store) Ready(ctx context.Context) error {
+	if s.writer.failed.Load() {
+		return errors.New("storage unavailable")
+	}
 	return s.db.PingContext(ctx)
 }
 
@@ -86,5 +90,6 @@ func (s *Store) SQLiteVersion(ctx context.Context) (string, error) {
 
 // Close releases SQLite before releasing exclusive ownership of the directory.
 func (s *Store) Close() error {
+	s.writer.once.Do(func() { close(s.writer.stop); <-s.writer.done })
 	return errors.Join(s.db.Close(), s.lock.Unlock())
 }

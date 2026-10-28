@@ -3,7 +3,7 @@
 ## Scope and sources of truth
 
 - OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository contains a working infrastructure template: Go/Vue shell, embedded assets, SQLite migration ledger, tooling, and container packaging. Identity, rooms, playback, and platform adapters remain proposed. Do not describe unimplemented contracts or performance targets as verified.
+- The repository implements Go/Vue infrastructure, persistent anonymous identity, private rooms/invitations, serialized durable management, tooling, and container packaging. Playback, room sockets, recovery completion, and platform adapters remain proposed. Do not describe unimplemented contracts or performance targets as verified.
 - Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.

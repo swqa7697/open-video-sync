@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -60,6 +62,7 @@ func run(image string) error {
 		return fmt.Errorf("image user %q, want 10001:10001: %w", user, err)
 	}
 	var previousLedger string
+	var application applicationState
 	for phase := 1; phase <= 2; phase++ {
 		if _, err := docker(ctx, "run", "-d", "--name", name, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1::8080", "--mount", "type=volume,src="+volume+",dst=/data", "-e", "OVS_PUBLIC_ORIGIN=http://ovs.example", image); err != nil {
 			return err
@@ -67,6 +70,10 @@ func run(image string) error {
 		if err := checkHTTP(ctx, name); err != nil {
 			logs, _ := docker(ctx, "logs", name)
 			return fmt.Errorf("%w\n%s", err, logs)
+		}
+		application, err = checkApplication(ctx, name, application)
+		if err != nil {
+			return err
 		}
 		if _, err := docker(ctx, "exec", name, "/ovs", "healthcheck"); err != nil {
 			return err
@@ -101,7 +108,7 @@ func run(image string) error {
 			return err
 		}
 	}
-	fmt.Println("Image passed: non-root/read-only startup, embedded UI, reserved routes, ownership, clean stop, and volume persistence.")
+	fmt.Println("Image passed: non-root/read-only startup, embedded UI, reserved routes, ownership, clean stop, and identity/room persistence across replacement.")
 	fmt.Printf("Isolated database copies: %s\n", directory)
 	return nil
 }
@@ -174,4 +181,103 @@ func inspectDatabase(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	return checksum + ":" + applied, nil
+}
+
+// State uses only isolated test credentials. Do not print bearer or invitation values.
+type applicationState struct{ token, csrf, identityID, roomID string }
+
+func checkApplication(ctx context.Context, name string, previous applicationState) (applicationState, error) {
+	port, err := docker(ctx, "port", name, "8080/tcp")
+	if err != nil {
+		return previous, err
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	defer client.CloseIdleConnections()
+	call := func(method, path string, payload any) (map[string]json.RawMessage, error) {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		r, err := http.NewRequestWithContext(ctx, method, "http://"+port+"/api/v1"+path, strings.NewReader(string(b)))
+		if err != nil {
+			return nil, err
+		}
+		r.Host = "ovs.example"
+		r.Header.Set("Origin", "http://ovs.example")
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-OVS-CSRF", previous.csrf)
+		if previous.token != "" {
+			r.AddCookie(&http.Cookie{Name: "ovs_session", Value: previous.token})
+		}
+		random := make([]byte, 16)
+		if _, err := rand.Read(random); err != nil {
+			return nil, err
+		}
+		r.Header.Set("Idempotency-Key", hex.EncodeToString(random))
+		response, err := client.Do(r)
+		if err != nil {
+			return nil, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode != 200 {
+			return nil, fmt.Errorf("application %s %s returned %d", method, path, response.StatusCode)
+		}
+		for _, cookie := range response.Cookies() {
+			if cookie.Name == "ovs_session" {
+				previous.token = cookie.Value
+			}
+		}
+		var value map[string]json.RawMessage
+		err = json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&value)
+		return value, err
+	}
+	if previous.identityID == "" {
+		value, err := call("POST", "/session", struct{}{})
+		if err != nil {
+			return previous, err
+		}
+		var profile struct{ IdentityID string }
+		if err := json.Unmarshal(value["identity"], &profile); err != nil {
+			return previous, err
+		}
+		previous.identityID = profile.IdentityID
+		if err := json.Unmarshal(value["csrfToken"], &previous.csrf); err != nil {
+			return previous, err
+		}
+		value, err = call("POST", "/rooms", map[string]any{"title": "Container persistence", "settings": map[string]any{"controllers": "host", "syncMode": "adaptive", "waitMode": "all", "waitOnBuffering": true, "waitTimeoutMs": 30000, "lateJoin": "catch_up", "softDriftMs": 100, "hardDriftMs": 750}})
+		if err != nil {
+			return previous, err
+		}
+		var snapshot struct{ RoomID string }
+		if err := json.Unmarshal(value["snapshot"], &snapshot); err != nil {
+			return previous, err
+		}
+		previous.roomID = snapshot.RoomID
+	} else {
+		value, err := call("GET", "/me", nil)
+		if err != nil {
+			return previous, err
+		}
+		var profile struct{ IdentityID string }
+		if err := json.Unmarshal(value["identity"], &profile); err != nil {
+			return previous, err
+		}
+		if profile.IdentityID != previous.identityID {
+			return previous, errors.New("container replacement lost identity")
+		}
+		value, err = call("GET", "/rooms/"+previous.roomID, nil)
+		if err != nil {
+			return previous, err
+		}
+		var id, title string
+		_ = json.Unmarshal(value["roomId"], &id)
+		_ = json.Unmarshal(value["title"], &title)
+		if id != previous.roomID || title != "Container persistence" {
+			return previous, errors.New("container replacement lost room")
+		}
+	}
+	if previous.identityID == "" || previous.roomID == "" || previous.token == "" {
+		return previous, errors.New("application persistence setup incomplete")
+	}
+	return previous, nil
 }

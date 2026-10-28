@@ -1,8 +1,8 @@
 # Version-1 implementation contracts
 
 This document resolves P0 decisions in [DESIGN](DESIGN.md). The PRD remains the product source of truth.
-Only profile-patch, settings, and descriptor validation currently have Go and TypeScript implementations. Application routes remain absent.
-P1/P2 own identity and rooms. P3 owns snapshot and command integration. P4 owns local matching.
+Identity and room-management HTTP routes are implemented, with shared value validation in Go and TypeScript.
+P1/P2 implement identity, membership, invitations, bounded writes, and empty-room snapshots. P3 owns snapshot and command integration. P4 owns local matching.
 The Bilibili descriptor remains provisional until B0 confirms identifiers and duration behavior. Syntax validation proves neither access nor player compatibility.
 
 ## Encoding and bounds
@@ -66,7 +66,7 @@ Tokens and IDs in examples are synthetic. `PATCH /me` takes `{displayName}` and 
 `DELETE /session` takes `{}` and returns `{forgotten:true}` after revocation. The bearer token appears only in the HttpOnly cookie.
 Keep CSRF in frontend memory; send it through `X-OVS-CSRF` on authenticated HTTP mutations. Never persist it in frontend storage.
 Require exact configured Origin for bootstrap and authenticated mutations. Bootstrap also needs address-based rate limiting.
-P1 owns cookie expiry, daily renewal, CSRF comparison, and revocation. Value validation does not implement those features.
+P1 implements cookie expiry, daily renewal, CSRF comparison, and revocation. Value validation alone does not implement those features.
 
 | Endpoint under `/api/v1` | Exact body / query | Successful response |
 | --- | --- | --- |
@@ -160,7 +160,7 @@ Store descriptors with a separate versioned wrapper and validate on write/load. 
 
 ```text
 {
-  roomId, title, epoch, revision, mediaGeneration, hostMemberId,
+  roomId, title, epoch, revision, mediaGeneration, hostMemberId, selfMemberId,
   settings: RoomSettings, media: MediaDescriptor | null,
   playback: {
     phase: "empty" | "paused" | "waiting" | "playing" | "ended",
@@ -187,6 +187,8 @@ Store descriptors with a separate versioned wrapper and validate on write/load. 
 `PlayerCapabilities` has exactly DESIGN §7.1's eight fields. Position resolution is an integer from 1–60,000 ms.
 Readiness uses DESIGN §5.4's nine statuses. Null means no current-generation report, never implicit readiness.
 Rosters exclude global identity IDs, connection IDs, invitation data, and credentials.
+`selfMemberId` identifies the authenticated caller’s membership so clients can leave without comparing display names.
+It is response-specific and is never accepted as authentication.
 Snapshots contain at most the configured 32 members and 32 barrier member IDs. Barrier member IDs reference current roster members.
 No media initially means generation 0, phase `empty`, position 0, no barrier, and no desired play.
 Only `waiting` has a barrier. Only `playing` advances its anchor. Reports cannot replace the authoritative position.
@@ -232,14 +234,17 @@ redeem   = ["ovs-http-v1","invitations.redeem","link"|"code",canonicalSecret]
 Emit decimal integers and no spaces or trailing newline. Preserve Unicode scalars as UTF-8.
 Escape only quotation marks and backslashes in text; control characters were already rejected. Disable Go's default HTML escaping.
 Command/idempotency ID is the lookup key, excluded from the digest. Scope lookups to room/identity or identity/HTTP operation.
-Store digests and nonsecret outcomes only, never canonical invitation input. P2/P3 must add executable digest code and shared vectors.
+Store digests and nonsecret outcomes only, never canonical invitation input. P2 implements HTTP digest code and [shared cross-language vectors](fixtures/http-digests-v1.json). P3 owns command digests.
 For WS retries, check current authority/lease and epoch, then stored ID/digest, then expected revision and media generation.
 This permits an accepted media-selection retry with its original generation. A different digest is `invalid_command`.
 Old epochs require new intent. Deduplication expires after 24 hours; no offline command queue exists.
 
 ## Runtime bounds and ownership decisions
 
-Keep runtime admission limits in one validated configuration when P2 adds admission. Wire bounds stay in contracts and shared fixtures.
+Room resource limits use `rooms.Limits`, validated at startup. `OVS_MAX_ACTIVE_ROOMS` and `OVS_MAX_ROOM_MEMBERS` expose the selected room bounds.
+Coordinators evict after one minute without operations; activation creates a fresh epoch. P3 must account for live sockets before eviction.
+The initial storage failure latch stops writes and fails readiness until restart; P7 owns automated recovery.
+Keep remaining runtime admission limits in one validated configuration as their owning packages add admission. Wire bounds stay in contracts and shared fixtures.
 Initial bounds are resource controls, not capacity or latency guarantees.
 
 | Boundary | Initial decision | Owner |

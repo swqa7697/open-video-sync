@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/swqa7697/open-video-sync/internal/identity"
+	"github.com/swqa7697/open-video-sync/internal/rooms"
 	"github.com/swqa7697/open-video-sync/internal/storage"
 	transport "github.com/swqa7697/open-video-sync/internal/transport/http"
 	"github.com/swqa7697/open-video-sync/internal/web"
@@ -77,8 +80,14 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 		}
 		return store.Ready(ctx)
 	}
+	roomService, err := rooms.NewService(store, time.Now, rand.Reader, cfg.roomLimits)
+	if err != nil {
+		return err
+	}
+	defer roomService.Close()
+	api := transport.NewAPI(cfg.origin.String(), &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}).WithRooms(roomService)
 	server := &http.Server{
-		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend),
+		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

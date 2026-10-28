@@ -1,3 +1,3 @@
-// Package rooms reserves room membership, policy, and timeline ownership.
-// Coordinators and application services are not implemented.
+// Package rooms owns private membership, invitations, and serialized room management.
+// Playback timelines and socket integration remain later work.
 package rooms

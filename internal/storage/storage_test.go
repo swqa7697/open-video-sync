@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"testing/fstest"
 
@@ -60,10 +61,21 @@ func TestMigrationsRejectChangesAndRollBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := fstest.MapFS{
-		"0001_schema_migrations.sql": {Data: initial},
-		"0002_probe.sql":             {Data: []byte("CREATE TABLE probe (id INTEGER PRIMARY KEY); INSERT INTO missing_table VALUES (1);")},
+	files := fstest.MapFS{}
+	entries, err := migrations.Files.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
 	}
+	for _, entry := range entries {
+		data, err := migrations.Files.ReadFile(entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[entry.Name()] = &fstest.MapFile{Data: data}
+	}
+	probe := fmt.Sprintf("%04d_probe.sql", len(entries)+1)
+	files[probe] = &fstest.MapFile{Data: []byte("CREATE TABLE probe (id INTEGER PRIMARY KEY); INSERT INTO missing_table VALUES (1);")}
+
 	if err := migrate(ctx, store.db, files); err == nil {
 		t.Fatal("invalid migration succeeded")
 	}
@@ -71,7 +83,7 @@ func TestMigrationsRejectChangesAndRollBack(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='probe'").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("failed DDL was not rolled back: %d, %v", count, err)
 	}
-	files["0002_probe.sql"].Data = []byte("CREATE TABLE probe (id INTEGER PRIMARY KEY); INSERT INTO probe VALUES (7);")
+	files[probe].Data = []byte("CREATE TABLE probe (id INTEGER PRIMARY KEY); INSERT INTO probe VALUES (7);")
 	if err := migrate(ctx, store.db, files); err != nil {
 		t.Fatal(err)
 	}

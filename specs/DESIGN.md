@@ -4,9 +4,9 @@
 
 This document defines the proposed first-release architecture for Open Video Sync (OVS). The [PRD](PRD.md) is the product source of truth. [AGENTS.md](../AGENTS.md) defines development guidelines.
 
-[Version-1 implementation contracts](wire-v1.md) define exact wire shapes, bounds, HTTP revision rules, request normalization, and ownership decisions from P0. Profile, settings, and descriptor validators exist; application routes and the room protocol remain unimplemented.
+[Version-1 implementation contracts](wire-v1.md) define exact wire shapes, bounds, HTTP revision rules, request normalization, and ownership decisions from P0. Identity and room-management routes, empty-room snapshots, and value validators exist. The room WebSocket protocol remains unimplemented.
 
-The repository now includes an infrastructure template: process configuration and shutdown, health routing, an embedded Vue/Pinia shell, SQLite ownership and migrations, development tooling, and a non-root application container. Identity, rooms, synchronization, player adapters, and the room protocol remain unimplemented. Unless explicitly identified as template behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
+The repository implements process configuration and shutdown, health routing, embedded Vue/Pinia identity and room screens, SQLite ownership and migrations, anonymous sessions, private invitations and memberships, serialized room management, tooling, and container packaging. Synchronization, player adapters, room sockets, retention cleanup, and automated recovery remain unimplemented. Unless explicitly identified as implemented behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
 
 OVS is a private, self-hosted web application for synchronized viewing. Each participant obtains and plays their own media. The Go server coordinates rooms and playback; it never carries video content or platform credentials.
 
@@ -192,6 +192,7 @@ If the host disconnects, preserve host ownership. After 15 seconds without a hos
 | `revision` | Durable, increasing room mutation counter |
 | `mediaGeneration` | Increases when the selected media changes, even to the same video |
 | `hostMemberId` | Host's room-scoped member ID |
+| `selfMemberId` | Authenticated caller's room-scoped member ID; permits self-leave without exposing identity IDs |
 | `settings` | Permission, synchronization, and waiting policy |
 | `media` | Validated local or Bilibili descriptor, or absent |
 | `playback` | Phase, position anchor, server time anchor, base rate, desired playback |
@@ -462,7 +463,7 @@ Room/media changes, active-tab lease loss, and disposal abort requests, invalida
 
 ### 9.1 HTTP API
 
-The template implements the health paths below. Application API and WebSocket paths remain proposed version-1 contracts and currently return 404. Require JSON bodies and bounded strict decoding for mutations. Reject unknown fields, duplicate keys, unsupported content types, and oversized inputs. Successful mutation responses include the resulting revision where applicable.
+The application implements the health paths and identity/room-management API below. Media and WebSocket routes remain proposed and return 404. Require JSON bodies and bounded strict decoding for mutations. Reject unknown fields, duplicate keys, unsupported content types, and oversized inputs. Successful mutation responses include the resulting revision where applicable.
 
 | Method and path | Purpose and authority |
 | --- | --- |
@@ -534,7 +535,7 @@ Use per-connection output limits of 64 frames and 256 KiB, whichever is reached 
 
 ### 10.1 Logical schema
 
-The following is the schema contract. The template implements only `schema_migrations` through its first ordered SQL migration. Application tables, indexes, and constraints remain unimplemented.
+The following is the schema contract. Migrations 0001–0003 implement the ledger, identities, sessions, rooms, memberships, invitations, and HTTP idempotency. Media, checkpoints, and command results remain proposed.
 
 | Table | Key fields and constraints |
 | --- | --- |
@@ -625,7 +626,7 @@ The SPA serves hashed assets with long immutable caching and the HTML entry with
 
 ### 12.3 Configuration
 
-Use a small environment/CLI surface; validate it before startup. The template implements `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`. Proxy trust, room limits, and retention variables remain proposed:
+Use a small environment/CLI surface; validate it before startup. The application implements `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, `OVS_LOG_LEVEL`, `OVS_MAX_ACTIVE_ROOMS`, and `OVS_MAX_ROOM_MEMBERS`. Proxy trust, socket limits, and retention variables remain proposed:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

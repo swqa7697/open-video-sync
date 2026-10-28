@@ -2,9 +2,24 @@
 
 OVS is a private, self-hosted application for synchronized viewing. Each participant supplies their own media. OVS carries control state only.
 
-This repository currently provides a development template. The template includes a Go HTTP server, an embedded Vue 3/TypeScript/Pinia shell, SQLite migrations, development tools, and container packaging.
-Identity, rooms, invitations, playback, and the room WebSocket protocol are not implemented. Bilibili and danmaku require the separate proof of concept described in [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept).
-The template does not complete the first application milestone or the [PRD](specs/PRD.md).
+This repository includes persistent anonymous identities and private rooms with invitation links and codes.
+Hosts can save room preferences, rotate invitations, remove participants, and close rooms. Participants can leave rooms.
+The Go application embeds the Vue frontend and stores identities, membership, and room settings in SQLite.
+Playback and the room WebSocket protocol are not implemented. Bilibili and danmaku require the separate proof of concept described in [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept).
+This intermediate stage does not complete the [PRD](specs/PRD.md).
+
+## Use identities and rooms
+
+Open OVS to restore or create your identity automatically. A display name is optional.
+Create a room with a title, or enter a private invitation code. Invitation links use `/join#invite=...`; the page removes the fragment before mounting components.
+Links and codes expire after seven days. Replacement invalidates both previous secrets. Removing a participant also invalidates previous invitations.
+Membership survives browser reload and server restart. Room pages use **Refresh room** to retrieve changes made by other participants.
+Host preferences are saved for later playback stages. They do not enable playback in this version.
+
+Sessions use a host-only HttpOnly cookie with a rolling 365-day expiry, renewed at most once daily on bootstrap.
+**Forget this identity** revokes the current session. Owned rooms may become inaccessible; ownership does not transfer.
+Cookies are scoped to the browser profile and OVS origin. Private profiles receive independent identities.
+Invitation secrets appear only when created or replaced. If a response is lost, retry the original request; replace the invitation to obtain new sharing details.
 
 ## Start development
 
@@ -30,9 +45,10 @@ make install
 make dev
 ```
 
-Open `http://127.0.0.1:8080` to view the embedded shell. The development command stores local data in ignored `data/`.
+Open `http://127.0.0.1:8080` to use the embedded application. The development command stores local data in ignored `data/`.
 For frontend hot reload, run `make dev-web` in another terminal and open `http://127.0.0.1:5173`.
-Vite+ proxies health and future API requests to the Go listener at `127.0.0.1:8080`.
+Vite+ proxies health and API requests to `127.0.0.1:8080`. The API proxy maps the exact development Origin to the backend Origin.
+Keep the default backend public origin when using this development proxy.
 
 Go embedding requires generated frontend files. Run `make web-build` before direct `go vet`, `go test`, or `go build` commands.
 The Make check, test, development, and build targets prepare these assets automatically.
@@ -56,7 +72,7 @@ Run `make help` to list the available targets.
 | `dev` | Run Go with loopback defaults and local storage |
 | `dev-web` | Run the Vite+ development server |
 | `browser-install` | Install the Chromium version selected by Playwright |
-| `test-e2e` | Build and check the embedded shell in Chromium over direct HTTP |
+| `test-e2e` | Build and check identity and room journeys in Chromium over direct HTTP |
 | `image` | Build the single application container |
 | `image-smoke` | Check the built image with an isolated persistent volume |
 | `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations |
@@ -97,7 +113,7 @@ OVS has no automated publication workflow. Pushing a tag does not publish an app
 
 ## Configuration
 
-The template implements these variables:
+The application implements these variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -105,21 +121,29 @@ The template implements these variables:
 | `OVS_DATA_DIR` | `/data` | SQLite database, sidecars, and application ownership lock |
 | `OVS_PUBLIC_ORIGIN` | Required | Canonical browser origin, such as `http://127.0.0.1:8080` |
 | `OVS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `OVS_MAX_ACTIVE_ROOMS` | `100` | Active room coordinator cap; 1–1,000 |
+| `OVS_MAX_ROOM_MEMBERS` | `32` | Membership cap; 1–32 |
 
 Use a lowercase host. Omit default ports and trailing slashes from the public origin.
-The other proposed DESIGN configuration variables are not implemented. Forwarding headers are not trusted.
+The remaining DESIGN configuration variables are not implemented. Forwarding headers are not trusted.
+The effective client address comes from the direct connection. Behind a proxy, address rate limits apply to the proxy address until trusted-proxy support is added.
 `build/ovs version` prints the build version. `build/ovs healthcheck` checks readiness using the configured listener.
 
 `GET /health/live` checks HTTP process availability. `GET /health/ready` checks startup completion and the SQLite connection.
-Both return `204` when successful. Readiness returns `503` on a database connection failure or shutdown.
+Both return `204` when successful. Readiness returns `503` on a database connection failure, a latched transaction failure, or shutdown.
+After a transaction failure, restore storage health and restart OVS. Automated storage recovery remains later work.
 Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA HTML.
 No production route upgrades to WebSocket before session and membership authorization exists.
 
 ## Storage and deployment
 
 SQLite uses WAL, foreign keys, a five-second busy timeout, and `synchronous=FULL`.
-The template uses one database connection. Domain write queues will be added with application services.
-Only the migration ledger exists. Add each DDL change as a new numbered SQL file under `migrations/`.
+The application uses one database connection and one writer with 128 pending transactions.
+Room coordinators admit 64 pending operations each and expire after one minute without operations.
+Durable operations have a five-second deadline. Saturated queues return `busy`.
+Defaults also cap stored rooms at 1,000 and owned rooms at 20 per identity. These bounds are resource controls, not capacity guarantees.
+Three migrations create the ledger, identities/sessions, and rooms/memberships/invitations/idempotency outcomes.
+Add each DDL change as a new numbered SQL file under `migrations/`.
 Startup checks applied checksums and rejects newer schemas. A second process cannot own the same data directory.
 
 See [deployment examples](deploy/README.md) for direct HTTP and external Caddy arrangements.
@@ -141,10 +165,13 @@ make test-e2e
 make image image-smoke
 ```
 
-The tests cover migration creation, upgrades, rollback, checksum rejection, ownership, routing, origin checks, shell lifecycle, and container persistence.
-The browser journey checks the template shell and readiness. The isolated WebSocket test checks transport setup only.
+The tests cover migration upgrades and rollback, identity continuity/expiry/reset, authorization, strict requests, private membership, invitation expiry/rotation, capacity races, serialized revisions, bounded queues, and secret exclusion.
+The browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
+Browser screenshots cover light/dark themes and 375/768/1440-pixel widths. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
+The isolated WebSocket test checks transport setup only.
 Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
-There is no synchronized playback, media transfer, platform credential handling, or live-platform test in this template.
+There is no synchronized playback, media transfer, platform credential handling, or live-platform test in this stage.
+Room expiry cleanup, automatic storage recovery, sockets, and playback remain later-stage work.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
 Linux/amd64 and Chromium were checked during scaffolding. macOS, other architectures, other browsers, TLS, and live Caddy topologies remain unverified.

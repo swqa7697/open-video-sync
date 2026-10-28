@@ -1,3 +1,2 @@
-// Package identity reserves the anonymous identity and OVS session boundary.
-// Identity services and persistence are not implemented.
+// Package identity owns anonymous identity, OVS session validity, and revocation.
 package identity
