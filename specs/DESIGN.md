@@ -431,7 +431,7 @@ Build an isolated prototype before finalizing the adapter. Keep prototype code a
 | Traffic boundary | Inspect requests, messages, storage, and logs with synthetic credential canaries |
 | Privileged bridge | Reject foreign windows/origins, malformed/oversized calls, arbitrary URLs/headers, stale handles/generations, unapproved redirects, and request floods; verify cancellation and disposal |
 
-Use current stable desktop Chromium, Firefox, and Safari with Tampermonkey as the initial validation matrix; record exact browser, manager, extension mode, and OS versions. A combination that cannot install the helper or satisfy its request/session requirements is unsupported until a compatible route is proven. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
+Require passing validation on current stable desktop Chromium and Firefox with Tampermonkey. Record exact browser, manager, extension mode, and OS versions. Both browsers must pass this gate before production integration; a missing or failing browser result keeps the gate incomplete. A combination that cannot install the helper or satisfy its request/session requirements is unsupported until a compatible route is proven. Safari is outside the roadmap. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
 
 The decision record must name the platform interfaces, helper permissions, request/header/cookie behavior, proven capabilities, missing optional capabilities, supported media classes, browser matrix, measured synchronization, and reproducible steps. If this approach fails, report Bilibili integration as blocked and revisit the design. Do not silently move execution to Bilibili pages, add a server media path, or declare a local-only release compliant.
 
@@ -690,10 +690,12 @@ Readiness should fail on sustained storage failure. Liveness should only report 
 | SQLite integration tests | Real constraints/transactions, migration upgrades, rollback, checkpoint recovery, ownership exclusion |
 | HTTP/WS integration tests | Cookie/CSRF/origin checks, cross-room isolation, bounded decoding, stale leases, slow clients, reconnect |
 | TypeScript tests with fake clock/player | Offset estimation, hysteresis, capability fallback, event feedback, canceled loads |
-| Real-browser tests | File selection and codec handling, autoplay, multiple tabs, room journeys, direct HTTP and HTTPS |
-| Bilibili live validation | Section 8 matrix with independent browser profiles; required release gate |
+| Real-browser tests | Required on desktop Chromium and Firefox: file selection and codec handling, autoplay, multiple tabs, room journeys, direct HTTP and HTTPS |
+| Bilibili live validation | Section 8 matrix on both desktop Chromium and Firefox with independent browser profiles; required release gate |
 | Packaging/operations tests | Embedded assets, non-root volume writes, restart, backup/restore, all Caddy topologies |
 | Network/load harness | Control latency, actual playback skew, failure recovery, room isolation under load |
+
+First-release acceptance requires passing room, local-playback, and synchronization journeys on current stable desktop Chromium and Firefox. Include a room with Chromium and Firefox participants to verify synchronization between browsers. Record exact browser/OS versions and tested codecs. Chromium-only results do not satisfy this requirement; missing or skipped Firefox checks remain release blockers. Safari is outside the roadmap; mobile support requires separate evidence.
 
 Prefer deterministic fake clocks and controlled connections over sleeps in logic tests. Use synthetic local media with rights to redistribute as fixtures. Ordinary tests must not require platform credentials, internet access, or a live user deployment. Explicit Bilibili validation complements fixtures; mocks cannot establish platform compatibility.
 
