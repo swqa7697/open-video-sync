@@ -6,13 +6,21 @@ test.describe('autoplay permission', () => {
   // DOM snapshots and callback resolution can activate a document. Observe setup through console events only.
   test('a browser denial requires an explicit local playback gesture', async ({
     browser,
+    browserName,
     baseURL,
   }, testInfo) => {
     test.setTimeout(30000);
     const fixture = await generatedVideo(browser, 10, true),
-      restricted = await browser
-        .browserType()
-        .launch({ args: ['--autoplay-policy=user-gesture-required'] });
+      restricted = await browser.browserType().launch(
+        browserName === 'firefox'
+          ? {
+              firefoxUserPrefs: {
+                'media.autoplay.default': 1,
+                'media.autoplay.blocking_policy': 0,
+              },
+            }
+          : { args: ['--autoplay-policy=user-gesture-required'] },
+      );
     const host = await browser.newContext(),
       guest = await restricted.newContext();
     try {
@@ -100,7 +108,12 @@ test.describe('autoplay permission', () => {
       await writeFile(
         testInfo.outputPath('autoplay-result.json'),
         JSON.stringify({
-          nativePolicy: 'user-gesture-required',
+          browserName,
+          browserVersion: restricted.version(),
+          nativePolicy:
+            browserName === 'firefox'
+              ? 'media.autoplay.default=1; media.autoplay.blocking_policy=0'
+              : 'user-gesture-required',
           source: 'generated VP8/Opus',
           permissionDenied: true,
           explicitEnableSucceeded: true,

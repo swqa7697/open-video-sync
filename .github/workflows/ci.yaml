@@ -34,7 +34,7 @@ jobs:
       - run: make check
       - run: make test test-race
       - run: make build
-      - run: pnpm --dir web exec playwright install --with-deps chromium
+      - run: pnpm --dir web exec playwright install --with-deps chromium firefox
       - run: make test-e2e
       - run: make image image-smoke
       - run: git diff --exit-code

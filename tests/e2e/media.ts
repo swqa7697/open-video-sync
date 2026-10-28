@@ -1,4 +1,4 @@
-import type { Browser } from '../../web/playwright-fixtures';
+import { chromium, type Browser, type Page } from '../../web/playwright-fixtures';
 
 function ebml(id: number, data: Uint8Array): Buffer {
   const size = data.length;
@@ -27,6 +27,16 @@ export async function generatedVideo(
   seconds = 30,
   audio = false,
 ): Promise<Buffer> {
+  // The source encoder is Chromium for every project. Firefox must decode the same bytes;
+  // its WebCodecs encoder availability must not determine playback coverage.
+  if (browser.browserType().name() !== 'chromium') {
+    const encoder = await chromium.launch();
+    try {
+      return await generatedVideo(encoder, seconds, audio);
+    } finally {
+      await encoder.close();
+    }
+  }
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -209,4 +219,22 @@ export async function generatedVideo(
   } finally {
     await context.close();
   }
+}
+
+// Read the source-frame pixels, independently of currentTime and the room target.
+export async function decodedFrame(page: Page): Promise<number> {
+  return page.locator('video').evaluate((video: HTMLVideoElement) => {
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return -1;
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('Canvas unavailable.');
+    ctx.drawImage(video, 0, 0, 640, 360);
+    let frame = 0;
+    for (let bit = 0; bit < 16; bit++) {
+      if (ctx.getImageData(bit * 32 + 16, 272, 1, 1).data[0]! > 128) frame |= 1 << bit;
+    }
+    return frame;
+  });
 }

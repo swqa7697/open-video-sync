@@ -254,7 +254,7 @@ test('three independent nearby trials observe decoded frames separately from con
         fixtureBytes: fixture.length,
         trials,
         limitations:
-          'Three independent foreground-document trials in separate headless Chromium processes on one host; VP8 without audio; canvas reads decoded displayed pixels and was calibrated at three paused source positions. No physical display/camera timing, injected impairment, cross-region, other browser, or release guarantee. Tails are sparse. Samples within trials are correlated. Not a before/after performance comparison.',
+          'Three independent foreground-document trials in separate headless processes of the named browser on one host; VP8 without audio, encoded with Chromium; canvas reads decoded displayed pixels and was calibrated at three paused source positions. No physical display/camera timing, injected impairment, cross-region, stable-browser, or release guarantee. Tails are sparse. Samples within trials are correlated. Not a before/after performance comparison.',
       },
       null,
       2,

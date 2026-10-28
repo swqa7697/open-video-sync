@@ -62,10 +62,10 @@ dev: web-build ## Run the Go server on loopback with local data
 dev-web: ## Run Vite+ with API and health proxying to Go
 	pnpm --dir web run dev
 
-browser-install: ## Install the pinned Playwright Chromium browser
-	pnpm --dir web exec playwright install chromium
+browser-install: ## Install the pinned Playwright Chromium and Firefox browsers
+	pnpm --dir web exec playwright install chromium firefox
 
-test-e2e: build ## Run Chromium against the production application
+test-e2e: build ## Run Chromium, Firefox, and mixed rooms against the production application
 	pnpm --dir web run test:e2e
 
 image: ## Build the single non-root application image

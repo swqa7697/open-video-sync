@@ -46,8 +46,10 @@ Playing rooms save progress every ten seconds. A crash can lose progress since t
 Storage write failure pauses clients and rejects mutations. Recovery uses bounded write retries, fresh room state, and explicit host play.
 Cleanup runs each minute in bounded batches. It removes expired retry records, invitations, and sessions.
 Rooms expire after 30 inactive days; active connections prevent deletion. Identity cleanup requires 365 inactive days and no session, ownership, or membership.
-Chromium VP8/WebM playback is checked with synthetic media; an Opus audio track checks autoplay permission handling.
-Other browsers, codecs, mobile suspension, physical displays, and impaired networks need separate evidence. OVS does not transcode unsupported files.
+Chromium and Firefox automation check synthetic VP8/WebM playback, including a room with both browsers.
+An Opus audio track checks each browser's native autoplay permission handling.
+Current stable browser releases, other codecs, mobile suspension, physical displays, and impaired networks need separate evidence.
+Safari is outside the roadmap. OVS does not transcode unsupported files.
 
 ## Start development
 
@@ -99,8 +101,8 @@ Run `make help` to list the available targets.
 | `build` | Produce `build/ovs`, the project license, and dependency notices |
 | `dev` | Run Go with loopback defaults and local storage |
 | `dev-web` | Run the Vite+ development server |
-| `browser-install` | Install the Chromium version selected by Playwright |
-| `test-e2e` | Check identities, rooms, local playback, and decoded-frame measurements in Chromium |
+| `browser-install` | Install the Chromium and Firefox versions selected by Playwright |
+| `test-e2e` | Check shared journeys and decoded-frame measurements in Chromium and Firefox, plus mixed-room playback |
 | `image` | Build the single application container |
 | `image-smoke` | Check the built image with an isolated persistent volume |
 | `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations |
@@ -198,17 +200,26 @@ make image image-smoke
 
 The tests cover migration upgrades and rollback, identity continuity/expiry/reset, authorization, strict requests, private membership, invitation expiry/rotation, capacity races, serialized revisions, bounded queues, and secret exclusion.
 Browser scenarios run serially because they share one server and its address-based admission budgets.
+The `chromium` and `firefox` projects run every shared scenario. The `chromium-firefox` project repeats the playback journey with one participant per browser.
+Both browser binaries are required: Chromium encodes the synthetic VP8/Opus source for every project, and each tested browser decodes those bytes locally.
+On Linux, install missing system libraries with `pnpm --dir web exec playwright install --with-deps chromium firefox`.
+After `make build`, select one project with `pnpm --dir web run test:e2e --project=firefox` or `--project=chromium-firefox`.
 The identity browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
 Browser screenshots cover light/dark themes and 375/768/1440-pixel widths. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
 Real WebSocket tests check admission, serialized HTTP/socket mutations, retry deduplication, stale/changed intents, lease replacement, and paused restart.
 Local player journeys cover matching, mismatch, unsupported decoding, replacement cancellation, play/pause/seek, reconnect, and tab ownership.
-Three independent timing trials read decoded source-frame pixels in separate foreground headless Chromium processes.
+Reconnect checks combine offline HTTP with explicit closure of the forwarded real room socket. Firefox offline emulation alone can leave an existing socket active.
+Both participants exercise permitted controls. Decoded source-frame pixels verify convergence after seek and reconnect, including the mixed room.
+Autoplay tests use native Chromium flags or Firefox preferences to require a local gesture before the default waiting barrier can release.
+Policy journeys cover waiting timeout, exclusion, buffering recovery, late joining, host loss, and explicit host return.
+Three independent timing trials per browser read decoded source-frame pixels in separate foreground headless processes.
 They report control application latency separately from frame skew, with calibration, uncertainty, and sparse-tail limits under `.misc/e2e/results/`.
 This method does not measure physical display presentation or establish cross-region acceptance.
 Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
-No video transfer or platform credential handling exists. Live Bilibili/danmaku validation remains required.
-Complete waiting policies, lifecycle/expiry recovery, automatic storage recovery, and release acceptance remain later-stage work.
+No video transfer or platform credential handling exists.
+Live Bilibili/helper and danmaku validation, HTTPS, current stable browser validation, and the full network/release matrix remain required gates.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
-Linux/amd64 and Chromium were checked during scaffolding. macOS, other architectures, other browsers, TLS, and live Caddy topologies remain unverified.
+Linux/amd64 browser automation covers Playwright-pinned Chromium and patched Firefox builds; it does not establish current stable browser acceptance.
+macOS, other architectures, TLS, and live Caddy topologies remain unverified.
 See [DESIGN](specs/DESIGN.md) for the remaining architecture, release gates, and acceptance matrix.

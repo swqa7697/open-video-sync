@@ -1,14 +1,16 @@
+import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../web/playwright-fixtures';
-import { generatedVideo } from './media';
+import { decodedFrame, generatedVideo } from './media';
 
 test('two independent local players match, play, seek, pause, reconnect, and transfer tab ownership', async ({
   page,
   browser,
+  guestBrowser,
   baseURL,
 }, testInfo) => {
   test.setTimeout(60000);
   const fixture = await generatedVideo(browser),
-    guest = await browser.newContext();
+    guest = await guestBrowser.newContext();
   const failures: string[] = [],
     frames: string[] = [];
   page.on('pageerror', (e) => failures.push(e.message));
@@ -23,6 +25,21 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     buffer: fixture,
   };
   try {
+    // Offline emulation can leave Firefox's existing WebSocket alive. Forward to the
+    // real server normally, then explicitly cut both sides and reject outage retries.
+    let socketAvailable = true;
+    let interruptSocket: (() => Promise<void>) | undefined;
+    await guest.routeWebSocket('**/ws/v1/rooms/*', async (socket) => {
+      if (!socketAvailable) {
+        await socket.close({ code: 1013, reason: 'Synthetic transport outage' });
+        return;
+      }
+      const server = socket.connectToServer();
+      interruptSocket = async () => {
+        await socket.close({ code: 1013, reason: 'Synthetic transport outage' });
+        await server.close();
+      };
+    });
     const other = await guest.newPage();
     other.on('pageerror', (e) => failures.push(e.message));
     await page.goto('/');
@@ -34,6 +51,11 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await other.goto(invitation);
     await other.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
+    await page
+      .getByRole('combobox', { name: 'Playback controls', exact: true })
+      .selectOption('everyone');
+    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Room updated.' })).toBeVisible();
     await page.getByLabel('Shared media label (optional)').fill('Synthetic video');
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveText('ready');
@@ -85,11 +107,18 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       ),
     );
     expect(Math.abs(positions[0]! - positions[1]!)).toBeLessThan(0.15);
+    const seekFrames = await Promise.all([decodedFrame(page), decodedFrame(other)]);
+    expect(Math.min(...seekFrames)).toBeGreaterThanOrEqual(300);
+    expect(Math.abs(seekFrames[0]! - seekFrames[1]!)).toBeLessThanOrEqual(3);
     // A connection drop keeps files in memory, recalibrates, and reconciles without replaying controls.
+    socketAvailable = false;
     await guest.setOffline(true);
+    if (!interruptSocket) throw new Error('The guest must have a real room socket before outage.');
+    await interruptSocket();
     await expect(
       other.getByRole('status').filter({ hasText: /Disconnected|uncertain/ }),
     ).toBeVisible({ timeout: 10000 });
+    socketAvailable = true;
     await guest.setOffline(false);
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible({
       timeout: 20000,
@@ -98,6 +127,39 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await expect
       .poll(() => other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
       .toBe(true);
+    // Both browser roles must control actual decoded playback after reconnect.
+    await other.getByLabel('Seek to seconds').fill('15');
+    await other.getByRole('button', { name: 'Seek together', exact: true }).click();
+    for (const player of [page, other])
+      await expect.poll(() => decodedFrame(player)).toBeGreaterThanOrEqual(450);
+    await other.getByRole('button', { name: 'Pause together', exact: true }).click();
+    for (const player of [page, other])
+      await expect
+        .poll(() => player.locator('video').evaluate((v) => (v as HTMLVideoElement).paused))
+        .toBe(true);
+    const recoveredFrames = await Promise.all([decodedFrame(page), decodedFrame(other)]);
+    expect(Math.abs(recoveredFrames[0]! - recoveredFrames[1]!)).toBeLessThanOrEqual(3);
+    await other.getByRole('button', { name: 'Play together', exact: true }).click();
+    for (const player of [page, other])
+      await expect.poll(() => decodedFrame(player)).toBeGreaterThan(Math.max(...recoveredFrames));
+    await writeFile(
+      testInfo.outputPath('playback-convergence.json'),
+      JSON.stringify(
+        {
+          origin: baseURL,
+          host: { name: browser.browserType().name(), version: browser.version() },
+          guest: { name: guestBrowser.browserType().name(), version: guestBrowser.version() },
+          hostSeekFrames: seekFrames,
+          guestSeekAfterReconnectFrames: recoveredFrames,
+          framesPerSecond: 30,
+          controlsFromBothParticipants: true,
+          reconnectFault: 'Offline HTTP plus explicit closure of the forwarded real room socket',
+          observation: 'Decoded source-frame pixels; no physical display timing.',
+        },
+        null,
+        2,
+      ) + '\n',
+    );
     const tab = await page.context().newPage();
     await tab.goto(roomURL);
     await expect(tab.getByRole('button', { name: 'Use this tab' })).toBeVisible();
