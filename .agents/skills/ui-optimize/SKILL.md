@@ -11,14 +11,59 @@ Work from this development checkout.
 
 Read [AGENTS.md](../../../AGENTS.md), [README](../../../README.md), and the relevant
 [PRD](../../../specs/PRD.md) and [DESIGN](../../../specs/DESIGN.md) contracts. Inspect the
-current implementation before choosing a target. The repository currently has a Vue shell
-and readiness status; rooms, playback, Bilibili, and danmaku remain proposed. Optimize an
-implemented surface without presenting a mock room or player as working functionality.
+current implementation and owning regressions before choosing a target. Optimize an
+implemented surface and distinguish verified behavior from proposed contracts; do not
+present a mock room, player, or platform adapter as working functionality.
+
+## Select available companion skills
+
+Discover companions from the current agent's available-skill catalog and invocation policies.
+Resolve each companion's `SKILL.md` through the catalog rather than a machine-specific path.
+Before using a companion, announce the exact canonical name, read the companion's instructions,
+and load supporting references only for the concrete subtask. Use `emil-design-eng` as the
+default design companion when available and permitted; select other companions by the work
+below rather than loading every frontend skill.
+
+| Companion | When to use | Role in this workflow |
+| --- | --- | --- |
+| `emil-design-eng` | Visual or interaction polish | Apply design and component guidance while inspecting the baseline and choosing focused changes. Use the required Before/After/Why table when reviewing UI code. |
+| `find-animation-opportunities` | Scoped interaction polish reveals a feedback gap or abrupt state change, or the user asks where motion could help | Assess the target read-only, gate candidates by frequency, purpose, speed, and function, and record both precise proposals and rejected candidates. No surviving proposal is a valid outcome. |
+| `animate` | Implementing a justified transition or feedback animation | Build the selected motion with existing tokens, interruption and exit behavior, reduced-motion handling, and pointer-capability gating. |
+| `remove-animations` | Existing motion makes the target feel slow or distracting | Remove or reduce unnecessary motion and clean up dependent visibility, focus, unmount timing, and orphaned code. Keep additions and retuning outside the subtraction phase. |
+| `animation-performance` | Motion stutters, drops frames, or needs a rendering-cost decision | Diagnose the cause from properties, drivers, and browser recordings before choosing a fix. Follow AGENTS.md for measured performance comparisons. |
+| `review-animations` | A focused review of existing or changed motion is requested and invocation policy permits | Review the scoped motion and report findings in the required format; use findings to guide implementation and browser verification. |
+| `improve-animations` | The task calls for a broader motion audit or implementation roadmap | Keep source analysis read-only and produce prioritized findings or scoped plans. A broad audit is unnecessary for a single transition. |
+| `mobile-native` | The target includes mobile viewport, touch, scroll, safe-area, or input behavior | Apply the relevant platform fixes and distinguish browser emulation from verification on real hardware. |
+| `apple-design` | Existing gesture, drag, swipe, sheet, or spring behavior needs physical continuity | Apply direct manipulation, velocity handoff, and interruption guidance while preserving OVS's visual language. |
+| `break-ui` | The task includes a dedicated worst-case data assessment | Exercise plausible, contract-bounded data at the owning boundary. Keep any comparison toggle development-only; ordinary long-text checks do not require a new harness. |
+
+These companions are optional. If a relevant companion is unavailable, note the limitation
+briefly and continue the core browser workflow without installing or copying skills.
+Automatic companion selection needs no separate request where invocation policy allows;
+honor explicit-only restrictions, including `disable-model-invocation` or
+`allow_implicit_invocation: false`. `prototype` and `pick-ui-library` require explicit user
+requests, including when another companion recommends invoking either name.
+
+Give each selected companion a concrete subtask, the user's existing scope and authorization,
+and repository constraints. Keep discovery, review, and audit phases read-only on application
+source. When the user already requested improvements, finish the advisory phase and resume
+authorized implementation under `ui-optimize` and the relevant implementation companion;
+an audit handoff alone does not complete a requested fix. For assessment-only requests,
+report findings without proceeding to implementation. Keep retained reports, plans, and
+recordings under `.misc/browser/reviews/<task>/` even when a companion suggests another
+artifact directory.
+
+Adapt companion examples to Vue Composition API and the existing component system. Prefer
+CSS, Vue transitions, or WAAPI when sufficient; React examples do not justify introducing
+React, a new component system, or a motion dependency. Reuse existing motion tokens. Keep
+playback commands and keyboard interactions immediate, and avoid decorative motion on
+frequent synchronization telemetry or position updates. Preserve keyboard access, focus,
+and useful feedback in reduced-motion and no-animation paths.
 
 ## Establish the target and baseline
 
 - Start with the user's reported problem and inspect its owning Vue component, styles,
-  store, regression, and browser journey. With no named surface, inspect the existing shell
+  store, regression, and browser journey. With no named surface, inspect the application
   and prioritize a concrete usability problem. Preserve the existing visual language and
   avoid unrelated redesigns or a new theme system.
 - Use the tools selected by the repository: Vue 3 Composition API, strict TypeScript,
@@ -26,14 +71,14 @@ implemented surface without presenting a mock room or player as working function
   and timer ownership outside serializable stores. Do not change dependency versions just
   to obtain a different browser rendering.
 - Check prerequisites in README. Use `make install` if dependencies need installation,
-  then `make browser-install` to install the Chromium version selected by locked Playwright.
+  then `make browser-install` to install the browsers selected by locked Playwright.
   Keep the same browser and dependencies throughout the comparison. Record their versions.
 - Run `make test-e2e` for the production application served by Go over direct HTTP. Inspect
   [playwright.config.ts](../../../web/playwright.config.ts),
   [playwright-fixtures.ts](../../../web/playwright-fixtures.ts), and the owning journey under
-  `tests/e2e/`. The current shell journey checks readiness and routing; it does not capture
-  visual baselines or exercise playback. Do not substitute a standalone preview for the
-  shipped application.
+  `tests/e2e/`. Reuse the journey that owns the target state and inspect existing screenshot
+  coverage before adding captures. Do not substitute a standalone preview for the shipped
+  application.
 - Capture the requested state in the real browser before editing. Use consistent viewports
   before and after; 1440×900 and 390×844 are useful desktop/mobile defaults, with 1024×768
   when compact desktop controls are relevant. Preserve the existing journey's coverage.
@@ -50,7 +95,8 @@ implemented surface without presenting a mock room or player as working function
 1. State the observed problem and an observable resolution: readable status text, reachable
    actions, visible keyboard focus, or controls that fit without horizontal clipping.
 2. Inspect the states relevant to that problem. Check hierarchy, spacing, contrast, long text,
-   scrolling, keyboard operation, focus, reduced motion, and status announcements. For
+   scrolling, keyboard operation, focus, reduced motion, and status announcements. Apply the
+   selected design or motion companion to the observed states before choosing edits. For
    implemented room/player surfaces, distinguish connection failure, media access failure,
    autoplay activation, readiness/waiting, and degraded synchronization. Do not invent these
    states in the shell merely to expand an optimization task.
@@ -92,9 +138,13 @@ make test-e2e
 ```
 
 Run `make image image-smoke` when packaging, embedded serving, or deployment behavior changes.
-After a final rendering edit, regenerate and inspect the affected screenshots. Update usage
-documentation when behavior changes; when CHANGELOG.md exists, follow its Unreleased format
-and describe the final user-visible result rather than internal iteration history.
+After a final rendering edit, regenerate and inspect the affected screenshots. For changed
+motion, also exercise entry/exit, rapid repetition or reversal, keyboard input, reduced
+motion, and relevant pointer types in the real browser. Still PNGs establish appearance,
+not timing or smoothness; use recordings or profiling for those claims and report any
+unverified device behavior. Update usage documentation when behavior changes; when
+CHANGELOG.md exists, follow its Unreleased format and describe the final user-visible
+result rather than internal iteration history.
 
 Report the visible changes, accessible links to representative before/after PNGs using the
 session's screenshot-access guidance, checks actually run, browser/version details, and
