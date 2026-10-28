@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/coder/websocket"
+
+	"github.com/swqa7697/open-video-sync/internal/contracts"
 )
 
 // Accept upgrades a browser connection after exact-origin validation.
@@ -26,6 +28,6 @@ func Accept(w http.ResponseWriter, r *http.Request, publicOrigin string) (*webso
 	if err != nil {
 		return nil, err
 	}
-	conn.SetReadLimit(64 << 10)
+	conn.SetReadLimit(contracts.MaxMessageBytes)
 	return conn, nil
 }

@@ -1,3 +1,3 @@
-// Package contracts reserves versioned wire validation and safe public errors.
-// The room protocol is not implemented. See specs/DESIGN.md before adding types.
+// Package contracts defines version-1 wire validation without authorization.
+// Application routes and the room protocol remain unimplemented. See specs/wire-v1.md.
 package contracts

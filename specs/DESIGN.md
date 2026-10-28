@@ -4,6 +4,8 @@
 
 This document defines the proposed first-release architecture for Open Video Sync (OVS). The [PRD](PRD.md) is the product source of truth. [AGENTS.md](../AGENTS.md) defines development guidelines.
 
+[Version-1 implementation contracts](wire-v1.md) define exact wire shapes, bounds, HTTP revision rules, request normalization, and ownership decisions from P0. Profile, settings, and descriptor validators exist; application routes and the room protocol remain unimplemented.
+
 The repository now includes an infrastructure template: process configuration and shutdown, health routing, an embedded Vue/Pinia shell, SQLite ownership and migrations, development tooling, and a non-root application container. Identity, rooms, synchronization, player adapters, and the room protocol remain unimplemented. Unless explicitly identified as template behavior, the contracts, defaults, deployment examples, and performance targets below remain design decisions. Exact dependency versions belong in manifests and lockfiles. See [README](../README.md) for available commands and validation limits.
 
 OVS is a private, self-hosted web application for synchronized viewing. Each participant obtains and plays their own media. The Go server coordinates rooms and playback; it never carries video content or platform credentials.
@@ -499,7 +501,7 @@ Use text JSON frames and a versioned envelope. Reject binary frames; do not enab
 }
 ```
 
-IDs above are illustrative. Production command IDs are browser-generated high-entropy identifiers using an HTTP-compatible random source such as `crypto.getRandomValues`. The connection is already bound to its room and identity; client frames cannot override either.
+IDs above are illustrative. Production IDs use the formats in [version-1 implementation contracts](wire-v1.md). Command IDs use `crypto.getRandomValues` for HTTP-compatible randomness. The connection is already bound to its room and identity; client frames cannot override either.
 
 | Direction | Message | Purpose |
 | --- | --- | --- |
@@ -637,7 +639,7 @@ Use a small environment/CLI surface; validate it before startup. The template im
 | `OVS_MAX_ROOM_MEMBERS` | `32` | Room membership/playback cap |
 | `OVS_ROOM_IDLE_TTL` | `720h` | Inactive-room retention |
 
-Remaining internal defaults stay in one validated configuration structure; expose more knobs only when operators need them. Changing the public origin can change browser identity scope. Serving OVS under a URL subpath is outside the initial deployment contract.
+Remaining internal defaults stay in one validated configuration structure; expose more knobs only when operators need them. [Version-1 implementation contracts](wire-v1.md#runtime-bounds-and-ownership-decisions) assign queue, deadline, clock, readiness, and effective-address bounds to their implementation packages. Changing the public origin can change browser identity scope. Serving OVS under a URL subpath is outside the initial deployment contract.
 
 ### 12.4 Deployment topologies
 
@@ -735,7 +737,7 @@ Foundation and local-media implementation can proceed while feasibility work is 
 Resolve these before first-release acceptance:
 
 - Which Bilibili interfaces, media loader, and Tampermonkey/browser combinations pass the proof of concept, and which media classes, session modes, and request permissions do they require?
-- Which SQLite driver, WebSocket library, browser hash implementation, and dependency versions meet deployment and maintenance needs?
+- Which browser hash implementation meets HTTP compatibility and maintenance needs? SQLite and WebSocket libraries are selected in §12.2 and pinned in `go.mod`.
 - Do the measured adapters meet the proposed timing targets, especially without rate control or reliable buffering events?
 - Which browser/OS/codec combinations and image architectures are supported based on actual validation?
 - Are the proposed room limits, invite lifetimes, identity expiry, and host-loss behavior appropriate after user testing?

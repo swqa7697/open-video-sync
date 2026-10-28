@@ -143,6 +143,7 @@ make image image-smoke
 
 The tests cover migration creation, upgrades, rollback, checksum rejection, ownership, routing, origin checks, shell lifecycle, and container persistence.
 The browser journey checks the template shell and readiness. The isolated WebSocket test checks transport setup only.
+Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
 There is no synchronized playback, media transfer, platform credential handling, or live-platform test in this template.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
