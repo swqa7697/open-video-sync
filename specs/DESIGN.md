@@ -21,7 +21,7 @@ OVS is a private, self-hosted web application for synchronized viewing. Each par
 | Host preferences | Server-enforced controller policy, drift correction, and waiting rules | Host and participant authorization scenarios |
 | Browser player | Common adapter contract with explicit capability reporting | Real-browser local and platform adapter journeys |
 | Synchronized playback | Server-owned timeline, clock estimation, reconciliation | Separate control-response and playback-skew measurements |
-| Bilibili and danmaku | Browser-only adapter selected after a separate proof of concept | Passing Bilibili gate in section 8 |
+| Bilibili and danmaku | OVS player with an OVS-page-only Tampermonkey helper; subject to proof of concept | Passing Bilibili gate in section 8 |
 | Local files | Browser file selection, local playback, metadata matching | Matching, mismatch, reselection, and unsupported-codec cases |
 | Browser-only platform sessions | Platform login remains in platform/browser context | Synthetic credential-canary inspection at the OVS boundary |
 | Existing access rights | Each participant resolves and plays media independently | Access failure affects that participant without credential sharing |
@@ -50,11 +50,15 @@ flowchart LR
     S <--> D[(SQLite in /data)]
     A -->|Read local file| LA[Participant A file]
     B -->|Read local file| LB[Participant B file]
-    A <-->|Direct playback and platform session| V[Bilibili]
-    B <-->|Direct playback and platform session| V
+    A <-->|Local player data| TA[Participant A Tampermonkey helper]
+    B <-->|Local player data| TB[Participant B Tampermonkey helper]
+    TA <-->|Direct browser requests| V[Bilibili API and media CDN]
+    TB <-->|Direct browser requests| V
 ```
 
 Browsers connect directly to Go when Caddy is absent. There is deliberately no server-to-platform media path and no browser-to-browser media path.
+
+Each helper runs only on its participant's OVS page. Bilibili video and danmaku render in that page's OVS player; no Bilibili tab or iframe participates in playback. Tampermonkey is a participant-side dependency for Bilibili, not another application service.
 
 ### 2.1 Backend structure
 
@@ -95,6 +99,8 @@ Use Vue 3 single-file components with Composition API and `<script setup lang="t
 | `web/src/features/rooms/` | Create/join, roster, host controls, invitation management |
 | `web/src/features/player/` | Player shell, media selection, readiness and error presentation |
 | `web/src/player/adapters/` | Local-file and validated Bilibili adapters |
+| `web/src/player/bilibili/` | Typed helper bridge, media loader, danmaku decoding/rendering |
+| `userscripts/` | Proposed Bilibili helper source and instance-scoped distribution template |
 | `web/src/sync/` | Clock estimator, timeline projection, drift controller, event suppression |
 | `web/src/transport/` | HTTP client, WebSocket state machine, wire decoding |
 | `web/src/stores/` | Identity, authoritative room snapshot, connection status, local preferences |
@@ -105,10 +111,11 @@ The client sync engine runs outside Vue components. Components dispatch user int
 
 ## 3. Trust boundaries and data ownership
 
-| Data | Browser | OVS memory/SQLite | Other room participants |
+| Data | Browser | OVS server memory/SQLite | Other room participants |
 | --- | --- | --- | --- |
 | Local video bytes and file path | Local file/player only | Never | Never |
-| Platform cookies, login tokens, signed playback URLs | Platform context or adapter memory only | Never | Never |
+| Platform cookies and login tokens | Browser/extension-managed platform session only; no export to page code | Never | Never |
+| Signed playback URLs | Helper runtime memory only | Never | Never |
 | Platform media bytes and danmaku payloads | Loaded directly from platform | Never | Never through OVS |
 | Bilibili stable video/part identifiers | Yes | Current descriptor | Yes |
 | Local sampled fingerprint, size, duration | Yes | Current descriptor and readiness metadata | Yes, within room |
@@ -370,22 +377,33 @@ Container extensions do not prove codec support. Probe with the actual player an
 
 ## 8. Bilibili integration and required proof of concept
 
-### 8.1 Evidence and decision boundary
+### 8.1 Evidence and selected direction
 
 The [official Bilibili external-player documentation](https://player.bilibili.com/) documents stable media identifiers and initial settings, including part selection, initial position, autoplay, and danmaku. That documentation does not establish the complete runtime command/event API required by OVS. An iframe that plays a video is not sufficient evidence of a usable synchronization adapter.
 
-Cross-origin iframe internals are not directly accessible to the OVS page. Cross-origin messages require a cooperating receiver and validation of origin and source. These browser boundaries are documented by [MDN same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy) and [MDN postMessage](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage). Inferring an integration contract from query parameters would be unsupported.
+Cross-origin iframe internals are not directly accessible to the OVS page under the [same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy). A userscript running only on OVS does not gain access to the Bilibili frame's DOM. Adding a script inside that frame or controlling a separate Bilibili tab would violate the selected execution scope.
 
-### 8.2 Candidate approaches
+Use an **OVS-page-only Tampermonkey helper plus OVS's own player** as the proposed integration. Tampermonkey documents [privileged HTTP requests](https://www.tampermonkey.net/documentation.php?ext=d2&q=GM_xmlhttpRequest), including binary responses, cancellation, and browser-dependent cookie/header behavior. This supplies a plausible browser-local transport for platform metadata, media, and danmaku. OVS owns the video element, so playback control and actual position observations need no undocumented iframe messaging API.
 
-| Approach | What must be proven | Decision |
-| --- | --- | --- |
-| Official embedded player with supported messaging/SDK | Runtime controls, accurate observations, danmaku, session behavior | Preferred if it passes all required checks |
-| Browser-side platform resolution plus local player | Permitted browser access, CORS, session isolation, direct media loading, danmaku | Consider only with reproducible evidence and maintained interfaces |
-| Browser extension or companion integration | Additional installation and trust model | Requires a separate product decision; not an assumed dependency |
-| OVS backend proxy, credential forwarding, or shared signed URL | Violates PRD boundaries | Rejected |
+This is an architectural feasibility assessment, not a passing live integration result. Extension permissions do not guarantee Bilibili API availability, session reuse, accepted CDN requests, codecs, or access rights. No maintained official arbitrary-origin playback-resolution contract has been established by this investigation. Record the exact platform interfaces and their maintenance risks in the proof of concept; do not infer compatibility from a successful metadata request.
 
-Do not defeat browser security, copy platform cookies into OVS, or add a backend resolver to make a failed browser approach appear to work.
+| Approach | Decision |
+| --- | --- |
+| Tampermonkey-assisted resolution and media loading into OVS player | Selected for prototype and subsequent implementation if the gate passes |
+| Official iframe or a script on Bilibili pages | Not the selected player/execution model; iframe parameters do not prove runtime control |
+| OVS backend resolver/proxy, cookie forwarding, shared signed URLs, or access bypass | Rejected by the product boundaries |
+
+### 8.2 Execution scope, installation, and trust
+
+Each Bilibili participant installs Tampermonkey and the versioned OVS helper for their chosen instance. Local playback remains extension-free. Installation guidance must explain the platform request permissions, supported browser/manager versions, and trust in the OVS origin and helper publisher.
+
+- Generate instance-specific matching rules from validated `OVS_PUBLIC_ORIGIN`, never an arbitrary request `Host`. Use narrow [`@match`](https://www.tampermonkey.net/documentation.php?q=include) rules and [`@noframes`](https://www.tampermonkey.net/documentation.php?q=noframes). Check the exact scheme, host, and port at runtime before registering the bridge or making requests; match patterns alone are not the origin check. No global URL match or Bilibili-page match is permitted.
+- Grant only the required request API. Limit [`@connect`](https://www.tampermonkey.net/documentation.php?q=connect) to validated API/danmaku/CDN domains and enforce narrower HTTPS host/path rules in code. No `@connect *`, arbitrary URL/header forwarding, cookie-export API, or remote executable platform code. Approve new destinations through a reviewed helper update, not a page-supplied allowlist.
+- Keep privileged networking in the userscript sandbox. Use the browser/manager's existing platform session where supported; never ask users to paste cookies or tokens or export them to OVS JavaScript. Users may sign in normally on Bilibili and return to OVS; the script does not run there, and playback needs no Bilibili tab left open. Missing session access produces a local access error.
+- Provide a version/capability handshake and explicit states for missing helper, incompatible version, denied permission, expired access, and unsupported browser. These states keep the participant unready. Changing the OVS origin requires updating the installation scope.
+- Distribute reviewable, versioned helper code with the application release, preserve instance restrictions on updates, and document the update source. No runtime code downloads or automatic permission expansion. Distribution and installation commands remain proposed until implemented and verified.
+
+The helper expands the privileges available to a trusted OVS page. A bridge nonce or same-origin check cannot defend against malicious JavaScript from that same origin. Plain HTTP also exposes page code to network modification. Direct HTTP remains required and must pass the gate; do not claim credential protection against a compromised OVS page or helper. This extends the trust model in section 11 without adding a backend credential path.
 
 ### 8.3 Proof-of-concept matrix
 
@@ -393,30 +411,50 @@ Build an isolated prototype before finalizing the adapter. Keep prototype code a
 
 | Area | Required experiment and result |
 | --- | --- |
+| Scope and installation | Helper activates on the configured HTTP/HTTPS OVS origin only; stays inactive on Bilibili, other origins/ports, and frames; missing/disabled/outdated helper gives actionable status |
+| Platform resolution | Resolve ordinary video and multipart identity using named, reproducible interfaces; distinguish available quality/access from unsupported or changed API behavior |
+| Media delivery | Play sustained audio/video through the helper and OVS player; prove range/segment handling, seeking, bounded memory, URL expiry/refresh, CDN redirect rules, and codec support |
 | Playback commands | Repeated play/pause/seek, rapid conflicting actions, and seek near end have observable outcomes |
 | State reporting | Measure position resolution, event latency, duration, ended, and user-control detection |
 | Synchronization | Two independent browser profiles converge under the section 13 network profiles |
 | Danmaku | Loads and displays; follows pause, forward/backward seek, reload, and selected part |
-| Session isolation | Logged-in and logged-out profiles remain independent; OVS receives no session data |
+| Session isolation | Logged-in/out profiles and distinct accounts remain independent, including login expiry/logout; no cookies/tokens cross the helper bridge and no credentials or signed URLs reach OVS server |
 | Access limitations | Unsupported, deleted, login-required, region-restricted, and unavailable media fail visibly per participant |
-| Browser policy | Test autoplay, third-party cookies blocked, storage partitioning, fullscreen, and background/resume |
+| Browser policy | Test autoplay, third-party cookies blocked, storage partitioning, manager permissions, CSP, fullscreen, and background/resume; do not assume the extension neutralizes these policies |
 | Transport mode | Direct HTTP OVS and HTTPS OVS work without a server media path |
 | Lifecycle | Disposal, room changes, and late callbacks do not leak state or create duplicate players |
 | Traffic boundary | Inspect requests, messages, storage, and logs with synthetic credential canaries |
+| Privileged bridge | Reject foreign windows/origins, malformed/oversized calls, arbitrary URLs/headers, stale handles/generations, unapproved redirects, and request floods; verify cancellation and disposal |
 
-Use current stable desktop Chromium, Firefox, and Safari as the initial validation matrix; record exact browser/OS versions in results. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
+Use current stable desktop Chromium, Firefox, and Safari with Tampermonkey as the initial validation matrix; record exact browser, manager, extension mode, and OS versions. A combination that cannot install the helper or satisfy its request/session requirements is unsupported until a compatible route is proven. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
 
-The decision record must name the selected interface, proven capabilities, missing optional capabilities, supported media classes, browser matrix, measured synchronization, and reproducible steps. If no candidate passes, report the integration as blocked and request a product decision. Do not substitute a player without programmatic control or declare a local-only release compliant.
+The decision record must name the platform interfaces, helper permissions, request/header/cookie behavior, proven capabilities, missing optional capabilities, supported media classes, browser matrix, measured synchronization, and reproducible steps. If this approach fails, report Bilibili integration as blocked and revisit the design. Do not silently move execution to Bilibili pages, add a server media path, or declare a local-only release compliant.
 
 ### 8.4 Media and danmaku data flow
 
-Parse pasted Bilibili URLs in the browser. Share only a normalized stable descriptor such as `{kind: "bilibili", bvid, cid, part, durationMs}`. Resolve the exact part in the browser before publishing it. Validate identifier syntax and field bounds again on the server. The server does not fetch the URL to validate access.
+Parse pasted Bilibili URLs in the browser. The helper resolves the exact part before the host publishes a normalized stable descriptor such as `{kind: "bilibili", bvid, cid, part, durationMs}`. Validate identifier syntax and field bounds again on the server. The server does not fetch the URL to validate access.
 
-Do not send the original URL, query string, redirect target, cookies, or signed stream location to OVS. Short URLs without an independently resolvable canonical ID require the user to open the platform and copy the canonical video URL. Do not introduce a server redirect-expansion endpoint.
+Do not send the original URL, query string, redirect target, cookies, or signed stream location to the OVS server or other participants. Short URLs without an independently resolvable canonical ID require the user to open the platform and copy the canonical video URL. Do not introduce a server redirect-expansion endpoint.
 
-Each participant independently loads the descriptor with their own available access. Different quality selections are allowed only when they represent the same timeline and duration. Report incompatible duration or part identity as mismatch. Stream URL refresh stays inside the adapter and must preserve media generation and position.
+Each participant's helper independently resolves that descriptor using their own available access. Keep provider responses and signed URLs in helper runtime memory. Return an opaque, tab-local media handle and validated track metadata to the adapter. Different quality selections are allowed only when they represent the same timeline and duration. Report incompatible duration or part identity as mismatch. Refresh expired stream URLs within the helper, preserve position and generation, and fail visibly when access is lost.
 
-Prefer danmaku rendering inside the validated platform player. If a separate renderer is required, fetch directly in the browser, bound parsing/rendering work, treat text as text, and index by media time. Rebuild the visible window after seeks. Danmaku visibility, density, and style remain local preferences. OVS does not relay, persist, or submit danmaku.
+The helper fetches bounded media segments or byte ranges directly from approved platform CDNs and hands bytes to the local adapter. Resolving a URL alone is insufficient: ordinary `fetch` or `<video src>` requests do not inherit Tampermonkey's headers or permissions. The prototype must establish the actual media request path, including required headers, redirects, cookies, and range responses. Reject unsupported access instead of disabling browser protections or adding a CORS proxy.
+
+Use an OVS-owned `HTMLVideoElement` with a compatible streaming loader. For separate audio/video tracks, [Media Source Extensions](https://developer.mozilla.org/en-US/docs/Web/API/Media_Source_Extensions_API) supplies the browser playback mechanism; the loader must handle track selection, initialization/index data, synchronized appends, seeks, buffer eviction, and backpressure. Choose and pin a loader only after demonstrating its custom request integration. Do not download a whole video into a Blob before playback, transcode, or persist media. Transient browser playback buffers are local consumption, never an OVS server or peer relay.
+
+The adapter implements section 7 controls and observations against the actual video element. It retains intent/event suppression, autoplay handling, active-tab lease behavior, and capability reporting. Native element access removes the iframe observation gap but does not itself prove the timing targets.
+
+Fetch danmaku through the helper for the selected `cid` and render a bounded, decoded timeline in the OVS player overlay. Follow observed media time, pause, rate corrections, and seeks; rebuild the visible window after a seek or part change. Render text safely, without executing advanced-script payloads. Visibility, density, and style remain local preferences. A fetch/decode failure is visible and distinct from intentionally hiding danmaku; successful danmaku loading/display remains a release gate. OVS does not relay, persist, or submit danmaku.
+
+### 8.5 Browser-local bridge and lifecycle
+
+Keep the bridge separate from HTTP/WS room messages. Expose typed operations for handshake, stable-ID resolution, media-handle loading, bounded track reads, danmaku reads, cancellation, and disposal. The page may supply IDs, local quality choices, track handles, and bounded ranges; it cannot supply target URLs, cookies, arbitrary headers, or HTTP methods. The helper derives requests from validated platform responses and checks destinations before dispatch, including redirects. An approved initial host is insufficient justification for following an unknown redirect.
+
+Bootstrap with exact-origin, same-window validation using [postMessage](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage), then bind a dedicated channel to the document/player instance. Version all messages and validate types, sizes, request IDs, media generation, and handle ownership on both sides. Define finite deadlines, retry limits, concurrency, outstanding-byte budgets, and maximum response sizes before implementation; reject overload rather than queue indefinitely. Apply an independent deadline even when the manager's request mode lacks a working timeout.
+
+Return only allowlisted metadata, bounded binary chunks/danmaku data, and sanitized error codes. Never expose raw response headers, platform account objects, or provider errors. These local payloads must not enter Pinia persistence, diagnostics, room command serializers, or server logs. Server descriptors remain unchanged.
+
+Room/media changes, active-tab lease loss, and disposal abort requests, invalidate handles, stop append/render work, clear buffers and overlays, revoke object URLs, and close channels. Late results must match the current generation before use. Retain no platform payloads or credentials in userscript storage. Browser-local handles are lifecycle controls, not a security boundary against a malicious OVS origin.
 
 ## 9. HTTP and WebSocket contracts
 
@@ -547,7 +585,7 @@ The threat model covers untrusted guests, guessed invitations, forged room comma
 - Validate `Host` and WebSocket `Origin` against the configured public origin. Reject missing/foreign WebSocket origins in the browser endpoint.
 - Require exact-origin checks and a session-bound CSRF token on authenticated HTTP mutations. Bootstrap has no preexisting CSRF token, so require same-origin JSON requests and rate limits. Derive WS authorization from the HttpOnly cookie plus strict origin validation.
 - Trust proxy headers only from configured proxy CIDRs. Use the configured public origin for redirects, cookie security, and invitation URLs.
-- Serve a CSP restricted to OVS assets and the exact platform origins required by the proven adapter. Avoid inline scripts and arbitrary frame/connect origins. Restrict framing of OVS itself with `frame-ancestors 'none'`.
+- Serve a CSP restricted to OVS assets and the resources required by the proven adapter, including narrowly scoped media/worker `blob:` use if needed. No Bilibili iframe is required. Extension requests have a separate permission boundary: CSP does not replace the helper's destination checks. Avoid inline scripts and arbitrary frame/connect origins. Restrict framing of OVS itself with `frame-ancestors 'none'`.
 - Set `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`. Do not let invitation fragments reach provider components or external links.
 - Render titles, names, danmaku, and error details as text. Validate incoming platform messages by exact origin, source window, type, and shape.
 - Do not log cookies, invitation bodies, CSRF tokens, raw media inputs, signed URLs, or raw provider failures. Disable request-body logging at application and documented reverse-proxy boundaries.
@@ -564,6 +602,8 @@ Plain HTTP remains supported, including LAN addresses. It provides no transport 
 The landing page automatically restores identity and offers create room, join by code, and recent authorized rooms. Display-name entry is optional.
 
 The room page shows the player, room title, connection/sync status, participant readiness, and controls available to the current role. Host settings and invitation management are separate from ordinary playback controls. Show concrete states such as “Choose the same file,” “Enable playback,” “Waiting for two participants,” or “Platform access unavailable.”
+
+Selecting Bilibili shows helper installation/compatibility status for that participant. Once available, users watch and control video and danmaku entirely inside the OVS player. Offer local retry and normal Bilibili sign-in guidance when needed; never request pasted credentials or switch playback to a platform tab as a fallback.
 
 Keep media access errors separate from transport failure and drift. A connected participant can still lack access to a video. A paused waiting room is not a disconnected room. Show degraded synchronization without claiming precision the adapter cannot measure.
 
@@ -684,17 +724,17 @@ If cross-region targets still fail because of transport blocking, record the fai
 
 | Milestone | Deliverable | Exit condition |
 | --- | --- | --- |
-| 0. Bilibili feasibility | Isolated proof of concept and decision record | Runtime control, observations, danmaku, sessions, and transport modes proven |
+| 0. Bilibili feasibility | OVS-page-only Tampermonkey/player prototype and decision record | Media delivery, control, observations, danmaku, sessions, scope, and HTTP/HTTPS modes proven |
 | 1. Foundation | Go/Vue scaffolding, embedded build, SQLite migrations, identity, room/invite lifecycle | Fresh container and persistence/authorization scenarios pass |
 | 2. Local synchronization | Local adapter, matching, room coordinator, WS, clocks, drift correction | Two independent browsers synchronize and reconnect safely |
 | 3. Policies and platform | Waiting, permissions, lifecycle edges, proven Bilibili adapter and danmaku | Complete room journeys and credential-boundary checks pass |
 | 4. Deployment and acceptance | Caddy examples, backup/restore, impairment/load tests, user documentation | PRD matrix passes with recorded browser/network limitations |
 
-Foundation and local-media implementation can proceed while feasibility work is unresolved. Production Bilibili architecture must not be finalized before milestone 0 passes.
+Foundation and local-media implementation can proceed while feasibility work is unresolved. The Tampermonkey-assisted OVS player is the selected direction; production adapter details and supported browser combinations must not be finalized before milestone 0 passes.
 
 Resolve these before first-release acceptance:
 
-- Which Bilibili integration contract passes the proof of concept, and which media classes and browser modes does it actually support?
+- Which Bilibili interfaces, media loader, and Tampermonkey/browser combinations pass the proof of concept, and which media classes, session modes, and request permissions do they require?
 - Which SQLite driver, WebSocket library, browser hash implementation, and dependency versions meet deployment and maintenance needs?
 - Do the measured adapters meet the proposed timing targets, especially without rate control or reliable buffering events?
 - Which browser/OS/codec combinations and image architectures are supported based on actual validation?

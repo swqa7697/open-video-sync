@@ -41,6 +41,9 @@ Open Video Sync (OVS) is a private, self-hosted web tool that lets users watch v
 - Player Adapters: Define a common interface for loading media, playback controls, position queries, and state events.
   - Declare optional capabilities such as playback-rate changes and buffering detection
 - Local Files: Play user-selected files locally in the browser -- exchange media-matching metadata and playback state only
+- Bilibili Integration: Use a Tampermonkey companion userscript on the OVS page to access Bilibili from each participant's browser; watch video and danmaku in the OVS page's own player
+  - Each Bilibili participant installs the helper; local-file playback does not require it
+  - The helper runs only on explicitly configured OVS pages, never on Bilibili pages or embedded frames
 - Platform Sessions: Leave video-platform authentication and credentials on the participant's device
   - Exclude cookies, login tokens, and credential-bearing playback URLs from synchronization messages
-- **Bilibili Validation**: Before finalizing the integration approach, verify playback control, state reporting, danmaku, and platform-session behavior in a separate proof of concept
+- **Bilibili Validation**: Before finalizing the Tampermonkey-assisted adapter, verify direct browser media delivery, playback control, state reporting, danmaku, and platform-session behavior in a separate proof of concept on HTTP and HTTPS OVS pages
