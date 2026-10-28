@@ -61,8 +61,8 @@ defineProps<{ disabled: boolean }>();
       buffers</label
     >
     <p class="hint">
-      Startup waiting and drift correction are available. Buffering and late-join policies remain in
-      development.
+      Changes to waiting rules pause the room. Other preferences preserve playback. A wait timeout
+      requires explicit host action; playback does not resume automatically.
     </p>
   </fieldset>
 </template>

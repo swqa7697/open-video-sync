@@ -18,6 +18,7 @@ export interface Member {
   role: 'host' | 'participant';
   presence: 'offline' | 'connected';
   playbackActive: boolean;
+  playbackEligible: boolean;
   excludedFromWaiting: boolean;
   readiness: Readiness | null;
 }
@@ -195,12 +196,14 @@ export function decodeSnapshot(value: unknown): Snapshot {
       'role',
       'presence',
       'playbackActive',
+      'playbackEligible',
       'excludedFromWaiting',
       'readiness',
     ]);
     if (
       !['offline', 'connected'].includes(text(m.presence)) ||
       typeof m.playbackActive !== 'boolean' ||
+      typeof m.playbackEligible !== 'boolean' ||
       typeof m.excludedFromWaiting !== 'boolean'
     )
       throw new Error('Invalid member.');
@@ -212,6 +215,7 @@ export function decodeSnapshot(value: unknown): Snapshot {
       role: role(m.role),
       presence: m.presence as Member['presence'],
       playbackActive: m.playbackActive,
+      playbackEligible: m.playbackEligible,
       excludedFromWaiting: m.excludedFromWaiting,
       readiness: m.readiness === null ? null : decodeReadiness(m.readiness),
     };

@@ -85,11 +85,13 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	if err != nil {
 		return err
 	}
-	defer roomService.Close()
+	defer func() { err = errors.Join(err, roomService.Close()) }()
 	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}
+	identities.OnRevoked = roomService.RevokeSession
 	api := transport.NewAPI(cfg.origin.String(), identities).WithRooms(roomService)
+	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)
 	server := &http.Server{
-		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, ws.NewHandler(cfg.origin.String(), identities, roomService)),
+		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, sockets),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -111,10 +113,14 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	case <-ctx.Done():
 		stopping.Store(true)
-		roomService.Close()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		shutdownErr := server.Shutdown(shutdown)
+		httpStopped := make(chan error, 1)
+		socketsStopped := make(chan error, 1)
+		go func() { httpStopped <- server.Shutdown(shutdown) }()
+		go func() { socketsStopped <- sockets.Shutdown(shutdown) }()
+		roomErr := roomService.CloseContext(shutdown)
+		shutdownErr := errors.Join(roomErr, <-httpStopped, <-socketsStopped)
 		if shutdownErr != nil {
 			shutdownErr = errors.Join(shutdownErr, server.Close())
 		}

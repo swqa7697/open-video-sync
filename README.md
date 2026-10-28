@@ -33,9 +33,19 @@ Volume and mute remain local. Playback starts muted. If a browser blocks playbac
 A disconnected browser pauses after five seconds without server liveness, reconnects, obtains state, and recalibrates its clock.
 An uncertain command can be checked with its original ID; controls are never queued for offline replay.
 
-Startup waiting requires active participants to report current readiness. Full buffering, late-join, and exclusion policies remain planned.
-For the Stage 2 development journey, select **Do not wait**. This intermediate milestone does not complete the default waiting-policy acceptance.
+The default **All participants** policy waits for the active playback cohort, including the host.
+Each participant must select matching media and allow playback. Seeking during waiting replaces the target and keeps play intent.
+Buffering for at least 750 ms pauses the room at its authoritative position. Playback resumes after one second of stable readiness.
+The host can exclude a participant from waiting for the current media. Exclusion does not grant media access.
+Waiting times out paused and requires explicit host action. Changes to waiting rules also pause the room.
+Late joiners either catch up when ready or wait for the next explicit play, according to the host preference.
+Disconnected required participants retain a 15-second grace. Host absence after that grace pauses playback without transferring ownership.
+Only the returning host can restart playback after host loss. Other room preferences preserve playback.
 Reloading requires local file selection again. Server restart restores the saved checkpoint paused, with a new room epoch.
+Playing rooms save progress every ten seconds. A crash can lose progress since the last checkpoint; accepted durable commands remain recorded.
+Storage write failure pauses clients and rejects mutations. Recovery uses bounded write retries, fresh room state, and explicit host play.
+Cleanup runs each minute in bounded batches. It removes expired retry records, invitations, and sessions.
+Rooms expire after 30 inactive days; active connections prevent deletion. Identity cleanup requires 365 inactive days and no session, ownership, or membership.
 Chromium VP8/WebM playback is checked with synthetic media; an Opus audio track checks autoplay permission handling.
 Other browsers, codecs, mobile suspension, physical displays, and impaired networks need separate evidence. OVS does not transcode unsupported files.
 

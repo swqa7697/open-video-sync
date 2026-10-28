@@ -100,6 +100,7 @@ type RosterMember struct {
 	Role                string               `json:"role"`
 	Presence            string               `json:"presence"`
 	PlaybackActive      bool                 `json:"playbackActive"`
+	PlaybackEligible    bool                 `json:"playbackEligible"`
 	ExcludedFromWaiting bool                 `json:"excludedFromWaiting"`
 	Readiness           *contracts.Readiness `json:"readiness"`
 }

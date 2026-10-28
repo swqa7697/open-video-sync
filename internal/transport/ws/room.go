@@ -24,6 +24,7 @@ type output struct {
 	queue   []outgoing
 	bytes   int
 	closing bool
+	closeAt time.Time
 	wake    chan struct{}
 }
 
@@ -53,6 +54,7 @@ func (o *output) Offer(kind, epoch string, payload any) bool {
 	}
 	if len(o.queue) >= 64 || o.bytes+len(b)+200 > 256<<10 {
 		o.closing = true
+		o.closeAt = time.Now()
 		o.signal()
 		return false
 	}
@@ -61,7 +63,15 @@ func (o *output) Offer(kind, epoch string, payload any) bool {
 	o.signal()
 	return true
 }
-func (o *output) Close() { o.mu.Lock(); o.closing = true; o.mu.Unlock(); o.signal() }
+func (o *output) Close() {
+	o.mu.Lock()
+	if !o.closing {
+		o.closing = true
+		o.closeAt = time.Now()
+	}
+	o.mu.Unlock()
+	o.signal()
+}
 func (o *output) next() (outgoing, bool, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -74,9 +84,47 @@ func (o *output) next() (outgoing, bool, bool) {
 	return v, true, false
 }
 
+// Handler owns the lifetime of admitted socket readers and writers.
+type Handler struct {
+	handler  http.Handler
+	mu       sync.Mutex
+	stopping bool
+	wg       sync.WaitGroup
+	joined   chan struct{}
+	once     sync.Once
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	if h.stopping {
+		h.mu.Unlock()
+		http.Error(w, "shutting down", 503)
+		return
+	}
+	h.wg.Add(1)
+	h.mu.Unlock()
+	defer h.wg.Done()
+	h.handler.ServeHTTP(w, r)
+}
+
+// Shutdown stops admission and joins sockets after their room sinks close.
+func (h *Handler) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	h.stopping = true
+	h.mu.Unlock()
+	h.once.Do(func() { go func() { h.wg.Wait(); close(h.joined) }() })
+	select {
+	case <-h.joined:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // NewHandler authenticates and admits before upgrading; no bearer appears in URLs.
-func NewHandler(origin string, identities *identity.Service, service *rooms.Service) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func NewHandler(origin string, identities *identity.Service, service *rooms.Service) *Handler {
+	h := &Handler{joined: make(chan struct{})}
+	h.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Origin") != origin {
 			http.Error(w, "origin denied", 403)
 			return
@@ -170,6 +218,7 @@ func NewHandler(origin string, identities *identity.Service, service *rooms.Serv
 			_ = service.Handle(ctx, bound, f)
 		}
 	})
+	return h
 }
 func serviceTime(s *rooms.Service) int64 { return s.ServerTimeMs() }
 func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int64, clock func() int64) {
@@ -184,6 +233,14 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 		}
 		deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		o.mu.Lock()
+		closeAt := o.closeAt
+		o.mu.Unlock()
+		if !closeAt.IsZero() {
+			var stop context.CancelFunc
+			deadline, stop = context.WithDeadline(deadline, closeAt.Add(time.Second))
+			defer stop()
+		}
 		return c.Write(deadline, websocket.MessageText, b)
 	}
 	for {

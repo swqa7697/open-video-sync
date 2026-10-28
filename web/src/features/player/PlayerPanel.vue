@@ -23,8 +23,12 @@ const active = ref(false),
   seekSeconds = ref(0),
   muted = ref(true),
   volume = ref(1);
+const waitTimedOut = ref(false);
 const current = ref(props.room);
 const host = computed(() => current.value.selfMemberId === current.value.hostMemberId);
+const self = computed(() =>
+  current.value.members.find((m) => m.memberId === current.value.selfMemberId),
+);
 const controls = computed(
   () =>
     connected.value &&
@@ -39,9 +43,23 @@ let timer: ReturnType<typeof setInterval> | undefined, subscription: (() => void
 let lastReport = '',
   lastReportAt = 0,
   disposed = false;
+let probedBarrier = '',
+  probingBarrier = '';
 const sync = new SyncController();
 const transport = new RoomSocket(props.room.roomId, {
   snapshot(snapshot) {
+    const barrier = current.value.barrier;
+    if (
+      barrier &&
+      snapshot.playback.phase === 'paused' &&
+      snapshot.serverNowMs >= barrier.deadlineServerMs
+    )
+      waitTimedOut.value = true;
+    if (
+      snapshot.playback.desiredPlaying ||
+      snapshot.mediaGeneration !== current.value.mediaGeneration
+    )
+      waitTimedOut.value = false;
     current.value = snapshot;
     emit('snapshot', snapshot);
     void sample();
@@ -76,6 +94,8 @@ function clearMedia(): void {
   sync.invalidate();
   mediaStatus.value = 'no_media';
   lastReport = '';
+  probedBarrier = '';
+  probingBarrier = '';
   loading.value = false;
 }
 function matches(): boolean {
@@ -191,6 +211,27 @@ async function sample(): Promise<void> {
         now,
         active.value && transport.connected && matched && document.visibilityState === 'visible',
       );
+      const barrier = snapshot.barrier;
+      if (
+        matched &&
+        active.value &&
+        transport.connected &&
+        barrier &&
+        local.getState().status === 'ready' &&
+        !local.getState().seeking &&
+        probedBarrier !== barrier.barrierId
+      ) {
+        if (probingBarrier === barrier.barrierId) return;
+        probingBarrier = barrier.barrierId;
+        try {
+          // A loaded file alone cannot establish browser autoplay permission.
+          await local.play();
+          await local.pause();
+          if (adapter === local) probedBarrier = barrier.barrierId;
+        } finally {
+          if (probingBarrier === barrier.barrierId) probingBarrier = '';
+        }
+      }
     } catch {
       if (adapter === local) {
         error.value =
@@ -240,6 +281,7 @@ function publish(report: Readiness, now: number): void {
 }
 function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
   error.value = '';
+  waitTimedOut.value = false;
   sync.invalidate();
   transport.command(
     action === 'seek' ? { action, positionMs: Math.round(seekSeconds.value * 1000) } : { action },
@@ -324,6 +366,59 @@ onUnmounted(() => {
     <p v-if="mediaStatus === 'mismatch'" class="notice">
       This file does not match the room. Select the same file as the host.
     </p>
+    <p v-if="current.barrier" class="notice" role="status">
+      Waiting for participants at
+      {{ (current.barrier.targetPositionMs / 1000).toFixed(1) }} seconds.
+      {{
+        current.barrier.reason === 'buffering'
+          ? 'Playback resumes after everyone stays ready for one second.'
+          : 'Select matching media and enable playback when requested.'
+      }}
+    </p>
+    <p v-if="waitTimedOut" class="notice">
+      Waiting timed out. The room stays paused. The host can retry Play together, exclude a
+      participant, or change the waiting policy.
+    </p>
+    <p v-if="current.playback.phase === 'playing' && !self?.playbackEligible" class="notice">
+      You are outside active playback. Select matching media. With Wait at next play, wait for the
+      next explicit Play together command.
+    </p>
+    <ul aria-label="Playback readiness">
+      <li v-for="member in current.members" :key="member.memberId">
+        {{ member.displayName }}:
+        {{
+          !member.playbackActive
+            ? 'inactive tab or disconnected'
+            : member.readiness?.status === 'no_media' || !member.readiness
+              ? 'select matching file'
+              : member.readiness.status
+        }}
+        <span v-if="member.excludedFromWaiting"> · excluded from waiting for this media</span>
+        <span
+          v-if="
+            member.readiness?.capabilities.canPlay &&
+            !member.readiness.capabilities.canDetectBuffering &&
+            current.settings.waitMode === 'all' &&
+            current.settings.waitOnBuffering &&
+            !member.excludedFromWaiting
+          "
+        >
+          · buffering detection unavailable; the host must disable waiting on buffering or exclude
+          this participant
+        </span>
+        <button
+          v-if="host && member.role !== 'host' && current.media"
+          class="quiet"
+          :disabled="!controls"
+          :aria-label="`${member.excludedFromWaiting ? 'Include' : 'Exclude'} ${member.displayName} ${member.excludedFromWaiting ? 'in' : 'from'} waiting`"
+          @click="
+            transport.command({ memberId: member.memberId, excluded: !member.excludedFromWaiting })
+          "
+        >
+          {{ member.excludedFromWaiting ? 'Include in waiting' : 'Exclude from waiting' }}
+        </button>
+      </li>
+    </ul>
     <video
       ref="video"
       preload="auto"
@@ -365,7 +460,8 @@ onUnmounted(() => {
     </div>
     <p class="hint">
       Reloading requires file selection again. Sampled matching detects accidental differences.
-      Browser and codec support varies. Full waiting and recovery policies are still in development.
+      Browser and codec support varies. The host keeps ownership while disconnected and must resume
+      after the 15-second grace.
     </p>
   </section>
 </template>

@@ -5,4 +5,6 @@
 OVS controls express intent directly; programmatic media events only trigger reconciliation and readiness, so they cannot create command feedback.
 Native shared controls are hidden. Local mute and volume do not enter room messages.
 Engine tests use controlled timestamps and adapters. Browser tests independently read synthetic source-frame pixels.
-Full waiting and buffering policies remain Stage 3. Cross-region and physical-display acceptance remain unverified.
+The server owns readiness cohorts, buffering barriers, exclusions, late joining, deadlines, and host-loss restrictions.
+The controller honors per-member playback eligibility. Barrier readiness also checks browser autoplay permission and playable media state.
+Cross-region and physical-display acceptance remain unverified.

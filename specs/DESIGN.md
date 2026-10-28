@@ -202,6 +202,8 @@ If the host disconnects, preserve host ownership. After 15 seconds without a hos
 
 Use integer milliseconds on the wire. Reject nonfinite, negative, or out-of-range numeric fields and integer values outside JavaScript's safe range. Internal arithmetic may use finer precision. Wall-clock timestamps are reserved for expiry and audit metadata.
 
+Each roster entry distinguishes `playbackActive` (the member has a connected playback lease) from `playbackEligible` (the member belongs to the current playback cohort). An active late joiner can remain ineligible under `wait_at_next_play` or an incompatible buffering capability. Clients apply a playing timeline only when eligible. `excludedFromWaiting` removes waiting responsibility without removing playback eligibility.
+
 The server owns the intended timeline. Participant observations never replace it directly. A participant cannot become host by claiming a role or reporting a position.
 
 ### 5.2 Proposed settings
@@ -535,7 +537,7 @@ Use per-connection output limits of 64 frames and 256 KiB, whichever is reached 
 
 ### 10.1 Logical schema
 
-The following is the schema contract. Migrations 0001–0004 implement the ledger, identities, sessions, rooms, memberships, invitations, HTTP idempotency, versioned media, checkpoints, and accepted command results.
+The following is the schema contract. Migrations 0001–0005 implement the ledger, identities, sessions, rooms, memberships, invitations, HTTP idempotency, versioned media, checkpoints, accepted command results, and a bounded storage-recovery write probe.
 
 | Table | Key fields and constraints |
 | --- | --- |
@@ -564,6 +566,8 @@ On restart, restore the checkpoint paused without extrapolating wall-clock downt
 
 If a mutation fails to commit, publish no successful state change. Mark storage readiness unhealthy, reject further mutations, and tell connected clients to pause. Retry storage recovery with bounded backoff; recovery requires fresh room snapshots and explicit host play. Do not keep accepting apparently successful in-memory controls during disk failure.
 
+Recovery probes commit a change to one `storage_probe` row, starting after 500 ms and backing off to 15 seconds. A database ping cannot clear the write-failure latch. Recovery changes affected coordinator epochs, clears readiness/cohorts, and restores durable checkpoints paused. Restart and empty-coordinator reactivation also require explicit host play.
+
 ### 10.3 Migrations
 
 Acquire exclusive application ownership of the data directory before opening for normal service. A second OVS process must fail clearly. Do not use SQLite's write lock as the only protection against two independent coordinators.
@@ -575,6 +579,8 @@ Test fresh creation and upgrades from every supported published schema. Take a b
 ### 10.4 Retention and backup
 
 Expire command results and HTTP idempotency records after 24 hours; remove expired invitations and sessions periodically. Update activity timestamps in batches. Delete expired rooms only while inactive. Delete inactive identities after 365 days only when they have no unexpired session, owned room, or membership. Bound each cleanup transaction.
+
+The application sweeps once per minute, with at most 100 deletions per record class per transaction and 100 room candidates per sweep. Room expiry defaults to 30 days. Each room coordinator rechecks activity and connections before deletion. An expired invitation row can be absent; the room stays readable, and its next invitation uses a generation above the room's previous revision. Remaining credential/retry references postpone identity deletion until a later batch.
 
 The supported baseline backup procedure is to stop OVS cleanly and copy the entire `/data` directory, preserving ownership and modes. Do not copy only a live database file: its WAL may contain committed state. An optional online backup command must use a consistent SQLite backup API or equivalent supported snapshot. See [SQLite backup API](https://sqlite.org/backup.html).
 
@@ -667,6 +673,8 @@ The single-container requirement applies to OVS itself. Optional external Caddy 
 Startup validates config, acquires data-directory ownership, opens SQLite, applies migrations, loads storage metadata, and starts serving. `/health/ready` becomes successful only after those steps. Instantiate room coordinators lazily.
 
 On termination, mark unready, stop admission, notify clients, pause/checkpoint active rooms, close sockets, and close SQLite within a ten-second application deadline. Configure the container stop timeout longer than that deadline. Shutdown failure must be visible in logs; crash recovery remains the fallback.
+
+The `server.stopping` event carries `{reason: "shutdown"}`. Clients pause immediately. HTTP draining, room shutdown, and socket joining share the application deadline. Queued final output uses a one-second drain deadline; an in-flight write retains its five-second bound.
 
 Use structured logs with safe request IDs and event/error codes. Measure active rooms/connections, command queue delay, persistence time, commit-to-send delay, reconnects, rejected messages, and slow-client disconnects. Keep metric dimensions bounded; never label by invitation, display name, or media URL. Operational metrics stay local to the installation; no hosted analytics service is required.
 

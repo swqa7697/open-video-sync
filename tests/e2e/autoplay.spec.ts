@@ -21,8 +21,6 @@ test.describe('autoplay permission', () => {
       await h.getByLabel('Room title', { exact: true }).fill('Autoplay permission');
       await h.getByRole('button', { name: 'Create room', exact: true }).click();
       await expect(h.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-      await h.getByLabel('Wait for participants').selectOption('none');
-      await h.getByRole('button', { name: 'Save preferences', exact: true }).click();
       const response = await guest.request.post(`${baseURL}/api/v1/session`, {
         headers: { Origin: baseURL! },
         data: {},
@@ -93,6 +91,7 @@ test.describe('autoplay permission', () => {
       await readyPromise;
       await h.getByRole('button', { name: 'Play together', exact: true }).click();
       await blockedPromise;
+      await expect(h.getByTestId('playback-phase')).toHaveText('waiting');
       await p.getByRole('button', { name: 'Enable playback', exact: true }).click();
       await expect
         .poll(() => p.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
@@ -105,6 +104,7 @@ test.describe('autoplay permission', () => {
           source: 'generated VP8/Opus',
           permissionDenied: true,
           explicitEnableSucceeded: true,
+          defaultWaitAllHeldForGesture: true,
         }) + '\n',
       );
     } finally {

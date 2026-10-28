@@ -266,6 +266,8 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 	var receipt Receipt
 	var removed string
 	err := s.submit(ctx, id, func(ctx context.Context, epoch string) error {
+		var next *liveRoom
+		var updated Room
 		err := s.Repository.Transact(ctx, func(tx Tx) error {
 			now := s.Now().UnixMilli()
 			if err := tx.SessionValid(p.TokenHash, p.IdentityID, now); err != nil {
@@ -305,6 +307,24 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 			r.LastActiveAtMs = now
 			switch m.Operation {
 			case "settings":
+				if waitingChanged(r.Settings, m.Settings) {
+					l := s.live(r, s.coordinator(id))
+					copy := l.clone()
+					copy.playback.PositionMs = l.position(s.monotonicMs())
+					copy.playback.AnchorServerMs = s.monotonicMs()
+					if copy.media != nil {
+						copy.playback.Phase = "paused"
+					}
+					copy.playback.DesiredPlaying = false
+					copy.barrier = nil
+					copy.bufferSince = make(map[string]int64)
+					copy.readySince = make(map[string]int64)
+					copy.writeTo(&r, s.monotonicMs())
+					if err := tx.SavePlayback(r, now); err != nil {
+						return err
+					}
+					next = &copy
+				}
 				r.Settings = m.Settings
 			case "rotate", "remove":
 				if r.Invite.Generation >= contracts.MaxSafeInteger {
@@ -339,11 +359,19 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 				return err
 			}
 			result.Snapshot = s.roomSnapshot(r, epoch, p.IdentityID)
+			updated = r
 			receipt = Receipt{RoomID: id, Revision: r.Revision, RemovedMemberID: removed}
 			return nil
 		})
 		if err == nil {
+			if next != nil {
+				s.coordinator(id).live = next
+				result.Snapshot = s.roomSnapshot(updated, epoch, p.IdentityID)
+			}
 			s.managementCommitted(id, epoch, m.Operation, removed, receipt.Revision)
+			if m.Operation != "close" {
+				result.Snapshot = s.roomSnapshot(updated, epoch, p.IdentityID)
+			}
 			if removed != "" && s.OnRemoved != nil {
 				s.OnRemoved(id, removed)
 			}

@@ -94,7 +94,8 @@ export class SyncController {
       )
     )
       return;
-    const playing = snapshot.playback.phase === 'playing';
+    const self = snapshot.members.find((m) => m.memberId === snapshot.selfMemberId);
+    const playing = snapshot.playback.phase === 'playing' && self?.playbackEligible === true;
     let target = Math.min(
       snapshot.media.durationMs,
       snapshot.playback.positionMs +

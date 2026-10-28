@@ -117,7 +117,10 @@ export class LocalAdapter implements PlayerAdapter {
       durationMs: Number.isFinite(this.video.duration) ? Math.round(this.video.duration * 1000) : 0,
       paused: this.video.paused,
       seeking: this.video.seeking,
-      status: this.status,
+      status:
+        this.status === 'ready' && this.video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+          ? 'buffering'
+          : this.status,
     };
   }
   subscribe(listener: () => void): () => void {

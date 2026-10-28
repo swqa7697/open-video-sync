@@ -38,7 +38,7 @@ func TestApplicationUpgradeRollbackAndSecretExclusion(t *testing.T) {
 	}
 	defer store.Close()
 	var versions int
-	if err := store.db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&versions); err != nil || versions != 4 {
+	if err := store.db.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&versions); err != nil || versions != 5 {
 		t.Fatal("upgrade failed", versions, err)
 	}
 	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}

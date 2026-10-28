@@ -15,7 +15,7 @@ import { decodeMedia, type MediaDescriptor } from './contracts';
 
 export interface Command {
   v: 1;
-  type: 'playback.command' | 'media.select';
+  type: 'playback.command' | 'media.select' | 'waiting.exclude';
   commandId: string;
   epoch: string;
   mediaGeneration: number;
@@ -23,7 +23,8 @@ export interface Command {
   payload:
     | { action: 'play' | 'pause' | 'replay' }
     | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor };
+    | { media: MediaDescriptor }
+    | { memberId: string; excluded: boolean };
 }
 export interface SocketEvents {
   snapshot(snapshot: Snapshot): void;
@@ -156,7 +157,14 @@ export class RoomSocket {
       }
     } else if (kind === 'room.snapshot') this.acceptSnapshot(decodeSnapshot(p), epoch);
     else if (kind === 'member.status') {
-      shape(p, ['memberId', 'presence', 'playbackActive', 'excludedFromWaiting', 'readiness']);
+      shape(p, [
+        'memberId',
+        'presence',
+        'playbackActive',
+        'playbackEligible',
+        'excludedFromWaiting',
+        'readiness',
+      ]);
       const memberId = id(p.memberId),
         snapshot = this.snapshot;
       if (
@@ -178,6 +186,7 @@ export class RoomSocket {
                   ...m,
                   presence: p.presence,
                   playbackActive: p.playbackActive,
+                  playbackEligible: p.playbackEligible,
                   excludedFromWaiting: p.excludedFromWaiting,
                   readiness,
                 }
@@ -216,6 +225,12 @@ export class RoomSocket {
           ? 'Playback is active in another tab.'
           : 'Your room session ended.',
       );
+    } else if (kind === 'server.stopping') {
+      shape(p, ['reason']);
+      if (p.reason !== 'shutdown') throw new Error('Invalid shutdown.');
+      this.connected = false;
+      this.events.status('Server is stopping. Playback paused.');
+      this.socket?.close();
     } else if (kind === 'room.closed') {
       shape(p, ['roomId', 'revision']);
       id(p.roomId);
@@ -289,7 +304,12 @@ export class RoomSocket {
     const safePayload = 'media' in payload ? { media: decodeMedia(payload.media) } : payload;
     const command: Command = {
       v: 1,
-      type: 'media' in safePayload ? 'media.select' : 'playback.command',
+      type:
+        'media' in safePayload
+          ? 'media.select'
+          : 'memberId' in safePayload
+            ? 'waiting.exclude'
+            : 'playback.command',
       commandId: requestKey(),
       epoch: s.epoch,
       mediaGeneration: s.mediaGeneration,

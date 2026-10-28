@@ -1,3 +1,3 @@
-// Package rooms owns private membership, invitations, and serialized room management.
-// Playback timelines and socket integration remain later work.
+// Package rooms owns private membership, invitations, playback policy, and recovery.
+// Room coordinators serialize durable management, timelines, and socket controls.
 package rooms

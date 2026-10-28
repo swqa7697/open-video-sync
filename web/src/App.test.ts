@@ -35,6 +35,7 @@ const snapshot = {
       role: 'host',
       presence: 'offline',
       playbackActive: false,
+      playbackEligible: false,
       excludedFromWaiting: false,
       readiness: null,
     },

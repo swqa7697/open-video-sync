@@ -34,9 +34,6 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await other.goto(invitation);
     await other.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-    // Use the Stage 2 development path. Full wait policy acceptance belongs to Stage 3.
-    await page.getByLabel('Wait for participants').selectOption('none');
-    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
     await page.getByLabel('Shared media label (optional)').fill('Synthetic video');
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveText('ready');

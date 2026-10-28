@@ -96,7 +96,18 @@ const timeline = (phase: 'playing' | 'paused', revision: number, position = 1000
     durationMs: 10000,
   },
   barrier: null,
-  members: [],
+  members: [
+    {
+      memberId: 'c'.repeat(32),
+      displayName: 'Host',
+      role: 'host',
+      presence: 'connected',
+      playbackActive: true,
+      playbackEligible: true,
+      excludedFromWaiting: false,
+      readiness: null,
+    },
+  ],
   serverNowMs: 0,
   playback: {
     phase,
@@ -143,4 +154,18 @@ test('loss of connection cancels pending playback application', async () => {
   p.pendingSeek?.();
   await original;
   expect(p.getState().paused).toBe(true);
+});
+
+test('a late participant stays paused until the server admits playback', async () => {
+  const c = new SyncController(),
+    p = new Player(),
+    snapshot = timeline('playing', 1);
+  snapshot.members[0]!.playbackEligible = false;
+  await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
+  expect(p.getState().paused).toBe(true);
+  snapshot.members[0]!.playbackEligible = true;
+  snapshot.revision++;
+  await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
+  expect(p.getState().paused).toBe(false);
+  expect(p.getState().positionMs).toBe(2000);
 });

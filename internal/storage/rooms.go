@@ -71,6 +71,10 @@ func (t roomTx) LoadRoom(id string) (rooms.Room, error) {
 		return r, err
 	}
 	err = t.tx.QueryRowContext(t.ctx, `SELECT generation,link_hash,code_hash,expires_at_ms FROM room_invitations WHERE room_id=?`, id).Scan(&r.Invite.Generation, &r.Invite.LinkHash, &r.Invite.CodeHash, &r.Invite.ExpiresAtMs)
+	if errors.Is(err, sql.ErrNoRows) {
+		r.Invite.Generation = r.Revision
+		err = nil
+	}
 	if err != nil {
 		return r, err
 	}
@@ -134,6 +138,9 @@ func (t roomTx) saveChildren(r rooms.Room) error {
 		if _, err := t.tx.ExecContext(t.ctx, `INSERT INTO room_members VALUES(?,?,?,?)`, r.ID, m.IdentityID, m.ID, m.JoinedAtMs); err != nil {
 			return err
 		}
+	}
+	if r.Invite.LinkHash == "" {
+		return nil
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO room_invitations VALUES(?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET generation=excluded.generation,link_hash=excluded.link_hash,code_hash=excluded.code_hash,expires_at_ms=excluded.expires_at_ms`, r.ID, r.Invite.Generation, r.Invite.LinkHash, r.Invite.CodeHash, r.Invite.ExpiresAtMs)
 	return err

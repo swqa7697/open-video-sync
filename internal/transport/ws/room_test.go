@@ -100,7 +100,8 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	var handler http.Handler
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	defer server.Close()
-	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), ws.NewHandler(server.URL, identities, service))
+	sockets := ws.NewHandler(server.URL, identities, service)
+	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), sockets)
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v1/rooms/" + snap.RoomID
 	dial := func(token, origin string) (*websocket.Conn, *http.Response, error) {
 		t.Helper()
@@ -213,6 +214,12 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	// Close checkpoints before restoring the same SQLite database with a new epoch.
 	oldEpoch := snap.Epoch
 	service.Close()
+	second.read(t, "server.stopping")
+	shutdown, cancelShutdown := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelShutdown()
+	if err := sockets.Shutdown(shutdown); err != nil {
+		t.Fatal("socket workers survived shutdown", err)
+	}
 	service, err = rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)

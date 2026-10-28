@@ -65,10 +65,6 @@ func (t roomTx) Command(room, id, key string, now int64) (rooms.CommandRecord, b
 	return r, err == nil, err
 }
 func (t roomTx) SaveCommand(room, id, key string, r rooms.CommandRecord) error {
-	_, err := t.tx.ExecContext(t.ctx, `DELETE FROM command_results WHERE expires_at_ms<=?`, r.ExpiresAtMs-86400000)
-	if err != nil {
-		return err
-	}
-	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO command_results VALUES(?,?,?,?,?,?,?) ON CONFLICT(room_id,identity_id,command_id) DO UPDATE SET epoch=excluded.epoch,digest=excluded.digest,revision=excluded.revision,expires_at_ms=excluded.expires_at_ms`, room, id, key, r.Epoch, r.Digest, r.Revision, r.ExpiresAtMs)
+	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO command_results VALUES(?,?,?,?,?,?,?) ON CONFLICT(room_id,identity_id,command_id) DO UPDATE SET epoch=excluded.epoch,digest=excluded.digest,revision=excluded.revision,expires_at_ms=excluded.expires_at_ms`, room, id, key, r.Epoch, r.Digest, r.Revision, r.ExpiresAtMs)
 	return err
 }

@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -15,11 +16,12 @@ type operation struct {
 	result chan error
 }
 type coordinator struct {
-	epoch  string
-	queue  chan operation
-	done   chan struct{}
-	closed bool
-	live   *liveRoom
+	epoch    string
+	queue    chan operation
+	done     chan struct{}
+	closed   bool
+	evicting bool
+	live     *liveRoom
 }
 
 // Service owns the lazy coordinator registry and serializes every room operation.
@@ -34,6 +36,10 @@ type Service struct {
 	stop         chan struct{}
 	wg           sync.WaitGroup
 	started      time.Time
+	shutdown     context.Context
+	shutdownErr  error
+	joined       chan struct{}
+	joinOnce     sync.Once
 	// Monotonic returns process time independently of wall-clock expiry. Set before admission.
 	Monotonic func() int64
 	sockets   int
@@ -47,18 +53,39 @@ func NewService(repository Repository, now func() time.Time, random io.Reader, l
 	if !limits.Valid() {
 		return nil, contracts.Failure("invalid_input")
 	}
-	return &Service{Repository: repository, Now: now, Random: random, Limits: limits, coordinators: make(map[string]*coordinator), stop: make(chan struct{}), started: time.Now()}, nil
+	s := &Service{Repository: repository, Now: now, Random: random, Limits: limits, coordinators: make(map[string]*coordinator), stop: make(chan struct{}), joined: make(chan struct{}), started: time.Now()}
+	if _, ok := repository.(retentionRepository); ok {
+		s.wg.Add(1)
+		go s.maintenance()
+	}
+	return s, nil
 }
 
 // Close stops admission and joins all owned coordinator goroutines.
-func (s *Service) Close() {
+func (s *Service) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.CloseContext(ctx)
+}
+
+// CloseContext stops admission, checkpoints rooms, and joins owned workers within ctx.
+func (s *Service) CloseContext(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.stopping {
 		s.stopping = true
+		s.shutdown = ctx
 		close(s.stop)
 	}
 	s.mu.Unlock()
-	s.wg.Wait()
+	s.joinOnce.Do(func() { go func() { s.wg.Wait(); close(s.joined) }() })
+	select {
+	case <-s.joined:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.shutdownErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 func (s *Service) submit(ctx context.Context, id string, run func(context.Context, string) error) error {
 	return s.dispatch(ctx, id, run, true)
@@ -72,6 +99,10 @@ func (s *Service) dispatch(ctx context.Context, id string, run func(context.Cont
 		return contracts.Failure("busy")
 	}
 	c := s.coordinators[id]
+	if c != nil && c.evicting {
+		s.mu.Unlock()
+		return contracts.Failure("busy")
+	}
 	if c == nil {
 		if !activate {
 			s.mu.Unlock()
@@ -120,7 +151,7 @@ func (s *Service) dispatch(ctx context.Context, id string, run func(context.Cont
 func (s *Service) serve(id string, c *coordinator) {
 	defer s.wg.Done()
 	defer close(c.done)
-	tick := time.NewTicker(time.Second)
+	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	timer := time.NewTimer(s.Limits.CoordinatorIdle)
 	defer timer.Stop()
@@ -138,16 +169,25 @@ func (s *Service) serve(id string, c *coordinator) {
 			finish()
 			return
 		case <-tick.C:
-			s.tickLive(id, c)
+			if err := s.recoverLive(id, c); err != nil {
+				s.failLive(c)
+			} else {
+				s.tickLive(id, c)
+			}
 		case <-timer.C:
 			s.mu.Lock()
 			if len(c.queue) == 0 && (c.live == nil || len(c.live.connections) == 0) {
+				c.evicting = true
 				s.mu.Unlock()
-				s.finishLive(id, c)
+				if err := s.finishLive(id, c); err == nil || err == contracts.Failure("not_found") {
+					finish()
+					return
+				}
 				s.mu.Lock()
-				delete(s.coordinators, id)
+				c.evicting = false
 				s.mu.Unlock()
-				return
+				timer.Reset(s.Limits.CoordinatorIdle)
+				continue
 			}
 			s.mu.Unlock()
 			timer.Reset(s.Limits.CoordinatorIdle)
@@ -157,10 +197,19 @@ func (s *Service) serve(id string, c *coordinator) {
 			} else if c.closed {
 				job.result <- contracts.Failure("not_found")
 			} else {
-				err := job.run(job.ctx, c.epoch)
+				err := s.recoverLive(id, c)
+				if err == nil {
+					err = job.run(job.ctx, c.epoch)
+				}
 				job.result <- err
 				if err == nil {
 					s.refreshLive(id, c)
+				}
+				if err != nil {
+					var failure contracts.Failure
+					if errors.As(err, &failure) && failure == "storage_unavailable" {
+						s.failLive(c)
+					}
 				}
 			}
 			if c.closed {

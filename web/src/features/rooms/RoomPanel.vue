@@ -51,7 +51,7 @@ const shareURL = (secret: string) => `${location.origin}/join#invite=${secret}`;
           <small
             >({{ member.role }} · {{ member.presence }} ·
             {{ member.readiness?.status ?? 'no media' }})</small
-          ></span
+          ><small v-if="member.excludedFromWaiting"> · excluded from waiting</small></span
         ><button
           v-if="host && member.role !== 'host'"
           class="quiet"
