@@ -3,7 +3,7 @@
 ## Scope and sources of truth
 
 - OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository implements Go/Vue infrastructure, persistent anonymous identity, private rooms/invitations, serialized durable management, authenticated room sockets, local-file playback and synchronization, tooling, and container packaging. Complete waiting policies, recovery, and platform adapters remain proposed. Do not describe unimplemented contracts or performance targets as verified.
+- The repository implements identity, rooms, local synchronization, waiting policies, and Bilibili/danmaku. Stage 4a / P8a must align this implementation with the simplified design and memory-owned runtime before P9/P10. Do not describe target contracts as implemented or earlier evidence as verification of the revised design.
 - Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.
@@ -18,6 +18,7 @@
 - Bilibili playback, state reporting, danmaku, and session isolation require a separate proof of concept before finalizing the adapter. A playable iframe alone does not satisfy the requirement.
 - Do not declare first-release scope complete with only local playback. Bilibili and danmaku remain required release gates.
 - Keep direct HTTP functional. Core features must not depend on certificate provisioning or browser APIs available only in secure contexts without a working HTTP-compatible path.
+- Keep room settings to controller permission and wait for everyone. Do not add technical tuning, alternative late-join policies, per-member exclusions, backup/invalidation commands, metric services, or automatic database recovery.
 
 ## Architecture and ownership
 
@@ -34,7 +35,9 @@
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
 - One coordinator serializes mutations for each room. HTTP and WebSocket entry points must use the same authorization and mutation path.
-- Persist accepted durable changes before acknowledging or broadcasting them. Never let participant telemetry replace the authoritative room timeline.
+- Load persistent application data into memory at startup. Ordinary reads, authorization, playback, readiness, waiting, heartbeats, and timers must perform no SQLite queries or writes.
+- Persist only low-frequency identity/session, room/settings, membership, invitation, and selected-media changes. Commit each durable change before installing it in memory and acknowledging success; failed writes leave memory unchanged.
+- Room coordinators own authoritative playback in memory. Playback acknowledgements mean applied runtime state, not durable storage. Keep revisions, media generations, short-lived command receipts, and wait state in memory only.
 - Keep clocks, random sources, storage, and connection sinks injectable. Prefer concrete functions and small interfaces over generic repositories, plugin frameworks, and speculative abstractions.
 - Separate Vue rendering, shared Pinia state, synchronization logic, and player adapters. Keep player instances, files, provider responses, and timer ownership outside serializable stores.
 - Make ownership, cancellation, and disposal explicit for goroutines, sockets, timers, workers, object URLs, and player instances. Bound queues and concurrency.
@@ -45,11 +48,12 @@
 - Carry epoch, media generation, expected revision, and command identity through control handling. Reject stale state and deduplicate uncertain retries as specified in DESIGN.
 - Cancel asynchronous work on media/adapter changes. Late callbacks must not affect a newer player or readiness barrier.
 - Distinguish user intent from events produced by applying remote state. Prevent feedback loops without discarding genuine user actions.
-- Enforce host permissions, active-tab leases, room isolation, and waiting rules on the server. Hidden or disabled UI controls are not authorization.
+- Enforce host permissions, current connection ownership, room isolation, and waiting rules in server memory. Revocation and removal must update authorization and sockets immediately; do not poll SQLite.
 - Declare adapter capabilities explicitly. Play, pause, seek, and position reporting are mandatory; rate control and buffering detection require defined fallback behavior.
 - Keep local volume, mute, quality, and danmaku preferences separate from shared playback state.
 - Measure control-response latency and playback skew separately. A server acknowledgement or a client's predicted target is not evidence of actual synchronized playback.
-- Retain WebSocket initially. Consider a datagram alternative only after evidence identifies TCP head-of-line blocking as the unmet-target cause.
+- Retain WebSocket. Do not add alternative-transport research as a first-release gate.
+- Restart or recreate playback runtimes paused at zero with fresh epochs. Do not save playback progress on controls, timers, eviction, or shutdown.
 
 ## Go, TypeScript, and shell conventions
 
@@ -71,8 +75,9 @@
 - Render untrusted names, titles, danmaku, and errors as text. Validate platform messages by exact origin and source window as well as payload shape.
 - Never serialize arbitrary player SDK objects or log raw requests/provider errors. Use synthetic secrets in boundary tests and sanitize retained traces.
 - Record every SQLite DDL change as a new migration. Never edit an applied migration, silently reset a database, or remove data to hide migration failures.
-- Keep related state and command outcomes in one transaction. Use real SQLite tests for constraints, rollback, upgrades, and crash recovery.
-- Run one OVS process per data directory. Preserve `/data` across container replacement and include SQLite sidecars in the storage/backup contract.
+- Keep related persistent changes in one short transaction and update only affected records. Do not persist playback or HTTP retry receipts, storage probes, or runtime counters. Use real SQLite tests for constraints, rollback, upgrades, and persistent metadata across restart.
+- A failed durable write must not mutate memory or stop unrelated existing playback. Report persistence unavailable; fix storage and restart instead of running automatic probes or recovery transitions.
+- Run one OVS process per data directory and preserve `/data` across container replacement. A manual copy requires stopped OVS and the whole directory, including SQLite sidecars. Do not build backup/restore commands.
 - Build frontend assets before the Go embedding step. Verify the final image serves UI, API, and WebSocket without Node or a separate database service.
 - Support direct HTTP and optional host/container/existing Caddy. Do not overwrite an operator's existing proxy configuration or manage certificates inside OVS.
 
@@ -110,10 +115,10 @@ Before adding a test, read the regressions that own the affected behavior and st
 ## Performance evidence
 
 - Measure before/after with the same machine, toolchain, browser/adapter, media, cache state, and network profile. Separate setup/build time from the measured operation.
-- Choose at least three independent trials dynamically, capped at five minutes per before/after phase. Report insufficient evidence when both constraints cannot be met.
-- Report sample count, mean, median, standard deviation, min/max, and p95/p99; label sparse tail estimates. Use Welch's t-test at alpha 0.05 on independent trial summaries.
-- Label statistical confidence by degrees of freedom: high ≥29, moderate 10–28, low <10. Do not treat correlated playback samples as independent trials.
-- Record commands, revision, environment, measurements, and limitations in `.misc/` for performance work. Keep release soak tests distinct from bounded comparison trials.
+- Use repeated independent trials for performance claims. Report sample counts, relevant measurements, uncertainty, and limitations; do not treat correlated playback samples as independent trials.
+- Keep actual playback skew separate from command acknowledgement and application latency. Reduced SQL calls alone do not prove faster playback.
+- Do not require capacity certification, physical-display lab tests, universal timing thresholds, or statistical-significance tests for ordinary releases. Use representative network and simultaneous-room checks.
+- Record commands, revision, environment, measurements, and limitations in `.misc/` for performance work. Keep optional long-running studies outside routine development checks.
 
 ## Git, review, and documentation
 

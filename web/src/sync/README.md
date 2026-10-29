@@ -1,5 +1,7 @@
 # Synchronization boundary
 
+This describes the current implementation. Stage 4a / P8a replaces the policy/eligibility behavior below with the simplified [target design](../../../specs/DESIGN.md) and keeps server runtime operations independent of SQLite.
+
 `clock.ts` owns bounded four-timestamp estimation and uncertainty. `controller.ts` projects the server timeline and applies drift correction.
 `PlayerPanel` owns its sampling timer and cancels the controller when media, adapter, visibility, or connection ownership changes.
 OVS controls express intent directly; programmatic media events only trigger reconciliation and readiness, so they cannot create command feedback.

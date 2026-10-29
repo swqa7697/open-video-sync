@@ -1,9 +1,9 @@
 # Version-1 implementation contracts
 
-This document resolves P0 decisions in [DESIGN](DESIGN.md). The PRD remains the product source of truth.
-Identity and room-management HTTP routes are implemented, with shared value validation in Go and TypeScript.
-P1/P2 implement identity, membership, invitations, and bounded writes. P3–P5 implement snapshots, authenticated commands, local matching, and clock-based playback. Complete waiting policies remain P6.
-The Bilibili descriptor remains provisional until B0 confirms identifiers and duration behavior. Syntax validation proves neither access nor player compatibility.
+**Legacy reference for the existing application.** The simplified [DESIGN](DESIGN.md) and [version-2 contract](wire-v2.md) supersede these rules for new work.
+P0–P8 implemented the earlier model, including database-driven controls and extended policies. Stage 4a / P8a replaces that model; it is not complete yet.
+Keep this reference only while the code still uses application v1. Do not extend it or treat retired policies as requirements for P9/P10.
+The browser-local helper protocol and fingerprint encoding retain their independent version 1.
 
 ## Encoding and bounds
 
@@ -130,7 +130,7 @@ Generate request IDs server-side. Do not echo arbitrary headers. Use bounded sta
 
 ## Settings and descriptors
 
-Settings contain exactly the eight fields in DESIGN §5.2. Send every field. Defaults apply only when constructing a new object:
+Legacy settings contain exactly the eight fields below. Send every field. Defaults apply only when constructing a new object:
 
 ```json
 {
@@ -146,7 +146,7 @@ Settings contain exactly the eight fields in DESIGN §5.2. Send every field. Def
 ```
 
 Preserve `waitOnBuffering` with `waitMode=none`; it has no effect until waiting is enabled.
-Validate DESIGN's ranges and `hardDriftMs > softDriftMs` on write and load.
+Legacy ranges are 5,000–120,000 ms for timeout, 50–500 ms for soft drift, and 250–2,000 ms for hard drift, with `hardDriftMs > softDriftMs`.
 Stored settings use a separate `{v:1,value:settings}` wrapper. Do not send storage-only fields on the wire.
 
 Local descriptors contain exactly `{kind:"local",fingerprintVersion:1,digest,sizeBytes,durationMs}` and optional `label`.
@@ -184,8 +184,8 @@ Store descriptors with a separate versioned wrapper and validate on write/load. 
 }
 ```
 
-`PlayerCapabilities` has exactly DESIGN §7.1's eight fields. Position resolution is an integer from 1–60,000 ms.
-Readiness uses DESIGN §5.4's nine statuses. Null means no current-generation report, never implicit readiness.
+`PlayerCapabilities` contains `canPlay`, `canPause`, `canSeek`, `canReadPosition`, `canSetPlaybackRate`, `canDetectBuffering`, `canShowDanmaku`, and `positionResolutionMs`. Position resolution is an integer from 1–60,000 ms.
+Readiness statuses are `no_media`, `loading`, `ready`, `buffering`, `gesture_required`, `mismatch`, `access_denied`, `unsupported`, and `error`. Null means no current-generation report, never implicit readiness.
 Rosters exclude global identity IDs, connection IDs, invitation data, and credentials.
 `selfMemberId` identifies the authenticated caller’s membership so clients can leave without comparing display names.
 It is response-specific and is never accepted as authentication.
@@ -243,7 +243,7 @@ Old epochs require new intent. Deduplication expires after 24 hours; no offline 
 
 Room resource limits use `rooms.Limits`, validated at startup. `OVS_MAX_ACTIVE_ROOMS` and `OVS_MAX_ROOM_MEMBERS` expose the selected room bounds.
 Coordinators evict after one minute without operations; activation creates a fresh epoch. P3 retains coordinators with live sockets.
-The initial storage failure latch stops writes and fails readiness until restart; P7 owns automated recovery.
+The legacy storage failure latch stops writes and fails readiness; P7 added automatic write probes and paused recovery. P8a removes those probes and transitions.
 Keep remaining runtime admission limits in one validated configuration as their owning packages add admission. Wire bounds stay in contracts and shared fixtures.
 Initial bounds are resource controls, not capacity or latency guarantees.
 
@@ -268,7 +268,7 @@ Initial bounds are resource controls, not capacity or latency guarantees.
 
 Calibration collects five samples even though three usable samples can establish an estimate. Quantize client sends down and receives up to integer milliseconds; symmetric rounding can produce negative apparent RTT on sub-millisecond loopback paths. Timestamp quantization adds up to one millisecond of clock error per endpoint. Reject negative network delay; do not clamp it.
 Asymmetric path error remains unobservable. Estimator uncertainty is not a verified bound on actual player skew.
-DESIGN's existing member, room, socket, telemetry, heartbeat, reconnect, waiting, and checkpoint limits still apply.
+The existing v1 implementation retains its member, room, socket, telemetry, heartbeat, reconnect, waiting, and checkpoint bounds until P8a replaces the affected paths.
 
 Until P9 implements trusted proxy CIDRs, effective address is the IP from `RemoteAddr` only. Ignore all forwarding headers.
 P9 accepts forwarding information only from configured proxy peers, validates the complete address list, and walks right-to-left to the first untrusted hop.
@@ -303,11 +303,10 @@ The socket route is `/ws/v1/rooms/{roomId}`. Exact Origin, session cookie, membe
 A membership may open four sockets; the instance may open 500. Welcome explicitly identifies playback lease ownership.
 Accepted media selection permits validated local and Bilibili stable descriptors. The server validates metadata without fetching platform data.
 Startup waiting freezes active participants and the host, requires current-barrier readiness, and pauses at its deadline.
-`waiting.exclude` validates its envelope but returns `invalid_command` until P6 completes policy handling.
-Full buffering, late-join, disconnected-cohort handling, and waiting-settings transitions remain P6.
+P6 implemented `waiting.exclude`, buffering, late-join, disconnected-cohort handling, and waiting-settings transitions. These are legacy behavior; P8a removes exclusions and alternative late-join modes.
 Readiness transitions currently publish bounded complete snapshots; observation frames are validated and never change the timeline.
 Periodic checkpoints and shutdown preserve position. Reactivation restores paused without advancing through downtime.
-The storage failure latch requires restart; P7 owns automatic recovery.
+P7 added automatic storage recovery. The simplified target removes this mechanism.
 
 ## Production Bilibili helper (P8)
 

@@ -1,6 +1,7 @@
 # Deployment examples
 
-These examples deploy the development template. They do not enable room or playback features.
+These examples deploy the current OVS application, including room and playback features.
+The simplified [target design](../specs/DESIGN.md) still requires Stage 4a / P8a implementation; these commands do not implement that transition.
 
 ## Direct HTTP
 
@@ -36,14 +37,14 @@ Mount the application `/data` volume only into OVS.
 
 Add the appropriate site block to the existing installation. Preserve global settings and unrelated sites.
 Do not install another Caddy instance or manage certificates inside OVS.
-The template ignores forwarding headers. Future client-address features need an explicit proxy trust configuration.
+The current application ignores forwarding headers. Proxy-aware client addresses need the planned explicit proxy trust configuration.
 Do not enable request-body logging in the application or proxy.
 
 ## Operations and validation
 
 The container health check invokes `/ovs healthcheck`. Allow more than ten seconds for graceful termination; Compose allows fifteen seconds.
 Use the stopped-directory backup procedure in the [root README](../README.md#storage-and-deployment).
-Back up before a schema upgrade. Preserve the image and backup needed for a downgrade.
+Preserve `/data` across upgrades and use a binary compatible with its schema. OVS has no backup/restore command or automated downgrade workflow.
 
 `make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
 The smoke check retains isolated database copies under ignored `.misc/image-smoke/` and removes its containers and volume.

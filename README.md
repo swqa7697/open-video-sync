@@ -9,6 +9,9 @@ Authenticated room sockets support local files and browser-local Bilibili AVC/AA
 Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 This intermediate stage does not complete the [PRD](specs/PRD.md).
 
+**Design transition:** [DESIGN](specs/DESIGN.md) now specifies a smaller product with an in-memory runtime and SQLite for persistent metadata only.
+Stage 4a / P8a must update the existing implementation before deployment/release work continues. The usage below describes the current code, including policies and checkpoints that P8a will remove; the revised behavior is not implemented yet.
+
 ## Use identities and rooms
 
 Open OVS to restore or create your identity automatically. A display name is optional.
@@ -195,7 +198,7 @@ The effective client address comes from the direct connection. Behind a proxy, a
 
 `GET /health/live` checks HTTP process availability. `GET /health/ready` checks startup completion and the SQLite connection.
 Both return `204` when successful. Readiness returns `503` on a database connection failure, a latched transaction failure, or shutdown.
-After a transaction failure, restore storage health and restart OVS. Automated storage recovery remains later work.
+The current implementation attempts recovery with bounded database write probes and fresh paused room state. P8a will remove this mechanism in favor of failed persistent operations and an operator restart after storage is fixed.
 Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA HTML.
 `GET /ws/v1/rooms/{roomId}` upgrades only after exact-Origin, cookie, membership, and socket admission checks.
 
@@ -206,7 +209,7 @@ The application uses one database connection and one writer with 128 pending tra
 Room coordinators admit 64 pending operations each. They retain live sockets and expire after one idle minute without sockets.
 Durable operations have a five-second deadline. Saturated queues return `busy`.
 Defaults also cap stored rooms at 1,000 and owned rooms at 20 per identity. These bounds are resource controls, not capacity guarantees.
-Four migrations create application state, versioned local media, playback checkpoints, and transactional command receipts.
+Five migrations create application state, versioned media, playback checkpoints, transactional command receipts, and a storage-recovery probe.
 Accepted controls commit before acknowledgement and publication. Playing checkpoints save every ten seconds and on shutdown.
 Sockets have 64-frame/256-KiB outputs, five-second write deadlines, five-second heartbeats, and a 15-second liveness expiry.
 The instance admits at most 500 sockets and four tabs per membership.
@@ -253,7 +256,7 @@ Shared Go/TypeScript fixtures check profile, settings, and media metadata valida
 OVS transports no video, danmaku payloads, signed media URLs, or platform credentials.
 Offline helper fault tests cover origin/channel ownership, request bounds, cancellation, expiry refresh, unsafe destinations, and sanitized failures.
 Live production Bilibili/helper validation is separate from the ordinary offline suite.
-The full deployment, network, and release matrix remains a required gate.
+The revised core deployment, browser, platform, and representative network checks remain required before release. There is no fixed capacity or statistical-significance release gate.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
 Linux/amd64 browser automation covers Playwright-pinned Chromium and patched Firefox builds; it does not establish current stable browser acceptance.

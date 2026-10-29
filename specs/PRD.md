@@ -4,15 +4,17 @@
 
 Open Video Sync (OVS) is a private, self-hosted web tool that lets users watch videos together with synchronized playback.
 
+Keep the product small: create a room, share an invitation, select a video, and watch together. Use sensible defaults instead of technical settings or operator workflows.
+
 ## Requirements
 
 - Self-Hosting: Run an independent instance on a suitable personal computer or cloud server -- not a public hosted service
 - Control Only: Do not upload, store, proxy, relay, or redistribute video content through OVS
 - Multiple Rooms: Support multiple viewing rooms at the same time, with independent settings and playback state
 - Optional HTTPS: Keep HTTPS setup independent of core functionality
-- Anonymous Identity: Let users participate without manual registratoin or sign-in -- they automatically retain their identity across visits and allow an optional display name or label
+- Anonymous Identity: Let users participate without manual registration or sign-in -- they automatically retain their identity across visits and allow an optional display name or label
 - Room Sharing: Let users create rooms, share invitation links or codes, and join shared rooms
-- Host Preferences: The room creator acts as host and can configure playback permissions, synchronization behavior, and waiting rules.
+- Host Preferences: The room creator chooses who can control playback and whether to wait for participants. Synchronization uses automatic internal defaults.
 - Browser Player: Provide a web player for selecting and watching supported videos within a room
 - Synchronized Playback: Keep play, pause, seeking, and playback position aligned across participants according to room preferences
 - Online Video Support: Support Bilibili video links in the first release, including loading and displaying danmaku; more sources (like YouTube) are planned after the first release
@@ -26,6 +28,10 @@ Open Video Sync (OVS) is a private, self-hosted web tool that lets users watch v
 - Frontend: Vue 3, TypeScript, Vite, Pinia
 - Database: SQLite
   - DDL Changes: recorded schema migrations in repo
+  - Persistence Only: Store identities, sessions, rooms, settings, memberships, invitations, and the selected media descriptor
+  - Runtime State: Load persistent state into application memory at startup. Handle ordinary reads, authorization, playback, synchronization, readiness, waiting, and command deduplication in memory without SQL
+  - Durable Changes: Write only when persistent information changes. Do not save playback progress, runtime counters, diagnostic samples, or command history
+  - Restart: Retain rooms and selected media; start paused at position zero with fresh runtime state
 - Packaging: Embed the built frontend into the Go application
   - All-In-One: Ship one Docker application container that serves the web UI, API, and WebSocket endpoint; no separate database service is required
   - Simple Setup: Provide a straightforward deployment and maintenance experience
@@ -34,9 +40,18 @@ Open Video Sync (OVS) is a private, self-hosted web tool that lets users watch v
   - Support Caddy installed directly on the host or running in a separate container, including an existing Caddy installation
 - Transport: Use WebSocket for the initial release
   - Validate control-response latency and playback skew separately under cross-region latency, jitter, and packet loss
-  - Consider a datagram-based alternative if TCP head-of-line blocking prevents meeting performance targets
 
-### Player Integration
+## Simplicity boundaries
+
+- Keep invitations reusable until the host resets them or closes the room. Sharing again does not replace the invitation. Removing a member also resets the invitation.
+- Do not automatically expire rooms or expose retention settings. Keep normal session expiry and explicit room/member management.
+- Late joiners catch up when ready. A new page takes over playback from the same identity's previous page in that room.
+- Do not add backup/restore commands, restored-credential invalidation, automatic database recovery, metrics services, or playback diagnostic telemetry.
+- Do not expose drift thresholds, correction modes, waiting timeouts, late-join modes, or per-member waiting exclusions.
+- Keep deployment to one application container and a persistent directory. Optional HTTPS remains external.
+- Keep real browser and network validation proportional to the core product; do not require a capacity certification, laboratory display measurements, or statistical-significance gate for release.
+
+## Player Integration
 
 - Player Adapters: Define a common interface for loading media, playback controls, position queries, and state events.
   - Declare optional capabilities such as playback-rate changes and buffering detection
