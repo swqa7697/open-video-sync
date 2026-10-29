@@ -2,12 +2,12 @@ package rooms
 
 import (
 	"context"
-	"errors"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/swqa7697/open-video-sync/internal/contracts"
+	"github.com/swqa7697/open-video-sync/internal/identity"
 )
 
 type operation struct {
@@ -22,22 +22,32 @@ type coordinator struct {
 	closed   bool
 	evicting bool
 	live     *liveRoom
+	room     Room
 }
 
 // Service owns the lazy coordinator registry and serializes every room operation.
 type Service struct {
-	Repository   Repository
-	Now          func() time.Time
-	Random       io.Reader
-	Limits       Limits
-	mu           sync.Mutex
-	coordinators map[string]*coordinator
+	Repository    Repository
+	Now           func() time.Time
+	Random        io.Reader
+	Limits        Limits
+	mu            sync.Mutex
+	coordinators  map[string]*coordinator
+	records       map[string]Room
+	names         map[string]string
+	links, codes  map[string]string
+	revoked       map[string]bool
+	receipts      map[string]Outcome
+	receiptOwners map[string]string
+	receiptMu     sync.Mutex
+	requests      map[string]chan struct{}
+	pending       map[string]string
+	// SessionValid checks the identity owner in memory when configured.
+	SessionValid func(identity.Session) error
 	stopping     bool
 	stop         chan struct{}
 	wg           sync.WaitGroup
 	started      time.Time
-	shutdown     context.Context
-	shutdownErr  error
 	joined       chan struct{}
 	joinOnce     sync.Once
 	// Monotonic returns process time independently of wall-clock expiry. Set before admission.
@@ -54,9 +64,22 @@ func NewService(repository Repository, now func() time.Time, random io.Reader, l
 		return nil, contracts.Failure("invalid_input")
 	}
 	s := &Service{Repository: repository, Now: now, Random: random, Limits: limits, coordinators: make(map[string]*coordinator), stop: make(chan struct{}), joined: make(chan struct{}), started: time.Now()}
-	if _, ok := repository.(retentionRepository); ok {
-		s.wg.Add(1)
-		go s.maintenance()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	records, err := repository.LoadRooms(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.records = make(map[string]Room)
+	s.names = make(map[string]string)
+	s.links = make(map[string]string)
+	s.codes = make(map[string]string)
+	s.revoked = make(map[string]bool)
+	s.receipts = make(map[string]Outcome)
+	s.receiptOwners = make(map[string]string)
+	s.pending = make(map[string]string)
+	for _, r := range records {
+		s.install(r)
 	}
 	return s, nil
 }
@@ -68,21 +91,18 @@ func (s *Service) Close() error {
 	return s.CloseContext(ctx)
 }
 
-// CloseContext stops admission, checkpoints rooms, and joins owned workers within ctx.
+// CloseContext stops admission and joins owned workers within ctx.
 func (s *Service) CloseContext(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.stopping {
 		s.stopping = true
-		s.shutdown = ctx
 		close(s.stop)
 	}
 	s.mu.Unlock()
 	s.joinOnce.Do(func() { go func() { s.wg.Wait(); close(s.joined) }() })
 	select {
 	case <-s.joined:
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.shutdownErr
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -117,7 +137,13 @@ func (s *Service) dispatch(ctx context.Context, id string, run func(context.Cont
 			s.mu.Unlock()
 			return err
 		}
-		c = &coordinator{epoch: epoch, queue: make(chan operation, 64), done: make(chan struct{})}
+		record, exists := s.records[id]
+		if !exists {
+			s.mu.Unlock()
+			return contracts.Failure("not_found")
+		}
+		record.Revision = 1
+		c = &coordinator{epoch: epoch, queue: make(chan operation, 64), done: make(chan struct{}), room: cloneRoom(record)}
 		s.coordinators[id] = c
 		s.wg.Add(1)
 		go s.serve(id, c)
@@ -169,25 +195,15 @@ func (s *Service) serve(id string, c *coordinator) {
 			finish()
 			return
 		case <-tick.C:
-			if err := s.recoverLive(id, c); err != nil {
-				s.failLive(c)
-			} else {
-				s.tickLive(id, c)
-			}
+			s.tickLive(id, c)
 		case <-timer.C:
 			s.mu.Lock()
 			if len(c.queue) == 0 && (c.live == nil || len(c.live.connections) == 0) {
 				c.evicting = true
 				s.mu.Unlock()
-				if err := s.finishLive(id, c); err == nil || err == contracts.Failure("not_found") {
-					finish()
-					return
-				}
-				s.mu.Lock()
-				c.evicting = false
-				s.mu.Unlock()
-				timer.Reset(s.Limits.CoordinatorIdle)
-				continue
+				s.finishLive(id, c)
+				finish()
+				return
 			}
 			s.mu.Unlock()
 			timer.Reset(s.Limits.CoordinatorIdle)
@@ -197,20 +213,9 @@ func (s *Service) serve(id string, c *coordinator) {
 			} else if c.closed {
 				job.result <- contracts.Failure("not_found")
 			} else {
-				err := s.recoverLive(id, c)
-				if err == nil {
-					err = job.run(job.ctx, c.epoch)
-				}
+				err := job.run(job.ctx, c.epoch)
 				job.result <- err
-				if err == nil {
-					s.refreshLive(id, c)
-				}
-				if err != nil {
-					var failure contracts.Failure
-					if errors.As(err, &failure) && failure == "storage_unavailable" {
-						s.failLive(c)
-					}
-				}
+
 			}
 			if c.closed {
 				finish()

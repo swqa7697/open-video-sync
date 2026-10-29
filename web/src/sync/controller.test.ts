@@ -18,23 +18,22 @@ test('four-timestamp calibration rejects invalid samples and expires after suspe
   expect(clock.estimate(500)).toBeUndefined();
 });
 test('drift correction persists soft error, clamps rates, and bounds corrective seeks', () => {
-  const c = new DriftController(),
-    settings = defaultSettings();
-  expect(c.decide(300, 1000, 0, settings, true, false, 40).kind).toBe('none');
-  c.decide(300, 1000, 250, settings, true, false, 40);
-  expect(c.decide(300, 1000, 500, settings, true, false, 40)).toEqual({ kind: 'rate', rate: 1.05 });
-  expect(c.decide(-300, 1000, 750, settings, true, true, 40)).toEqual({ kind: 'rate', rate: 1 });
-  expect(c.decide(900, 1000, 1000, settings, true, true, 40)).toEqual({
+  const c = new DriftController();
+  expect(c.decide(300, 1000, 0, true, false, 40).kind).toBe('none');
+  c.decide(300, 1000, 250, true, false, 40);
+  expect(c.decide(300, 1000, 500, true, false, 40)).toEqual({ kind: 'rate', rate: 1.05 });
+  expect(c.decide(-300, 1000, 750, true, true, 40)).toEqual({ kind: 'rate', rate: 1 });
+  expect(c.decide(900, 1000, 1000, true, true, 40)).toEqual({
     kind: 'seek',
     target: 1000,
   });
-  expect(c.decide(900, 1000, 1250, settings, true, false, 40).kind).toBe('none');
-  expect(c.decide(900, 1000, 3100, settings, true, false, 40).kind).toBe('none');
-  expect(c.decide(900, 1000, 4100, settings, true, false, 40).kind).toBe('seek');
+  expect(c.decide(900, 1000, 1250, true, false, 40).kind).toBe('none');
+  expect(c.decide(900, 1000, 3100, true, false, 40).kind).toBe('none');
+  expect(c.decide(900, 1000, 4100, true, false, 40).kind).toBe('seek');
   const fallback = new DriftController();
-  fallback.decide(150, 1000, 0, settings, false, false, 40);
-  fallback.decide(150, 1000, 250, settings, false, false, 40);
-  expect(fallback.decide(150, 1000, 500, settings, false, false, 40).kind).toBe('seek');
+  fallback.decide(150, 1000, 0, false, false, 40);
+  fallback.decide(150, 1000, 250, false, false, 40);
+  expect(fallback.decide(150, 1000, 500, false, false, 40).kind).toBe('seek');
 });
 class Player implements PlayerAdapter {
   capabilities = {
@@ -102,10 +101,15 @@ const timeline = (phase: 'playing' | 'paused', revision: number, position = 1000
       displayName: 'Host',
       role: 'host',
       presence: 'connected',
-      playbackActive: true,
-      playbackEligible: true,
-      excludedFromWaiting: false,
-      readiness: null,
+      readiness: {
+        status: 'ready',
+        mediaGeneration: 1,
+        barrierId: null,
+        sampledAtClientMs: 0,
+        positionMs: 0,
+        durationMs: 10000,
+        capabilities: new Player().capabilities,
+      },
     },
   ],
   serverNowMs: 0,
@@ -113,7 +117,6 @@ const timeline = (phase: 'playing' | 'paused', revision: number, position = 1000
     phase,
     positionMs: position,
     anchorServerMs: 0,
-    baseRate: 1,
     desiredPlaying: phase === 'playing',
   },
 });
@@ -156,14 +159,14 @@ test('loss of connection cancels pending playback application', async () => {
   expect(p.getState().paused).toBe(true);
 });
 
-test('a late participant stays paused until the server admits playback', async () => {
+test('a late local player waits for playable media before catching up', async () => {
   const c = new SyncController(),
     p = new Player(),
     snapshot = timeline('playing', 1);
-  snapshot.members[0]!.playbackEligible = false;
+  p.state.status = 'loading';
   await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
   expect(p.getState().paused).toBe(true);
-  snapshot.members[0]!.playbackEligible = true;
+  p.state.status = 'ready';
   snapshot.revision++;
   await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
   expect(p.getState().paused).toBe(false);

@@ -21,7 +21,6 @@ export class DriftController {
     error: number,
     target: number,
     now: number,
-    settings: Snapshot['settings'],
     rateSupported: boolean,
     degraded: boolean,
     resolution: number,
@@ -29,17 +28,14 @@ export class DriftController {
     if (now < this.settledUntil || now - this.sampledAt < 250) return { kind: 'none' };
     this.sampledAt = now;
     const distance = Math.abs(error),
-      soft = Math.max(settings.softDriftMs, resolution),
-      hard = Math.max(settings.hardDriftMs, resolution * 2);
+      soft = Math.max(100, resolution),
+      hard = Math.max(750, resolution * 2);
     if (distance < soft) {
       this.samples = 0;
       return { kind: 'rate', rate: 1 };
     }
     this.samples++;
-    if (
-      distance > hard ||
-      (this.samples >= 3 && (!rateSupported || settings.syncMode === 'seek'))
-    ) {
+    if (distance > hard || (this.samples >= 3 && !rateSupported)) {
       if (now - this.lastSeek < 3000) return { kind: 'none' };
       this.lastSeek = now;
       this.settledUntil = now + 2000;
@@ -47,7 +43,7 @@ export class DriftController {
       return { kind: 'seek', target };
     }
     if (degraded && rateSupported) return { kind: 'rate', rate: 1 };
-    if (this.samples >= 3 && rateSupported && settings.syncMode === 'adaptive')
+    if (this.samples >= 3 && rateSupported)
       return { kind: 'rate', rate: Math.max(0.95, Math.min(1.05, 1 + error / 5000)) };
     return { kind: 'none' };
   }
@@ -94,8 +90,10 @@ export class SyncController {
       )
     )
       return;
-    const self = snapshot.members.find((m) => m.memberId === snapshot.selfMemberId);
-    const playing = snapshot.playback.phase === 'playing' && self?.playbackEligible === true;
+    // Preserve a buffering report while the server decides whether to wait.
+    // Applying an old anchor here can seek and manufacture a new ready event.
+    if (observed.status === 'buffering' && snapshot.playback.phase === 'playing') return;
+    const playing = snapshot.playback.phase === 'playing';
     let target = Math.min(
       snapshot.media.durationMs,
       snapshot.playback.positionMs +
@@ -147,7 +145,6 @@ export class SyncController {
             target - observed.positionMs,
             target,
             now,
-            snapshot.settings,
             adapter.capabilities.canSetPlaybackRate,
             estimate.uncertaintyMs > 250,
             adapter.capabilities.positionResolutionMs,

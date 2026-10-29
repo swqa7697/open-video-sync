@@ -87,7 +87,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	guest, guestToken, _, _ := identities.Bootstrap(ctx, "")
 	_, outsiderToken, _, _ := identities.Bootstrap(ctx, "")
 	settings := contracts.DefaultSettings()
-	settings.WaitMode = "none"
+	settings.WaitForAll = false
 	created, err := service.Create(ctx, host, testKey(), "Network", settings)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	defer server.Close()
 	sockets := ws.NewHandler(server.URL, identities, service)
 	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), sockets)
-	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v1/rooms/" + snap.RoomID
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v2/rooms/" + snap.RoomID
 	dial := func(token, origin string) (*websocket.Conn, *http.Response, error) {
 		t.Helper()
 		return websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"ovs_session=" + token}}})
@@ -133,7 +133,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	}
 	hp, gp := connect(hostToken), connect(guestToken)
 	makeCommand := func(typ string, payload any) map[string]any {
-		return map[string]any{"v": 1, "type": typ, "commandId": testKey(), "epoch": snap.Epoch, "mediaGeneration": snap.MediaGeneration, "expectedRevision": snap.Revision, "payload": payload}
+		return map[string]any{"v": 2, "type": typ, "commandId": testKey(), "epoch": snap.Epoch, "mediaGeneration": snap.MediaGeneration, "expectedRevision": snap.Revision, "payload": payload}
 	}
 	media := contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 100, DurationMs: 60000}
 	selected := makeCommand("media.select", map[string]any{"media": media})
@@ -173,7 +173,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	httpStatus := 0
 	go func() {
 		defer wg.Done()
-		req, _ := http.NewRequest("PATCH", server.URL+"/api/v1/rooms/"+snap.RoomID+"/settings", strings.NewReader(string(body)))
+		req, _ := http.NewRequest("PATCH", server.URL+"/api/v2/rooms/"+snap.RoomID+"/settings", strings.NewReader(string(body)))
 		req.Header.Set("Origin", server.URL)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-OVS-CSRF", host.CSRF)
@@ -194,15 +194,13 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The second tab starts inactive; explicit activation revokes the old connection.
+	// The second page automatically replaces the old connection.
 	second := connect(hostToken)
-	second.send(t, map[string]any{"v": 1, "type": "member.activate", "requestId": testKey(), "epoch": snap.Epoch})
-	second.read(t, "session.welcome")
 	hp.read(t, "session.replaced")
 	second.send(t, makeCommand("playback.command", map[string]any{"action": "play"}))
 	json.Unmarshal(second.read(t, "command.result"), &replay)
 	if !replay.Accepted {
-		t.Fatal("new lease rejected", replay)
+		t.Fatal("new connection rejected", replay)
 	}
 	snap, err = service.Snapshot(ctx, host, snap.RoomID)
 	if err != nil {
@@ -211,7 +209,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	if snap.Playback.Phase != "playing" {
 		t.Fatal("play not applied")
 	}
-	// Close checkpoints before restoring the same SQLite database with a new epoch.
+	// Recreate runtime from the same SQLite metadata with a fresh epoch.
 	oldEpoch := snap.Epoch
 	service.Close()
 	second.read(t, "server.stopping")
@@ -228,7 +226,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Epoch == oldEpoch || restored.Playback.Phase != "paused" || restored.Playback.DesiredPlaying || restored.MediaGeneration != 1 || restored.Revision != snap.Revision {
+	if restored.Epoch == oldEpoch || restored.Playback.Phase != "paused" || restored.Playback.DesiredPlaying || restored.MediaGeneration != 1 || restored.Revision != 1 {
 		t.Fatal("restart extrapolated or lost accepted state", restored)
 	}
 }

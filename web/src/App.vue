@@ -36,10 +36,24 @@ const recent = ref<RoomSummary[]>([]),
   nextCursor = ref<string | null>(null);
 const host = computed(() => room.value?.selfMemberId === room.value?.hostMemberId);
 // Retain uncertain create/redeem intent and its key in memory until its outcome is known.
-const attempt = ref<{ path: string; payload: unknown; key: string }>();
+const attempt = ref<{
+  path: string;
+  payload: unknown;
+  key: string;
+  started: number;
+  sent: boolean;
+}>();
 const pendingLink = ref(props.initialInvitation);
-const api = (path: string, method = 'GET', payload?: unknown, key?: string) =>
-  request(path, method, identity.session?.csrfToken ?? '', payload, controller.signal, key);
+const api = (path: string, method = 'GET', payload?: unknown, key?: string, replayOnly = false) =>
+  request(
+    path,
+    method,
+    identity.session?.csrfToken ?? '',
+    payload,
+    controller.signal,
+    key,
+    replayOnly,
+  );
 
 async function perform(work: () => Promise<void>): Promise<void> {
   if (busy.value) return;
@@ -72,22 +86,45 @@ function show(snapshot: Snapshot, share?: Invitation): void {
 }
 async function open(id: string): Promise<void> {
   show(decodeSnapshot(await api(`/rooms/${id}`)));
+  if (host.value) {
+    try {
+      await share();
+    } catch (reason) {
+      if (reason instanceof APIError && reason.code === 'invitation_reset_required')
+        message.value =
+          'This older invitation needs replacement before sharing. Select Replace invitation to create new sharing details.';
+      else throw reason;
+    }
+  }
 }
 async function submitAttempt(): Promise<void> {
   const pending = attempt.value;
   if (!pending) return;
+  if (performance.now() - pending.started >= 60000) {
+    attempt.value = undefined;
+    await list();
+    message.value = 'Request recovery expired. Check Your rooms before choosing a new action.';
+    return;
+  }
   try {
-    const value = decodeRoomResult(await api(pending.path, 'POST', pending.payload, pending.key));
+    const replayOnly = pending.sent && pending.path === '/rooms';
+    pending.sent = true;
+    const value = decodeRoomResult(
+      await api(pending.path, 'POST', pending.payload, pending.key, replayOnly),
+    );
     attempt.value = undefined;
     pendingLink.value = undefined;
     code.value = '';
     title.value = '';
     show(value.snapshot, value.invitation ?? undefined);
-    message.value =
-      value.replayed && !value.invitation
-        ? 'The previous request succeeded. Hosts can replace the invitation to obtain new sharing details.'
-        : 'Room ready.';
+    message.value = 'Room ready.';
   } catch (reason) {
+    if (reason instanceof APIError && reason.code === 'request_outcome_unknown') {
+      attempt.value = undefined;
+      await list();
+      message.value = reason.message;
+      return;
+    }
     if (reason instanceof APIError && !['busy', 'storage_unavailable'].includes(reason.code))
       attempt.value = undefined;
     throw reason;
@@ -98,6 +135,8 @@ async function create(): Promise<void> {
     path: '/rooms',
     payload: { title: title.value, settings: defaultSettings() },
     key: requestKey(),
+    started: performance.now(),
+    sent: false,
   };
   await submitAttempt();
 }
@@ -106,6 +145,8 @@ async function join(): Promise<void> {
     path: '/invitations/redeem',
     payload: pendingLink.value ? { linkSecret: pendingLink.value } : { code: code.value },
     key: requestKey(),
+    started: performance.now(),
+    sent: false,
   };
   await submitAttempt();
 }
@@ -142,8 +183,17 @@ async function manage(
     operation === 'remove' ? await api(`/rooms/${current.roomId}`) : response.snapshot,
   );
   if (operation === 'rotate') invitation.value = decodeInvitation(response.invitation);
-  if (operation === 'remove') invitation.value = undefined;
+  if (operation === 'remove') {
+    invitation.value = undefined;
+    if (host.value) await share();
+  }
   message.value = 'Room updated.';
+}
+async function share(): Promise<void> {
+  if (!room.value || !host.value) return;
+  invitation.value = decodeInvitation(
+    object(await api(`/rooms/${room.value.roomId}/invitations`)).invitation,
+  );
 }
 async function back(): Promise<void> {
   room.value = undefined;
@@ -238,6 +288,7 @@ onUnmounted(() => {
         "
         @back="perform(back)"
         @settings="(value) => perform(() => manage('settings', value))"
+        @share="perform(share)"
         @rotate="perform(() => manage('rotate'))"
         @remove="(memberId) => perform(() => manage('remove', undefined, memberId))"
         @leave="perform(() => manage('remove'))"

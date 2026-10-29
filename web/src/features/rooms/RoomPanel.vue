@@ -13,6 +13,8 @@ const emit = defineEmits<{
   refresh: [];
   settings: [settings: RoomSettings];
   rotate: [];
+  share: [];
+
   remove: [memberId: string];
   close: [];
   leave: [];
@@ -51,7 +53,7 @@ const shareURL = (secret: string) => `${location.origin}/join#invite=${secret}`;
           <small
             >({{ member.role }} · {{ member.presence }} ·
             {{ member.readiness?.status ?? 'no media' }})</small
-          ><small v-if="member.excludedFromWaiting"> · excluded from waiting</small></span
+          ></span
         ><button
           v-if="host && member.role !== 'host'"
           class="quiet"
@@ -77,13 +79,11 @@ const shareURL = (secret: string) => `${location.origin}/join#invite=${secret}`;
           Code: <strong class="invite-code">{{ invitation.code.match(/.{4}/g)?.join(' ') }}</strong>
         </p>
         <p class="hint">
-          Expires {{ new Date(invitation.expiresAtMs).toLocaleDateString() }}. Share only with
-          intended participants.
+          Share only with intended participants. This invitation stays valid until you replace it.
         </p>
       </template>
-      <p v-else class="hint">
-        Create a new invitation to share this room. Previous secrets cannot be recovered.
-      </p>
+      <p v-else class="hint">Retrieve the current invitation to share this room again.</p>
+      <button :disabled="busy" @click="emit('share')">Share invitation</button>
       <button :disabled="busy" @click="emit('rotate')">Replace invitation</button>
       <p class="hint">Replacement invalidates previous links and codes.</p>
       <form @submit.prevent="emit('settings', settings)">

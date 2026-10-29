@@ -4,25 +4,24 @@ OVS is a private, self-hosted application for synchronized viewing. Each partici
 
 This repository includes persistent anonymous identities and private rooms with invitation links and codes.
 Hosts can save room preferences, rotate invitations, remove participants, and close rooms. Participants can leave rooms.
-The Go application embeds the Vue frontend and stores identities, memberships, room settings, media descriptors, and playback checkpoints in SQLite.
+The Go application embeds the Vue frontend and stores identities, memberships, room settings, and media descriptors in SQLite. Playback, waiting, authorization, and retry results run in application memory.
 Authenticated room sockets support local files and browser-local Bilibili AVC/AAC playback with danmaku.
 Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 This intermediate stage does not complete the [PRD](specs/PRD.md).
-
-**Design transition:** [DESIGN](specs/DESIGN.md) now specifies a smaller product with an in-memory runtime and SQLite for persistent metadata only.
-Stage 4a / P8a must update the existing implementation before deployment/release work continues. The usage below describes the current code, including policies and checkpoints that P8a will remove; the revised behavior is not implemented yet.
 
 ## Use identities and rooms
 
 Open OVS to restore or create your identity automatically. A display name is optional.
 Create a room with a title, or enter a private invitation code. Invitation links use `/join#invite=...`; the page removes the fragment before mounting components.
-Links and codes expire after seven days. Replacement invalidates both previous secrets. Removing a participant also invalidates previous invitations.
+Links and codes remain valid until replaced or the room closes. **Share invitation** retrieves the same link and code.
+**Replace invitation** resets both values. Removing a participant also replaces the invitation.
 Membership survives browser reload and server restart. Room sockets deliver changes automatically; **Refresh room** also retrieves a snapshot.
 
 Sessions use a host-only HttpOnly cookie with a rolling 365-day expiry, renewed at most once daily on bootstrap.
 **Forget this identity** revokes the current session. Owned rooms may become inaccessible; ownership does not transfer.
 Cookies are scoped to the browser profile and OVS origin. Private profiles receive independent identities.
-Invitation secrets appear only when created or replaced. If a response is lost, retry the original request; replace the invitation to obtain new sharing details.
+Only the host can retrieve sharing details. Create/redeem requests retain bounded retry results for 60 seconds in memory.
+After an uncertain creation expires, refresh **Your rooms** and choose a new action explicitly. A server restart clears retry results.
 
 ## Watch a local video
 
@@ -33,23 +32,22 @@ Equal size and digest plus duration within 250 ms permit matching. Sampled match
 
 Use **Play together**, **Pause together**, **Seek together**, or **Replay**. The server enforces host/everyone control permissions.
 Volume and mute remain local. Playback starts muted. If a browser blocks playback, select **Enable playback**.
-**Use this tab** explicitly transfers playback ownership and disposes the previous tab's player.
+Opening the room in a new page automatically takes over playback and disposes the previous page’s player.
+The replaced page stays inactive until explicitly reloaded or reopened.
 A disconnected browser pauses after five seconds without server liveness, reconnects, obtains state, and recalibrates its clock.
 An uncertain command can be checked with its original ID; controls are never queued for offline replay.
 
-The default **All participants** policy waits for the active playback cohort, including the host.
-Each participant must select matching media and allow playback. Seeking during waiting replaces the target and keeps play intent.
-Buffering for at least 750 ms pauses the room at its authoritative position. Playback resumes after one second of stable readiness.
-The host can exclude a participant from waiting for the current media. Exclusion does not grant media access.
-Waiting times out paused and requires explicit host action. Changes to waiting rules also pause the room.
-Late joiners either catch up when ready or wait for the next explicit play, according to the host preference.
-Disconnected required participants retain a 15-second grace. Host absence after that grace pauses playback without transferring ownership.
-Only the returning host can restart playback after host loss. Other room preferences preserve playback.
-Reloading requires local file selection again. Server restart restores the saved checkpoint paused, with a new room epoch.
-Playing rooms save progress every ten seconds. A crash can lose progress since the last checkpoint; accepted durable commands remain recorded.
-Storage write failure pauses clients and rejects mutations. Recovery uses bounded write retries, fresh room state, and explicit host play.
-Cleanup runs each minute in bounded batches. It removes expired retry records, invitations, and sessions.
-Rooms expire after 30 inactive days; active connections prevent deletion. Identity cleanup requires 365 inactive days and no session, ownership, or membership.
+Room preferences contain **Playback controls** (host or everyone) and **Wait for everyone** (enabled by default).
+Waiting freezes the connected participants for startup or sustained buffering. Each participant must load matching media and permit playback.
+Seeking during a wait replaces its target and preserves play intent. Ready late joiners catch up without enlarging an existing wait.
+Buffering for at least 750 ms pauses the room. Playback resumes after one second of stable readiness.
+A wait times out after 30 seconds and stays paused until an allowed controller explicitly retries.
+Changing **Wait for everyone** cancels pending playback and pauses the room. Changing control permission preserves playback.
+Disconnected required participants retain a 15-second grace. Controller permission still applies while the host is absent; ownership never transfers.
+Reloading requires local file selection again. Restart preserves selected media and metadata, with playback paused at zero in a new epoch.
+A failed durable write leaves application memory unchanged. Existing playback continues; fix storage and restart to restore persistent writes.
+Bounded expired-session cleanup runs each minute. Rooms and new invitations have no scheduled expiry.
+
 Chromium and Firefox automation check synthetic VP8/WebM playback, including a room with both browsers.
 An Opus audio track checks each browser's native autoplay permission handling.
 Current stable browser releases, other codecs, mobile suspension, physical displays, and impaired networks need separate evidence.
@@ -188,19 +186,16 @@ The application implements these variables:
 | `OVS_DATA_DIR` | `/data` | SQLite database, sidecars, and application ownership lock |
 | `OVS_PUBLIC_ORIGIN` | Required | Canonical browser origin, such as `http://127.0.0.1:8080` |
 | `OVS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
-| `OVS_MAX_ACTIVE_ROOMS` | `100` | Active room coordinator cap; 1–1,000 |
-| `OVS_MAX_ROOM_MEMBERS` | `32` | Membership cap; 1–32 |
 
 Use a lowercase host. Omit default ports and trailing slashes from the public origin.
-The remaining DESIGN configuration variables are not implemented. Forwarding headers are not trusted.
+Forwarding headers are not trusted.
 The effective client address comes from the direct connection. Behind a proxy, address rate limits apply to the proxy address until trusted-proxy support is added.
 `build/ovs version` prints the build version. `build/ovs healthcheck` checks readiness using the configured listener.
 
-`GET /health/live` checks HTTP process availability. `GET /health/ready` checks startup completion and the SQLite connection.
-Both return `204` when successful. Readiness returns `503` on a database connection failure, a latched transaction failure, or shutdown.
-The current implementation attempts recovery with bounded database write probes and fresh paused room state. P8a will remove this mechanism in favor of failed persistent operations and an operator restart after storage is fixed.
+`GET /health/live` checks HTTP process availability. `GET /health/ready` checks in-memory startup, shutdown, and persistent-write failure flags.
+Both return `204` when successful. Readiness returns `503` after a persistent transaction failure or during shutdown. Health checks do not query SQLite.
 Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA HTML.
-`GET /ws/v1/rooms/{roomId}` upgrades only after exact-Origin, cookie, membership, and socket admission checks.
+`GET /ws/v2/rooms/{roomId}` upgrades only after exact-Origin, cookie, membership, and socket admission checks.
 
 ## Storage and deployment
 
@@ -209,10 +204,11 @@ The application uses one database connection and one writer with 128 pending tra
 Room coordinators admit 64 pending operations each. They retain live sockets and expire after one idle minute without sockets.
 Durable operations have a five-second deadline. Saturated queues return `busy`.
 Defaults also cap stored rooms at 1,000 and owned rooms at 20 per identity. These bounds are resource controls, not capacity guarantees.
-Five migrations create application state, versioned media, playback checkpoints, transactional command receipts, and a storage-recovery probe.
-Accepted controls commit before acknowledgement and publication. Playing checkpoints save every ten seconds and on shutdown.
+Migration 0006 preserves durable metadata and removes obsolete persisted playback state.
+Persistent changes commit before memory installation and acknowledgement. Playback acknowledgements report applied memory state.
+See [development schema upgrade](specs/development-upgrade.md) for the legacy invitation transition.
 Sockets have 64-frame/256-KiB outputs, five-second write deadlines, five-second heartbeats, and a 15-second liveness expiry.
-The instance admits at most 500 sockets and four tabs per membership.
+The instance admits at most 500 sockets, with one playback connection per membership.
 Add each DDL change as a new numbered SQL file under `migrations/`.
 Startup checks applied checksums and rejects newer schemas. A second process cannot own the same data directory.
 
@@ -235,7 +231,8 @@ make test-e2e
 make image image-smoke
 ```
 
-The tests cover migration upgrades and rollback, identity continuity/expiry/reset, authorization, strict requests, private membership, invitation expiry/rotation, capacity races, serialized revisions, bounded queues, and secret exclusion.
+The tests instrument storage to prove zero operations on initialized reads, authorization, playback, readiness, and waiting timers.
+They verify failed-write isolation and zero-position restart. They also cover migration upgrades and rollback, identity continuity/expiry/reset, authorization, strict requests, private membership, reusable invitations and explicit replacement, capacity races, serialized revisions, bounded queues, and secret exclusion.
 Browser scenarios run serially because they share one server and its address-based admission budgets.
 The `chromium` and `firefox` projects run every shared scenario. The `chromium-firefox` project repeats the playback journey with one participant per browser.
 Both browser binaries are required: Chromium encodes the synthetic VP8/Opus source for every project, and each tested browser decodes those bytes locally.
@@ -243,16 +240,16 @@ On Linux, install missing system libraries with `pnpm --dir web exec playwright 
 After `make build`, select one project with `pnpm --dir web run test:e2e --project=firefox` or `--project=chromium-firefox`.
 The identity browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
 Browser screenshots cover light/dark themes and 375/768/1440-pixel widths. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
-Real WebSocket tests check admission, serialized HTTP/socket mutations, retry deduplication, stale/changed intents, lease replacement, and paused restart.
+Real WebSocket tests check admission, serialized HTTP/socket mutations, retry deduplication, stale/changed intents, connection replacement, and zero-position restart.
 Local player journeys cover matching, mismatch, unsupported decoding, replacement cancellation, play/pause/seek, reconnect, and tab ownership.
 Reconnect checks combine offline HTTP with explicit closure of the forwarded real room socket. Firefox offline emulation alone can leave an existing socket active.
 Both participants exercise permitted controls. Decoded source-frame pixels verify convergence after seek and reconnect, including the mixed room.
 Autoplay tests use native Chromium flags or Firefox preferences to require a local gesture before the default waiting barrier can release.
-Policy journeys cover waiting timeout, exclusion, buffering recovery, late joining, host loss, and explicit host return.
+Policy journeys cover waiting timeout, buffering recovery, ready late joining, and controller permissions during host absence.
 Three independent timing trials per browser read decoded source-frame pixels in separate foreground headless processes.
 They report control application latency separately from frame skew, with calibration, uncertainty, and sparse-tail limits under `.misc/e2e/results/`.
 This method does not measure physical display presentation or establish cross-region acceptance.
-Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
+Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-2 contracts](specs/wire-v2.md) for exact shapes, bounds, and implementation ownership.
 OVS transports no video, danmaku payloads, signed media URLs, or platform credentials.
 Offline helper fault tests cover origin/channel ownership, request bounds, cancellation, expiry refresh, unsafe destinations, and sanitized failures.
 Live production Bilibili/helper validation is separate from the ordinary offline suite.
@@ -260,5 +257,5 @@ The revised core deployment, browser, platform, and representative network check
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
 Linux/amd64 browser automation covers Playwright-pinned Chromium and patched Firefox builds; it does not establish current stable browser acceptance.
-macOS, other architectures, TLS, and live Caddy topologies remain unverified.
+macOS, other architectures, production certificate issuance, and live Caddy topologies remain unverified.
 See [DESIGN](specs/DESIGN.md) for the remaining architecture, release gates, and acceptance matrix.

@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/swqa7697/open-video-sync/internal/rooms"
@@ -59,18 +58,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c.origin = origin
 	c.roomLimits = rooms.DefaultLimits()
-	for key, target := range map[string]*int{"OVS_MAX_ACTIVE_ROOMS": &c.roomLimits.MaxActive, "OVS_MAX_ROOM_MEMBERS": &c.roomLimits.MaxMembers} {
-		if raw := getenv(key); raw != "" {
-			n, err := strconv.Atoi(raw)
-			if err != nil {
-				return config{}, fmt.Errorf("%s must be an integer", key)
-			}
-			*target = n
-		}
-	}
-	if !c.roomLimits.Valid() {
-		return config{}, fmt.Errorf("room limits are outside supported bounds")
-	}
 	level := strings.ToLower(value("OVS_LOG_LEVEL", "info"))
 	switch level {
 	case "debug", "info", "warn", "error":

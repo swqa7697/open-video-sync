@@ -41,7 +41,7 @@ func recoveryKey(t *testing.T) string {
 	return id
 }
 
-func TestWriteFailureRollbackPauseRecoveryAndHostResume(t *testing.T) {
+func TestPersistentFailureLeavesMemoryAndExistingPlaybackAvailable(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir())
 	if err != nil {
@@ -63,7 +63,7 @@ func TestWriteFailureRollbackPauseRecoveryAndHostResume(t *testing.T) {
 	}
 	defer service.Close()
 	settings := contracts.DefaultSettings()
-	settings.WaitMode = "none"
+	settings.WaitForAll = false
 	settings.Controllers = "everyone"
 	created, err := service.Create(ctx, host, recoveryKey(t), "Write recovery", settings)
 	if err != nil {
@@ -101,85 +101,95 @@ func TestWriteFailureRollbackPauseRecoveryAndHostResume(t *testing.T) {
 	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != nil {
 		t.Fatal(err)
 	}
+
 	before := snap
-	for _, query := range []string{
-		`CREATE TRIGGER reject_receipt BEFORE INSERT ON command_results BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END`,
-		`CREATE TRIGGER reject_recovery BEFORE UPDATE ON storage_probe BEGIN SELECT RAISE(ABORT,'synthetic unavailable storage'); END`,
-	} {
-		if _, err := store.db.Exec(query); err != nil {
+	other, err := service.Create(ctx, host, recoveryKey(t), "Independent room", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherConn, err := service.Connect(ctx, host, other.Snapshot.RoomID, &recoverySink{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownOther := other.Snapshot
+	for _, f := range []contracts.ClientFrame{{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}, {Type: "playback.command", Action: "play"}} {
+		f.CommandID = recoveryKey(t)
+		f.Epoch = ownOther.Epoch
+		f.ExpectedRevision = ownOther.Revision
+		f.MediaGeneration = ownOther.MediaGeneration
+		if err := service.Handle(ctx, otherConn, f); err != nil {
+			t.Fatal(err)
+		}
+		ownOther, err = service.Snapshot(ctx, host, ownOther.RoomID)
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	failed := contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 12000, CommandID: recoveryKey(t), Epoch: snap.Epoch, MediaGeneration: snap.MediaGeneration, ExpectedRevision: snap.Revision}
-	if err := service.Handle(ctx, g, failed); err == nil {
-		t.Fatal("failed commit acknowledged")
-	}
-	if err := store.db.PingContext(ctx); err != nil {
+	if _, err := store.db.Exec(`CREATE TRIGGER reject_settings BEFORE UPDATE ON rooms BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if store.Ready(ctx) == nil {
-		t.Fatal("ping cleared write-failure latch")
-	}
-	var revision, position, receipts int64
-	if err := store.db.QueryRow(`SELECT r.revision,p.position_ms FROM rooms r JOIN playback_checkpoints p ON p.room_id=r.id WHERE r.id=?`, snap.RoomID).Scan(&revision, &position); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.db.QueryRow(`SELECT count(*) FROM command_results WHERE command_id=?`, failed.CommandID).Scan(&receipts); err != nil {
-		t.Fatal(err)
-	}
-	if revision != before.Revision || position != 0 || receipts != 0 {
-		t.Fatal("partial durable transition survived rollback", revision, position, receipts)
-	}
-	gs.mu.Lock()
-	failedSafely := gs.closed && len(gs.results) == 1 && !gs.results[0].Accepted
-	gs.mu.Unlock()
-	if !failedSafely {
-		t.Fatal("failed connection received false success")
-	}
-	if err := service.Handle(ctx, h, failed); err == nil {
-		t.Fatal("continued in-memory success during outage")
-	}
-	// A failed real write probe must retain the latch. Remove the injected cause only afterward.
-	if err := probeWrite(ctx, store.db); err == nil {
-		t.Fatal("injected recovery write unexpectedly succeeded")
-	}
-	if store.Ready(ctx) == nil {
-		t.Fatal("failed write probe cleared latch")
-	}
-	for _, query := range []string{`DROP TRIGGER reject_receipt`, `DROP TRIGGER reject_recovery`} {
-		if _, err := store.db.Exec(query); err != nil {
-			t.Fatal(err)
-		}
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for store.Ready(ctx) != nil {
-		if time.Now().After(deadline) {
-			t.Fatal("bounded write recovery did not succeed")
-		}
-		time.Sleep(10 * time.Millisecond)
+	changed := settings
+	changed.Controllers = "host"
+	_, _, err = service.Mutate(ctx, host, snap.RoomID, rooms.Mutation{Operation: "settings", Epoch: snap.Epoch, ExpectedRevision: snap.Revision, Settings: changed})
+	if err == nil {
+		t.Fatal("failed durable settings acknowledged")
 	}
 	snap, err = service.Snapshot(ctx, host, snap.RoomID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Epoch == before.Epoch || snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Playback.PositionMs != 0 || snap.Revision != before.Revision {
-		t.Fatal("recovery retained stale running state", snap)
+	if snap.Revision != before.Revision || snap.Epoch != before.Epoch || snap.Settings != before.Settings || snap.Playback.Phase != "playing" {
+		t.Fatal("failed persistent operation changed memory")
 	}
-	g, err = service.Connect(ctx, guest, snap.RoomID, &recoverySink{})
-	if err != nil {
+	if store.Ready(ctx) == nil {
+		t.Fatal("failed writes remained ready")
+	}
+	hs.mu.Lock()
+	closed := hs.closed
+	hs.mu.Unlock()
+	gs.mu.Lock()
+	closed = closed || gs.closed
+	gs.mu.Unlock()
+	if closed {
+		t.Fatal("storage failure closed healthy playback")
+	}
+	var stored string
+	if err := store.db.QueryRow(`SELECT settings FROM rooms WHERE id=?`, snap.RoomID).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	if err := send(g, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != contracts.Failure("forbidden") {
-		t.Fatal("guest resumed after storage recovery", err)
+	if !strings.Contains(stored, `"everyone"`) {
+		t.Fatal("failed settings persisted")
 	}
-	h, err = service.Connect(ctx, host, snap.RoomID, &recoverySink{})
-	if err != nil {
+	if err := send(g, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 12000}); err != nil {
+		t.Fatal("memory playback stopped during outage", err)
+	}
+	if snap.Playback.PositionMs != 12000 {
+		t.Fatal("seek was not applied during outage")
+	}
+	if _, err := service.Redeem(ctx, guest, recoveryKey(t), "code", other.Invitation.Code); err != contracts.Failure("storage_unavailable") {
+		t.Fatal("durable operation ignored failure latch", err)
+	}
+	otherSnap, err := service.Snapshot(ctx, host, other.Snapshot.RoomID)
+	if err != nil || len(otherSnap.Members) != 1 || otherSnap.Playback.Phase != "playing" {
+		t.Fatal("failed membership changed authorization", err)
+	}
+	if err := service.Handle(ctx, otherConn, contracts.ClientFrame{Type: "media.select", CommandID: recoveryKey(t), Epoch: otherSnap.Epoch, ExpectedRevision: otherSnap.Revision, MediaGeneration: otherSnap.MediaGeneration, Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}}); err != contracts.Failure("storage_unavailable") {
+		t.Fatal("media persistence ignored failure latch", err)
+	}
+	if err := service.Handle(ctx, otherConn, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 5000, CommandID: recoveryKey(t), Epoch: otherSnap.Epoch, ExpectedRevision: otherSnap.Revision, MediaGeneration: otherSnap.MediaGeneration}); err != nil {
+		t.Fatal("unrelated playback lost controls", err)
+	}
+	// Removing the cause does not automatically recover writes or replace runtime epochs.
+	if _, err := store.db.Exec(`DROP TRIGGER reject_settings`); err != nil {
 		t.Fatal(err)
 	}
-	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != nil {
+	if store.Ready(ctx) == nil {
+		t.Fatal("storage recovered without operator restart")
+	}
+	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "pause"}); err != nil {
 		t.Fatal(err)
 	}
-	if snap.Playback.Phase != "playing" {
-		t.Fatal("host could not resume recovered room")
+	if snap.Playback.Phase != "paused" || snap.Epoch != before.Epoch {
+		t.Fatal("unrelated storage recovery altered runtime")
 	}
 }

@@ -13,10 +13,11 @@ import (
 func TestCoordinatorBackpressureCancellationAndShutdown(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxActive = 1
-	s, err := NewService(nil, time.Now, rand.Reader, limits)
+	s, err := NewService(emptyRepository{}, time.Now, rand.Reader, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.records["room"] = Room{ID: "room"}
 	defer s.Close()
 	started, release := make(chan struct{}), make(chan struct{})
 	first := make(chan error, 1)
@@ -58,3 +59,8 @@ func TestCoordinatorBackpressureCancellationAndShutdown(t *testing.T) {
 		t.Fatal("shutdown admission open")
 	}
 }
+
+type emptyRepository struct{}
+
+func (emptyRepository) LoadRooms(context.Context) ([]Room, error)      { return nil, nil }
+func (emptyRepository) Transact(context.Context, func(Tx) error) error { return nil }

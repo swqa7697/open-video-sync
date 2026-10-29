@@ -6,9 +6,8 @@ The [PRD](PRD.md) defines the product. This document defines the simplified targ
 [AGENTS.md](../AGENTS.md) defines development rules. [Version 2](wire-v2.md) defines the target application protocol.
 
 The existing application implements identity, rooms, local synchronization, waiting policies, and Bilibili playback with danmaku.
-It still uses the earlier database-driven playback and version-1 protocol. The changes below are not implemented yet.
-Stage 4a / P8a in the retained implementation plan adapts completed work before deployment and release acceptance.
-Earlier stage evidence describes the earlier behavior; it does not verify this revision.
+Stage 4a / P8a implements application protocol v2, the memory-owned runtime, and the simplified persistent schema.
+The retained stage tracker records validation and remaining release gates. Earlier stage evidence describes the previous behavior.
 
 ### 1.1 Core product
 
@@ -295,7 +294,7 @@ Comment failure is distinct from playback failure and from hiding comments.
 
 ## 9. HTTP and WebSocket contracts
 
-[Version 2](wire-v2.md) is the target contract for P8a. [Version 1](wire-v1.md) documents the existing implementation during transition only.
+[Version 2](wire-v2.md) defines the implemented application contract. Helper protocol and local fingerprints retain version 1.
 Version application routes and socket envelopes together; serve the matching frontend in the same binary.
 Do not keep two room engines or silently interpret an old settings object as the new one.
 An old client receives an upgrade error and reload guidance, not an automatic replay of old intent.

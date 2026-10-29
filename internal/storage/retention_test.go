@@ -3,17 +3,15 @@ package storage
 import (
 	"context"
 	"crypto/rand"
-	"strings"
-	"sync/atomic"
-	"testing"
-	"time"
-
 	"github.com/swqa7697/open-video-sync/internal/contracts"
 	"github.com/swqa7697/open-video-sync/internal/identity"
 	"github.com/swqa7697/open-video-sync/internal/rooms"
+	"sync/atomic"
+	"testing"
+	"time"
 )
 
-func TestBoundedRetentionAndActiveRoomProtection(t *testing.T) {
+func TestExpiredSessionCleanupPreservesRoomsInvitationsAndIdentities(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir())
 	if err != nil {
@@ -33,70 +31,36 @@ func TestBoundedRetentionAndActiveRoomProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer service.Close()
-	active, err := service.Create(ctx, host, recoveryKey(t), "Active", contracts.DefaultSettings())
+	created, err := service.Create(ctx, host, recoveryKey(t), "Persistent room", contracts.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	inactive, err := service.Create(ctx, host, recoveryKey(t), "Inactive", contracts.DefaultSettings())
+	wall.Add(31 * 86400000)
+	if err := store.CleanupSessions(ctx, wall.Load()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Snapshot(ctx, host, created.Snapshot.RoomID); err != nil {
+		t.Fatal("inactive room expired", err)
+	}
+	guest, _, _, err := identities.Bootstrap(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Connect(ctx, host, active.Snapshot.RoomID, &recoverySink{}); err != nil {
-		t.Fatal(err)
+	if _, err := service.Redeem(ctx, guest, recoveryKey(t), "code", created.Invitation.Code); err != nil {
+		t.Fatal("reusable invitation expired", err)
 	}
-	// More than one batch proves retention is bounded and later calls make progress.
-	for i := 0; i < 105; i++ {
-		if _, err := store.db.Exec(`INSERT INTO http_idempotency VALUES(?,?,?,?,?,?)`, host.IdentityID, "rooms.create", recoveryKey(t), strings.Repeat("a", 64), inactive.Snapshot.RoomID, wall.Load()-1); err != nil {
-			t.Fatal(err)
-		}
+	wall.Add(400 * 86400000)
+	if _, err := identities.Authenticate(ctx, "invalid"); err == nil {
+		t.Fatal("invalid credential accepted")
 	}
-	wall.Add(int64(31 * 24 * time.Hour / time.Millisecond))
-	if err := service.Maintain(ctx); err != nil {
+	if err := store.CleanupSessions(ctx, wall.Load()); err != nil {
 		t.Fatal(err)
 	}
 	var count int
-	if err := store.db.QueryRow(`SELECT count(*) FROM http_idempotency WHERE expires_at_ms<=?`, wall.Load()).Scan(&count); err != nil || count != 7 {
-		t.Fatal("cleanup did not respect batch budget", count, err)
+	if err := store.db.QueryRow(`SELECT count(*) FROM identities`).Scan(&count); err != nil || count != 2 {
+		t.Fatal("identity cleanup removed ownership", count, err)
 	}
-	if _, err := service.Snapshot(ctx, host, active.Snapshot.RoomID); err != nil {
-		t.Fatal("active room expired", err)
-	}
-	if _, err := service.Snapshot(ctx, host, inactive.Snapshot.RoomID); err != contracts.Failure("not_found") {
-		t.Fatal("inactive room survived TTL", err)
-	}
-	snap, err := service.Snapshot(ctx, host, active.Snapshot.RoomID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Expired invitation deletion cannot prevent loading or rotating an otherwise live room.
-	if _, _, err := service.Mutate(ctx, host, snap.RoomID, rooms.Mutation{Operation: "rotate", Epoch: snap.Epoch, ExpectedRevision: snap.Revision}); err != nil {
-		t.Fatal("expired invitation prevented rotation", err)
-	}
-	if err := service.Maintain(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.db.QueryRow(`SELECT count(*) FROM http_idempotency WHERE expires_at_ms<=?`, wall.Load()).Scan(&count); err != nil || count != 0 {
-		t.Fatal("cleanup did not make progress", count, err)
-	}
-	// Membership/ownership retain identities after their sessions expire; isolated identities are removed.
-	orphan, _, _, err := identities.Bootstrap(ctx, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.db.Exec(`UPDATE sessions SET expires_at_ms=created_at_ms+1 WHERE identity_id=?`, orphan.IdentityID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.db.Exec(`UPDATE identities SET last_seen_at_ms=? WHERE id IN (?,?)`, wall.Load()-366*86400000, host.IdentityID, orphan.IdentityID); err != nil {
-		t.Fatal(err)
-	}
-	wall.Add(2)
-	if err := store.CleanupRetention(ctx, wall.Load()); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.db.QueryRow(`SELECT count(*) FROM identities WHERE id=?`, orphan.IdentityID).Scan(&count); err != nil || count != 0 {
-		t.Fatal("eligible identity survived cleanup", err)
-	}
-	if err := store.db.QueryRow(`SELECT count(*) FROM identities WHERE id=?`, host.IdentityID).Scan(&count); err != nil || count != 1 {
-		t.Fatal("owned identity was deleted", err)
+	if err := store.db.QueryRow(`SELECT count(*) FROM sessions`).Scan(&count); err != nil || count != 0 {
+		t.Fatal("expired credentials survived cleanup", count, err)
 	}
 }

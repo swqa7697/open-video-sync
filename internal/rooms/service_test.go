@@ -67,8 +67,8 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 		t.Fatal("incomplete atomic creation")
 	}
 	replay, err := service.Create(ctx, host, createKey, "Private <room>", contracts.DefaultSettings())
-	if err != nil || !replay.Replayed || replay.Invitation != nil {
-		t.Fatal("create retry disclosed secrets", err)
+	if err != nil || !replay.Replayed || replay.Invitation == nil {
+		t.Fatal("create retry lost current host invitation", err)
 	}
 	_, err = service.Create(ctx, host, createKey, "Different", contracts.DefaultSettings())
 	expectCode(t, err, "idempotency_conflict")
@@ -153,9 +153,11 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh, err := service.Snapshot(ctx, host, id)
-	if err != nil || fresh.Epoch == oldEpoch || fresh.Revision != rotated.Snapshot.Revision || fresh.Settings.Controllers != "everyone" {
+	if err != nil || fresh.Epoch == oldEpoch || fresh.Revision != 1 || fresh.Settings.Controllers != "everyone" {
 		t.Fatal("restart lost state", err)
 	}
+	_, err = service.RecoverCreate(ctx, host, createKey, "Private <room>", contracts.DefaultSettings())
+	expectCode(t, err, "request_outcome_unknown")
 	removeHost := mutation(fresh, "remove")
 	removeHost.MemberID = fresh.HostMemberID
 	_, _, err = service.Mutate(ctx, host, id, removeHost)
@@ -196,8 +198,7 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 	}
 	_, err = service.Redeem(ctx, guest, key(t), "code", latest.Invitation.Code)
 	expectCode(t, err, "invalid_invitation")
-	_, err = service.Create(ctx, host, createKey, "Private <room>", contracts.DefaultSettings())
-	expectCode(t, err, "not_found")
+
 	list, _, err = service.List(ctx, host, "", 20)
 	if err != nil || len(list) != 0 {
 		t.Fatal("closed room still listed")
@@ -255,7 +256,7 @@ func TestCapacityExpiryLeaveAndSerializedSettings(t *testing.T) {
 	// HTTP settings and a service-level coordinator command race from the same revision.
 	m := mutation(snap, "settings")
 	m.Settings = contracts.DefaultSettings()
-	m.Settings.SyncMode = "seek"
+	m.Settings.Controllers = "everyone"
 	errs = make([]error, 2)
 	for i := range errs {
 		wg.Add(1)
@@ -297,9 +298,11 @@ func TestCapacityExpiryLeaveAndSerializedSettings(t *testing.T) {
 	}
 	now = now.Add(7 * 24 * time.Hour)
 	_, err = service.Redeem(ctx, peers[1-winner], key(t), "link", rotated.Invitation.LinkSecret)
-	expectCode(t, err, "invalid_invitation")
+	if err != nil {
+		t.Fatal("reusable invitation expired", err)
+	}
 	// Session revocation is enforced again inside room transactions.
-	if err := store.Revoke(ctx, host.TokenHash, now.UnixMilli()); err != nil {
+	if err := (&identity.Service{Repository: store, Now: clock, Random: rand.Reader, OnRevoked: service.RevokeSession}).Forget(ctx, host); err != nil {
 		t.Fatal(err)
 	}
 	_, err = service.Snapshot(ctx, host, snap.RoomID)

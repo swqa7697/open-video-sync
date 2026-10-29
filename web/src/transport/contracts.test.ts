@@ -3,7 +3,7 @@ import { expect, test } from 'vite-plus/test';
 import { decodeMedia, decodeProfilePatch, decodeRoomSettings } from './contracts';
 
 const fixtures: { name: string; contract: string; valid: boolean; input: unknown }[] = JSON.parse(
-  readFileSync('../specs/fixtures/wire-v1.json', 'utf8'),
+  readFileSync('../specs/fixtures/wire-v2.json', 'utf8'),
 );
 
 test.each(fixtures)('shared wire values: $name', ({ contract, valid, input }) => {

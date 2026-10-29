@@ -28,7 +28,7 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
-	for key, invalid := range map[string]string{"OVS_LISTEN_ADDR": "127.0.0.1:0", "OVS_LOG_LEVEL": "info+4", "OVS_MAX_ACTIVE_ROOMS": "0", "OVS_MAX_ROOM_MEMBERS": "33"} {
+	for key, invalid := range map[string]string{"OVS_LISTEN_ADDR": "127.0.0.1:0", "OVS_LOG_LEVEL": "info+4"} {
 		t.Run(key, func(t *testing.T) {
 			_, err := loadConfig(func(name string) string {
 				if name == "OVS_PUBLIC_ORIGIN" {

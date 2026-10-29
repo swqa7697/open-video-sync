@@ -16,7 +16,7 @@ import (
 // These shared cases own metadata compatibility and credential exclusion.
 // Existing HTTP/WS tests own routing/origin rules, not unimplemented routes.
 func TestSharedWireValues(t *testing.T) {
-	data, err := os.ReadFile("../../specs/fixtures/wire-v1.json")
+	data, err := os.ReadFile("../../specs/fixtures/wire-v2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,5 +142,18 @@ func TestLocalFingerprintVectors(t *testing.T) {
 		if hex.EncodeToString(h.Sum(nil)) != v.Digest {
 			t.Fatalf("fingerprint encoding differs for size %d", v.SizeBytes)
 		}
+	}
+}
+
+// Retired operations must fail at the frame boundary before reaching a room owner.
+func TestApplicationV2RejectsRetiredMessages(t *testing.T) {
+	for _, typ := range []string{"member.activate", "member.observation", "waiting.exclude"} {
+		raw, _ := json.Marshal(map[string]any{"v": 2, "type": typ, "epoch": strings.Repeat("a", 32), "payload": map[string]any{}})
+		if _, err := DecodeClientFrame(raw); err != Failure("invalid_command") {
+			t.Fatalf("retired %s accepted: %v", typ, err)
+		}
+	}
+	if _, err := DecodeClientFrame([]byte(`{"v":1,"type":"heartbeat","requestId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{"reply":true}}`)); err != Failure("upgrade_required") {
+		t.Fatal("old application protocol accepted", err)
 	}
 }

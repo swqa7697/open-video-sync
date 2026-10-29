@@ -12,7 +12,7 @@
     "contract": "profile",
     "valid": true,
     "input": {
-      "displayName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
     }
   },
   {
@@ -20,7 +20,7 @@
     "contract": "profile",
     "valid": false,
     "input": {
-      "displayName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
     }
   },
   {
@@ -68,97 +68,6 @@
     "valid": false,
     "input": {
       "displayName": "\ud800"
-    }
-  },
-  {
-    "name": "default settings",
-    "contract": "settings",
-    "valid": true,
-    "input": {
-      "controllers": "host",
-      "syncMode": "adaptive",
-      "waitMode": "all",
-      "waitOnBuffering": true,
-      "waitTimeoutMs": 30000,
-      "lateJoin": "catch_up",
-      "softDriftMs": 100,
-      "hardDriftMs": 750
-    }
-  },
-  {
-    "name": "alternate settings at bounds",
-    "contract": "settings",
-    "valid": true,
-    "input": {
-      "controllers": "everyone",
-      "syncMode": "seek",
-      "waitMode": "none",
-      "waitOnBuffering": false,
-      "waitTimeoutMs": 120000,
-      "lateJoin": "wait_at_next_play",
-      "softDriftMs": 500,
-      "hardDriftMs": 2000
-    }
-  },
-  {
-    "name": "thresholds must increase",
-    "contract": "settings",
-    "valid": false,
-    "input": {
-      "controllers": "host",
-      "syncMode": "adaptive",
-      "waitMode": "all",
-      "waitOnBuffering": true,
-      "waitTimeoutMs": 30000,
-      "lateJoin": "catch_up",
-      "softDriftMs": 300,
-      "hardDriftMs": 300
-    }
-  },
-  {
-    "name": "short wait timeout",
-    "contract": "settings",
-    "valid": false,
-    "input": {
-      "controllers": "host",
-      "syncMode": "adaptive",
-      "waitMode": "all",
-      "waitOnBuffering": true,
-      "waitTimeoutMs": 4999,
-      "lateJoin": "catch_up",
-      "softDriftMs": 100,
-      "hardDriftMs": 750
-    }
-  },
-  {
-    "name": "boolean cannot be a string",
-    "contract": "settings",
-    "valid": false,
-    "input": {
-      "controllers": "host",
-      "syncMode": "adaptive",
-      "waitMode": "all",
-      "waitOnBuffering": "true",
-      "waitTimeoutMs": 30000,
-      "lateJoin": "catch_up",
-      "softDriftMs": 100,
-      "hardDriftMs": 750
-    }
-  },
-  {
-    "name": "unknown settings version field",
-    "contract": "settings",
-    "valid": false,
-    "input": {
-      "controllers": "host",
-      "syncMode": "adaptive",
-      "waitMode": "all",
-      "waitOnBuffering": true,
-      "waitTimeoutMs": 30000,
-      "lateJoin": "catch_up",
-      "softDriftMs": 100,
-      "hardDriftMs": 750,
-      "v": 2
     }
   },
   {
@@ -414,6 +323,65 @@
       "sizeBytes": 10485760,
       "durationMs": 125000,
       "label": "Test pattern"
+    }
+  },
+  {
+    "name": "two room preferences",
+    "contract": "settings",
+    "valid": true,
+    "input": {
+      "controllers": "host",
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "everyone without waiting",
+    "contract": "settings",
+    "valid": true,
+    "input": {
+      "controllers": "everyone",
+      "waitForAll": false
+    }
+  },
+  {
+    "name": "reject legacy settings",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host",
+      "syncMode": "adaptive",
+      "waitMode": "all",
+      "waitOnBuffering": true,
+      "waitTimeoutMs": 30000,
+      "lateJoin": "catch_up",
+      "softDriftMs": 100,
+      "hardDriftMs": 750
+    }
+  },
+  {
+    "name": "reject missing waiting preference",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host"
+    }
+  },
+  {
+    "name": "reject nonboolean waiting",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host",
+      "waitForAll": "true"
+    }
+  },
+  {
+    "name": "reject unknown controller",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "guest",
+      "waitForAll": true
     }
   }
 ]

@@ -72,14 +72,14 @@ func CanonicalDigest(value []any) string {
 	return Hash(canonical)
 }
 
-// SettingsArray defines the version-1 digest order.
+// SettingsArray defines the version-2 digest order.
 func SettingsArray(s RoomSettings) []any {
-	return []any{s.Controllers, s.SyncMode, s.WaitMode, s.WaitOnBuffering, s.WaitTimeoutMs, s.LateJoin, s.SoftDriftMs, s.HardDriftMs}
+	return []any{s.Controllers, s.WaitForAll}
 }
 
 // DefaultSettings constructs the initial host preferences.
 func DefaultSettings() RoomSettings {
-	return RoomSettings{"host", "adaptive", "all", true, 30000, "catch_up", 100, 750}
+	return RoomSettings{"host", true}
 }
 
 // NormalizeCode applies only the specified ASCII Crockford aliases/separators.

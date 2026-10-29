@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, test } from 'vite-plus/test';
-import vectors from '../../../specs/fixtures/http-digests-v1.json';
+import vectors from '../../../specs/fixtures/http-digests-v2.json';
 import { consumeInvitation } from './invitation';
 
 test('browser JSON encoding agrees with server HTTP request digests', () => {

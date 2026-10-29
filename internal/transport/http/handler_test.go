@@ -19,13 +19,16 @@ func TestRoutingReadinessAndHostBoundary(t *testing.T) {
 		code int
 	}{
 		{"/", 200}, {"/join", 200}, {"/health/live", 204}, {"/health/ready", 204},
-		{"/api", 404}, {"/api/v1/session", 404}, {"/api/v1/rooms/test/ws", 404}, {"/health/missing", 404}, {"/ws", 404}, {"/ws/missing", 404},
+		{"/api/v1/session", 409}, {"/ws/v1/rooms/old", 409}, {"/api", 404}, {"/api/v2/session", 404}, {"/api/v2/rooms/test/ws", 404}, {"/health/missing", 404}, {"/ws", 404}, {"/ws/missing", 404},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://watch.example.com"+tc.path, nil)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		if w.Code != tc.code || (tc.code == 404 && strings.Contains(w.Body.String(), "SPA")) {
 			t.Errorf("%s: code=%d body=%q", tc.path, w.Code, w.Body.String())
+		}
+		if tc.code == 409 && (!strings.Contains(w.Body.String(), "upgrade_required") || strings.Contains(w.Body.String(), "SPA")) {
+			t.Fatal("stale client did not receive bounded upgrade guidance")
 		}
 		if w.Header().Get("Referrer-Policy") != "no-referrer" || w.Header().Get("Content-Security-Policy") == "" {
 			t.Errorf("%s: privacy headers missing", tc.path)

@@ -1,7 +1,7 @@
 # Version-2 application contract
 
-This is the target for Stage 4a / P8a, not the currently implemented protocol.
-[DESIGN](DESIGN.md) defines memory ownership and persistence. [Version 1](wire-v1.md) records the existing implementation during transition.
+This is the application protocol implemented by Stage 4a / P8a.
+[DESIGN](DESIGN.md) defines memory ownership and persistence.
 P8a changes the embedded frontend and backend together. Do not add parallel version-1 and version-2 room engines.
 The browser-local Bilibili helper protocol and local fingerprint encoding retain their existing versions.
 
@@ -58,7 +58,9 @@ Creation and redemption retain client-generated `Idempotency-Key` headers, with 
 Retain at most 256 receipts per identity and 4,096 per process for 60 seconds. Check authorization before returning a stored result.
 Retain request digests and resource IDs, not copies of secret-bearing requests. Reject changed input under the same retained key.
 A create replay returns the current authorized snapshot and host invitation; a redeem replay requires current membership.
-Receipt eviction or process restart removes the recovery guarantee. After an uncertain expired create request, refresh the room list and require explicit user action.
+Receipt eviction or process restart removes the recovery guarantee. A create retry sends `Idempotency-Replay-Only: true`;
+the server returns a retained result or `request_outcome_unknown` without creating another room.
+After an uncertain expired create request, refresh the room list and require explicit user action.
 Do not automatically create a second room to resolve an unknown outcome. Redemption of an existing membership remains naturally idempotent.
 
 ## Room snapshots
@@ -141,8 +143,8 @@ No receipts, runtime counters, waiting state, or playback positions survive rest
 
 ## P8a compatibility work
 
-Implement v2 with new shared fixtures alongside existing descriptor/fingerprint vectors. Do not relabel old v1 fixtures as v2 coverage.
-Keep the old protocol reference only while current code requires it. Update source documentation and retire obsolete v1 application fixtures when v2 replaces the implementation.
+Shared v2 fixtures verify the current settings and metadata boundaries. Fingerprint version-1 vectors remain unchanged.
+The obsolete v1 application reference and fixtures are retired.
 Preserve the existing session cookie so identity and membership survive the upgrade.
 Legacy hash-only invitations keep their existing verification and validity until host replacement. A host GET for such a record returns `invitation_reset_required` (409), prompting an explicit reset; no unknown secret is reconstructed. This is a development-only migration path, not an expiry policy for new invitations.
 Use a new recorded schema migration; preserve persistent data and explicitly discard only retired runtime records and settings.

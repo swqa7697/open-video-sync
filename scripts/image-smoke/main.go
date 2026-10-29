@@ -10,6 +10,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/coder/websocket"
+	"github.com/swqa7697/open-video-sync/internal/contracts"
+	"github.com/swqa7697/open-video-sync/internal/rooms"
 	"io"
 	"net/http"
 	"net/url"
@@ -136,7 +139,7 @@ func checkHTTP(ctx context.Context, name string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	for path, code := range map[string]int{"/": 200, "/join": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v1/session": 404, "/api/v1/rooms/test/ws": 404} {
+	for path, code := range map[string]int{"/": 200, "/join": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v2/session": 404, "/api/v2/rooms/test/ws": 404, "/api/v1/rooms": 409, "/ws/v1/rooms/test": 409} {
 		if err := request(ctx, client, base, path, code); err != nil {
 			return err
 		}
@@ -188,7 +191,7 @@ func inspectDatabase(ctx context.Context, path string) (string, error) {
 }
 
 // State uses only isolated test credentials. Do not print bearer or invitation values.
-type applicationState struct{ token, csrf, identityID, roomID string }
+type applicationState struct{ token, csrf, identityID, roomID, epoch, invitation string }
 
 func checkApplication(ctx context.Context, name string, previous applicationState) (applicationState, error) {
 	port, err := docker(ctx, "port", name, "8080/tcp")
@@ -202,7 +205,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if err != nil {
 			return nil, err
 		}
-		r, err := http.NewRequestWithContext(ctx, method, "http://"+port+"/api/v1"+path, strings.NewReader(string(b)))
+		r, err := http.NewRequestWithContext(ctx, method, "http://"+port+"/api/v2"+path, strings.NewReader(string(b)))
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +238,8 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		err = json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&value)
 		return value, err
 	}
-	if previous.identityID == "" {
+	initial := previous.identityID == ""
+	if initial {
 		value, err := call("POST", "/session", struct{}{})
 		if err != nil {
 			return previous, err
@@ -248,7 +252,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if err := json.Unmarshal(value["csrfToken"], &previous.csrf); err != nil {
 			return previous, err
 		}
-		value, err = call("POST", "/rooms", map[string]any{"title": "Container persistence", "settings": map[string]any{"controllers": "host", "syncMode": "adaptive", "waitMode": "all", "waitOnBuffering": true, "waitTimeoutMs": 30000, "lateJoin": "catch_up", "softDriftMs": 100, "hardDriftMs": 750}})
+		value, err = call("POST", "/rooms", map[string]any{"title": "Container persistence", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
 		if err != nil {
 			return previous, err
 		}
@@ -278,6 +282,86 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		_ = json.Unmarshal(value["title"], &title)
 		if id != previous.roomID || title != "Container persistence" {
 			return previous, errors.New("container replacement lost room")
+		}
+	}
+	value, err := call("GET", "/rooms/"+previous.roomID, nil)
+	if err != nil {
+		return previous, err
+	}
+	raw, _ := json.Marshal(value)
+	var snap rooms.Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		return previous, err
+	}
+	if snap.Settings.Controllers != "everyone" || snap.Settings.WaitForAll {
+		return previous, errors.New("container lost settings")
+	}
+	inv, err := call("GET", "/rooms/"+previous.roomID+"/invitations", nil)
+	if err != nil {
+		return previous, err
+	}
+	var invitation rooms.Invitation
+	if err := json.Unmarshal(inv["invitation"], &invitation); err != nil {
+		return previous, err
+	}
+	if initial {
+		previous.epoch = snap.Epoch
+		previous.invitation = invitation.LinkSecret
+		address := "ws://" + port + "/ws/v2/rooms/" + previous.roomID
+		conn, _, err := websocket.Dial(ctx, address, &websocket.DialOptions{Host: "ovs.example", HTTPHeader: http.Header{"Origin": {"http://ovs.example"}, "Cookie": {"ovs_session=" + previous.token}}})
+		if err != nil {
+			return previous, err
+		}
+		defer conn.CloseNow()
+		for _, intent := range []contracts.ClientFrame{{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}, {Type: "playback.command", Action: "seek", PositionMs: 12000}, {Type: "playback.command", Action: "play"}} {
+			key, _ := contracts.RandomID(rand.Reader)
+			payload := map[string]any{"action": intent.Action}
+			if intent.Type == "media.select" {
+				payload = map[string]any{"media": intent.Media}
+			} else if intent.Action == "seek" {
+				payload["positionMs"] = intent.PositionMs
+			}
+			frame := map[string]any{"v": 2, "type": intent.Type, "commandId": key, "epoch": snap.Epoch, "expectedRevision": snap.Revision, "mediaGeneration": snap.MediaGeneration, "payload": payload}
+			b, _ := json.Marshal(frame)
+			if err := conn.Write(ctx, websocket.MessageText, b); err != nil {
+				return previous, err
+			}
+			for {
+				_, b, err := conn.Read(ctx)
+				if err != nil {
+					return previous, err
+				}
+				var f struct {
+					Type    string
+					Payload json.RawMessage
+				}
+				if json.Unmarshal(b, &f) != nil {
+					return previous, errors.New("invalid socket frame")
+				}
+				if f.Type == "command.result" {
+					var result rooms.CommandResult
+					json.Unmarshal(f.Payload, &result)
+					if !result.Accepted {
+						return previous, errors.New("image socket rejected control")
+					}
+					break
+				}
+			}
+			value, err = call("GET", "/rooms/"+previous.roomID, nil)
+			if err != nil {
+				return previous, err
+			}
+			raw, _ = json.Marshal(value)
+			if err := json.Unmarshal(raw, &snap); err != nil {
+				return previous, err
+			}
+		}
+		if snap.Playback.Phase != "playing" || snap.Playback.PositionMs != 12000 {
+			return previous, errors.New("image playback controls did not apply")
+		}
+	} else {
+		if snap.Epoch == previous.epoch || snap.Revision != 1 || snap.MediaGeneration != 1 || snap.Media == nil || snap.Playback.Phase != "paused" || snap.Playback.PositionMs != 0 || snap.Barrier != nil || invitation.LinkSecret != previous.invitation {
+			return previous, errors.New("replacement lost selection/invitation or retained playback runtime")
 		}
 	}
 	if previous.identityID == "" || previous.roomID == "" || previous.token == "" {

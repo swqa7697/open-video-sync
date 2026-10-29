@@ -27,11 +27,11 @@ type Readiness struct {
 
 // ClientFrame is the validated allowlist used by room and socket handlers.
 type ClientFrame struct {
-	Type, CommandID, RequestID, Epoch, Action, MemberID         string
+	Type, CommandID, RequestID, Epoch, Action                   string
 	MediaGeneration, ExpectedRevision, PositionMs, ClientSendMs int64
 	Media                                                       MediaDescriptor
 	Report                                                      Readiness
-	Excluded, Reply                                             bool
+	Reply                                                       bool
 }
 
 // DecodeClientFrame rejects unknown, duplicate and missing fields before effects.
@@ -41,7 +41,7 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 	if err != nil {
 		return f, err
 	}
-	if v, ok := integer(o["v"], 1, 1); !ok || v != 1 {
+	if v, ok := integer(o["v"], 2, 2); !ok || v != 2 {
 		return f, Failure("upgrade_required")
 	}
 	f.Type, _ = o["type"].(string)
@@ -60,16 +60,12 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 			f.ClientSendMs, ok = integer(p["clientSendMs"], 0, MaxSafeInteger)
 			valid = valid && ok && shape(p, "clientSendMs")
 		}
-	case "member.activate":
-		f.RequestID, _ = o["requestId"].(string)
-		f.Epoch, _ = o["epoch"].(string)
-		valid = shape(o, "v", "type", "requestId", "epoch") && ValidID(f.RequestID) && ValidID(f.Epoch)
-	case "member.readiness", "member.observation":
+	case "member.readiness":
 		f.Epoch, _ = o["epoch"].(string)
 		valid = shape(o, "v", "type", "epoch", "payload") && ValidID(f.Epoch)
-		f.Report, err = decodeReadiness(p, f.Type == "member.readiness")
+		f.Report, err = decodeReadiness(p)
 		valid = valid && err == nil
-	case "playback.command", "media.select", "waiting.exclude":
+	case "playback.command", "media.select":
 		f.CommandID, _ = o["commandId"].(string)
 		f.Epoch, _ = o["epoch"].(string)
 		var g, r bool
@@ -91,11 +87,7 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 			b, _ := json.Marshal(p["media"])
 			f.Media, err = DecodeMedia(b)
 			valid = valid && shape(p, "media") && err == nil
-		case "waiting.exclude":
-			f.MemberID, _ = p["memberId"].(string)
-			var ok bool
-			f.Excluded, ok = p["excluded"].(bool)
-			valid = valid && shape(p, "memberId", "excluded") && ValidID(f.MemberID) && ok
+
 		}
 	}
 	if !valid {
@@ -103,10 +95,10 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 	}
 	return f, nil
 }
-func decodeReadiness(p map[string]any, barrier bool) (Readiness, error) {
+func decodeReadiness(p map[string]any) (Readiness, error) {
 	var r Readiness
 	fields := []string{"status", "mediaGeneration", "sampledAtClientMs", "positionMs", "durationMs", "capabilities"}
-	if barrier {
+	{
 		fields = append(fields, "barrierId")
 		if p["barrierId"] != nil {
 			id, ok := p["barrierId"].(string)
@@ -160,7 +152,7 @@ func decodeReadiness(p map[string]any, barrier bool) (Readiness, error) {
 
 // CommandDigest hashes the canonical validated intent, including its original preconditions.
 func CommandDigest(f ClientFrame) string {
-	a := []any{"ovs-command-v1", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
+	a := []any{"ovs-command-v2", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
 	switch f.Type {
 	case "playback.command":
 		var p any
@@ -177,8 +169,7 @@ func CommandDigest(f ClientFrame) string {
 			d = []any{m.Kind, m.BVID, m.CID, m.Part, m.DurationMs}
 		}
 		a = append(a, d)
-	case "waiting.exclude":
-		a = append(a, f.MemberID, f.Excluded)
+
 	}
 	return CanonicalDigest(a)
 }

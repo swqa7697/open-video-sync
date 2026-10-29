@@ -28,10 +28,10 @@ type API struct {
 // NewAPI constructs the identity routes. Room routes are installed by WithRooms.
 func NewAPI(origin string, service *identity.Service) *API {
 	a := &API{Origin: origin, Identity: service, mux: http.NewServeMux(), limits: &limiter{buckets: make(map[string]bucket), now: service.Now}}
-	a.mux.HandleFunc("POST /api/v1/session", a.bootstrap)
-	a.mux.HandleFunc("GET /api/v1/me", a.me)
-	a.mux.HandleFunc("PATCH /api/v1/me", a.profile)
-	a.mux.HandleFunc("DELETE /api/v1/session", a.forget)
+	a.mux.HandleFunc("POST /api/v2/session", a.bootstrap)
+	a.mux.HandleFunc("GET /api/v2/me", a.me)
+	a.mux.HandleFunc("PATCH /api/v2/me", a.profile)
+	a.mux.HandleFunc("DELETE /api/v2/session", a.forget)
 	a.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fail(w, contracts.Failure("not_found")) })
 	return a
 }
@@ -45,6 +45,8 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func respond(w http.ResponseWriter, value any) { _ = json.NewEncoder(w).Encode(value) }
 func fail(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	code := "storage_unavailable"
 	var failure contracts.Failure
 	if errors.As(err, &failure) {
@@ -73,6 +75,18 @@ func fail(w http.ResponseWriter, err error) {
 	case "invalid_invitation":
 		status = 404
 		message = "Invitation unavailable."
+		retry = false
+	case "upgrade_required":
+		status = 409
+		message = "Reload to use the updated application."
+		retry = false
+	case "request_outcome_unknown":
+		status = 409
+		message = "Request recovery expired. Refresh your rooms before choosing a new action."
+		retry = false
+	case "invitation_reset_required":
+		status = 409
+		message = "Replace the legacy invitation before sharing."
 		retry = false
 	case "stale_state":
 		status = 409

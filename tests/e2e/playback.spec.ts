@@ -29,7 +29,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     // real server normally, then explicitly cut both sides and reject outage retries.
     let socketAvailable = true;
     let interruptSocket: (() => Promise<void>) | undefined;
-    await guest.routeWebSocket('**/ws/v1/rooms/*', async (socket) => {
+    await guest.routeWebSocket('**/ws/v2/rooms/*', async (socket) => {
       if (!socketAvailable) {
         await socket.close({ code: 1013, reason: 'Synthetic transport outage' });
         return;
@@ -162,9 +162,8 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     );
     const tab = await page.context().newPage();
     await tab.goto(roomURL);
-    await expect(tab.getByRole('button', { name: 'Use this tab' })).toBeVisible();
-    await tab.getByRole('button', { name: 'Use this tab' }).click();
-    await expect(page.getByRole('button', { name: 'Use this tab' })).toBeVisible();
+    await expect(tab.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
+    await expect(page.getByText('This room is open elsewhere.', { exact: false })).toBeVisible();
     await expect
       .poll(() =>
         page

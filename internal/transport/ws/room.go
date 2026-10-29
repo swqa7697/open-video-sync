@@ -167,7 +167,6 @@ func NewHandler(origin string, identities *identity.Service, service *rooms.Serv
 		defer func() { stop(); <-finished }()
 		tokens := float64(20)
 		at := time.Now()
-		observation := time.Time{}
 		for {
 			kind, b, err := conn.Read(ctx)
 			if err != nil {
@@ -190,6 +189,10 @@ func NewHandler(origin string, identities *identity.Service, service *rooms.Serv
 				return
 			}
 			last.Store(serviceTime(service))
+			if (f.Type == "clock.ping" || f.Type == "heartbeat") && service.CheckConnection(ctx, bound) != nil {
+				out.Close()
+				return
+			}
 			if f.Type == "clock.ping" {
 				now := serviceTime(service)
 				out.Offer("clock.pong", "", map[string]any{"requestId": f.RequestID, "payload": map[string]int64{"clientSendMs": f.ClientSendMs, "serverReceiveMs": now, "serverSendMs": serviceTime(service)}})
@@ -209,12 +212,7 @@ func NewHandler(origin string, identities *identity.Service, service *rooms.Serv
 				return
 			}
 			tokens--
-			if f.Type == "member.observation" {
-				if now.Sub(observation) < time.Second {
-					continue
-				}
-				observation = now
-			}
+
 			_ = service.Handle(ctx, bound, f)
 		}
 	})
@@ -256,10 +254,10 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 			if v.kind == "clock.pong" || v.kind == "heartbeat" {
 				var p map[string]any
 				_ = json.Unmarshal(v.payload, &p)
-				frame = map[string]any{"v": 1, "type": v.kind, "requestId": p["requestId"], "payload": p["payload"]}
+				frame = map[string]any{"v": 2, "type": v.kind, "requestId": p["requestId"], "payload": p["payload"]}
 			} else {
 				seq++
-				frame = map[string]any{"v": 1, "type": v.kind, "epoch": v.epoch, "eventSeq": seq, "payload": v.payload}
+				frame = map[string]any{"v": 2, "type": v.kind, "epoch": v.epoch, "eventSeq": seq, "payload": v.payload}
 			}
 			if send(frame) != nil {
 				return
@@ -278,7 +276,7 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 			}
 			heartbeatAt = clock()
 			id, _ := contracts.RandomID(rand.Reader)
-			if send(map[string]any{"v": 1, "type": "heartbeat", "requestId": id, "payload": map[string]bool{"reply": false}}) != nil {
+			if send(map[string]any{"v": 2, "type": "heartbeat", "requestId": id, "payload": map[string]bool{"reply": false}}) != nil {
 				return
 			}
 		}

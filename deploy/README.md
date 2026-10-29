@@ -1,7 +1,7 @@
 # Deployment examples
 
 These examples deploy the current OVS application, including room and playback features.
-The simplified [target design](../specs/DESIGN.md) still requires Stage 4a / P8a implementation; these commands do not implement that transition.
+The [design](../specs/DESIGN.md) keeps playback in memory and stores persistent metadata in `/data`.
 
 ## Direct HTTP
 
@@ -44,7 +44,8 @@ Do not enable request-body logging in the application or proxy.
 
 The container health check invokes `/ovs healthcheck`. Allow more than ten seconds for graceful termination; Compose allows fifteen seconds.
 Use the stopped-directory backup procedure in the [root README](../README.md#storage-and-deployment).
-Preserve `/data` across upgrades and use a binary compatible with its schema. OVS has no backup/restore command or automated downgrade workflow.
+Preserve `/data` across upgrades and use a binary compatible with its schema. Playback restarts paused at zero.
+Development installations upgrading from application protocol v1 need the [legacy invitation transition](../specs/development-upgrade.md). OVS has no backup/restore command or automated downgrade workflow.
 
 `make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
 The smoke check retains isolated database copies under ignored `.misc/image-smoke/` and removes its containers and volume.

@@ -19,7 +19,7 @@ import (
 	"github.com/swqa7697/open-video-sync/internal/storage"
 )
 
-func TestCrashRestoresCheckpointAndAcceptedCommand(t *testing.T) {
+func TestCrashRestoresSelectionAtZeroWithFreshRuntime(t *testing.T) {
 	if os.Getenv("OVS_CRASH_CHILD") == "1" {
 		crashChild(t)
 		return
@@ -40,7 +40,7 @@ func TestCrashRestoresCheckpointAndAcceptedCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := contracts.DefaultSettings()
-	settings.WaitMode = "none"
+	settings.WaitForAll = false
 	created, err := service.Create(ctx, host, key(t), "Crash", settings)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestCrashRestoresCheckpointAndAcceptedCommand(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	child := exec.Command(os.Args[0], "-test.run=^TestCrashRestoresCheckpointAndAcceptedCommand$")
+	child := exec.Command(os.Args[0], "-test.run=^TestCrashRestoresSelectionAtZeroWithFreshRuntime$")
 	child.Env = append(os.Environ(), "OVS_CRASH_CHILD=1", "OVS_CRASH_DIRECTORY="+directory, "OVS_CRASH_TOKEN="+token, "OVS_CRASH_ROOM="+created.Snapshot.RoomID)
 	stdout, err := child.StdoutPipe()
 	if err != nil {
@@ -82,7 +82,7 @@ func TestCrashRestoresCheckpointAndAcceptedCommand(t *testing.T) {
 			t.Fatal("crash child failed", err, stderr.String())
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("crash child did not checkpoint")
+		t.Fatal("crash child did not publish applied state")
 	}
 	if err := child.Process.Kill(); err != nil {
 		t.Fatal(err)
@@ -102,21 +102,17 @@ func TestCrashRestoresCheckpointAndAcceptedCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Epoch == state.Epoch || snap.Playback.Phase != "paused" || snap.Playback.PositionMs != 20000 || snap.Playback.DesiredPlaying || snap.Revision != state.Revision || snap.Barrier != nil {
+	if snap.Epoch == state.Epoch || snap.Playback.Phase != "paused" || snap.Playback.PositionMs != 0 || snap.Playback.DesiredPlaying || snap.Revision != 1 || snap.Barrier != nil {
 		t.Fatal("crash recovery advanced or lost committed position", snap)
 	}
-	if err := store.Transact(ctx, func(tx rooms.Tx) error {
-		record, found, err := tx.Command(snap.RoomID, host.IdentityID, state.CommandID, time.Now().UnixMilli())
-		if err != nil {
-			return err
-		}
-		if !found || record.Revision != snap.Revision {
-			return fmt.Errorf("accepted command receipt lost")
-		}
-		return nil
-	}); err != nil {
+	conn, err := service.Connect(ctx, host, snap.RoomID, &sink{})
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Handle(ctx, conn, contracts.ClientFrame{Type: "playback.command", Action: "play", CommandID: state.CommandID, Epoch: state.Epoch, MediaGeneration: 1, ExpectedRevision: state.Revision}); err != contracts.Failure("stale_state") {
+		t.Fatal("precrash intent accepted", err)
+	}
+
 }
 
 func crashChild(t *testing.T) {
@@ -161,32 +157,9 @@ func crashChild(t *testing.T) {
 	}
 	send(contracts.ClientFrame{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}})
 	send(contracts.ClientFrame{Type: "playback.command", Action: "play"})
-	checkpointRevision := snap.Revision
 	clock.Store(11000)
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		var position, revision int64
-		if err := store.Transact(ctx, func(tx rooms.Tx) error {
-			r, err := tx.LoadRoom(snap.RoomID)
-			position = r.Playback.PositionMs
-			revision = r.Revision
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if position == 11000 {
-			if revision != checkpointRevision {
-				t.Fatal("checkpoint changed public revision")
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("periodic checkpoint missing")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 	commandID := send(contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 20000})
-	clock.Store(15000) // Four seconds of uncheckpointed progress may be lost after the kill.
+	clock.Store(15000) // Runtime progress must be discarded after the kill.
 	b, _ := json.Marshal(struct {
 		Epoch, CommandID string
 		Revision         int64

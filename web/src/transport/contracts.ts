@@ -1,18 +1,12 @@
-// Version-1 value boundaries. These do not authorize actions or implement routes.
-// Server wire rules and later response/envelope shapes: specs/wire-v1.md.
+// Version-2 value boundaries. These do not authorize actions or implement routes.
+// Server wire rules and later response/envelope shapes: specs/wire-v2.md.
 export interface ProfilePatch {
   displayName: string;
 }
 
 export interface RoomSettings {
   controllers: 'host' | 'everyone';
-  syncMode: 'seek' | 'adaptive';
-  waitMode: 'none' | 'all';
-  waitOnBuffering: boolean;
-  waitTimeoutMs: number;
-  lateJoin: 'catch_up' | 'wait_at_next_play';
-  softDriftMs: number;
-  hardDriftMs: number;
+  waitForAll: boolean;
 }
 
 export type MediaDescriptor =
@@ -91,28 +85,12 @@ export function decodeProfilePatch(value: unknown): ProfilePatch {
 
 export function decodeRoomSettings(value: unknown): RoomSettings {
   const input = object(value);
-  shape(input, [
-    'controllers',
-    'syncMode',
-    'waitMode',
-    'waitOnBuffering',
-    'waitTimeoutMs',
-    'lateJoin',
-    'softDriftMs',
-    'hardDriftMs',
-  ]);
-  if (typeof input.waitOnBuffering !== 'boolean') return invalid();
+  shape(input, ['controllers', 'waitForAll']);
+  if (typeof input.waitForAll !== 'boolean') return invalid();
   const settings: RoomSettings = {
     controllers: choice(input.controllers, ['host', 'everyone']),
-    syncMode: choice(input.syncMode, ['seek', 'adaptive']),
-    waitMode: choice(input.waitMode, ['none', 'all']),
-    waitOnBuffering: input.waitOnBuffering,
-    waitTimeoutMs: integer(input.waitTimeoutMs, 5_000, 120_000),
-    lateJoin: choice(input.lateJoin, ['catch_up', 'wait_at_next_play']),
-    softDriftMs: integer(input.softDriftMs, 50, 500),
-    hardDriftMs: integer(input.hardDriftMs, 250, 2_000),
+    waitForAll: input.waitForAll,
   };
-  if (settings.hardDriftMs <= settings.softDriftMs) return invalid();
   return settings;
 }
 

@@ -1,11 +1,11 @@
 import { expect, test } from '../../web/playwright-fixtures';
 import { generatedVideo } from './media';
 
-test('waiting timeout, exclusion, buffering, late joining, and host return preserve explicit intent', async ({
+test('waiting timeout, buffering, ready late joining, and host absence preserve controller permissions', async ({
   page,
   browser,
 }, testInfo) => {
-  test.setTimeout(70000);
+  test.setTimeout(110000);
   const fixture = await generatedVideo(browser, 60),
     guest = await browser.newContext();
   const file = { name: 'policy-fixture.webm', mimeType: 'video/webm', buffer: fixture };
@@ -14,7 +14,6 @@ test('waiting timeout, exclusion, buffering, late joining, and host return prese
     await page.getByLabel('Room title', { exact: true }).fill('Policies and recovery');
     await page.getByRole('button', { name: 'Create room', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-    await page.getByLabel('Wait timeout (ms)').fill('5000');
     await page.getByLabel('Playback controls').selectOption('everyone');
     await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
     const roomURL = page.url(),
@@ -33,24 +32,20 @@ test('waiting timeout, exclusion, buffering, late joining, and host return prese
       page.getByRole('status').filter({ hasText: 'Waiting for participants at 5.0' }),
     ).toBeVisible();
     await expect(page.getByText('Waiting timed out.', { exact: false })).toBeVisible({
-      timeout: 8000,
+      timeout: 33000,
     });
     await expect(page.getByTestId('playback-phase')).toHaveText('paused');
-    await page.getByRole('button', { name: /^Exclude .* from waiting$/ }).click();
-    await page.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(page.getByTestId('playback-phase')).toHaveText('playing');
+    // A participant with control permission can explicitly retry after timeout.
     await other.locator('#local-video').setInputFiles(file);
-    await expect
-      .poll(() => other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
-      .toBe(true);
-    await page.getByRole('button', { name: /^Include .* in waiting$/ }).click();
+    await expect(other.getByTestId('media-status')).toHaveText('ready');
+    await other.getByRole('button', { name: 'Play together', exact: true }).click();
+    await expect(page.getByTestId('playback-phase')).toHaveText('playing');
     // Inject adapter events to test the browser-to-server policy path; this is not a network starvation measurement.
     await other.locator('video').evaluate((v) => v.dispatchEvent(new Event('waiting')));
     await expect(page.getByTestId('playback-phase')).toHaveText('waiting');
     await other.locator('video').evaluate((v) => v.dispatchEvent(new Event('canplay')));
     await expect(page.getByTestId('playback-phase')).toHaveText('playing');
-    await page.getByLabel('Late joining').selectOption('wait_at_next_play');
-    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause together', exact: true }).click();
     await expect(page.getByTestId('playback-phase')).toHaveText('paused');
     // Reconnect while paused, then close the guest before the next play cohort is frozen.
     await other.close();
@@ -61,19 +56,14 @@ test('waiting timeout, exclusion, buffering, late joining, and host return prese
     await expect(late.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await late.locator('#local-video').setInputFiles(file);
     await expect(late.getByTestId('media-status')).toHaveText('ready');
-    await expect(
-      late.getByText('You are outside active playback.', { exact: false }),
-    ).toBeVisible();
-    expect(await late.locator('video').evaluate((v) => (v as HTMLVideoElement).paused)).toBe(true);
-    await page.getByRole('button', { name: 'Play together', exact: true }).click();
     await expect
       .poll(() => late.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
       .toBe(true);
     await page.close();
-    await expect(late.getByTestId('playback-phase')).toHaveText('paused', { timeout: 20000 });
-    await late.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(late.getByRole('alert')).toBeVisible();
+    await late.getByRole('button', { name: 'Pause together', exact: true }).click();
     await expect(late.getByTestId('playback-phase')).toHaveText('paused');
+    await late.getByRole('button', { name: 'Play together', exact: true }).click();
+    await expect(late.getByTestId('playback-phase')).toHaveText('playing');
     const returned = await page.context().newPage();
     await returned.goto(roomURL);
     await returned.locator('#local-video').setInputFiles(file);

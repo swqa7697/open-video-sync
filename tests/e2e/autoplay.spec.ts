@@ -29,14 +29,14 @@ test.describe('autoplay permission', () => {
       await h.getByLabel('Room title', { exact: true }).fill('Autoplay permission');
       await h.getByRole('button', { name: 'Create room', exact: true }).click();
       await expect(h.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-      const response = await guest.request.post(`${baseURL}/api/v1/session`, {
+      const response = await guest.request.post(`${baseURL}/api/v2/session`, {
         headers: { Origin: baseURL! },
         data: {},
       });
       expect(response.status()).toBe(200);
       const session = await response.json();
       const code = (await h.locator('.invite-code').innerText()).replaceAll(' ', '');
-      const joined = await guest.request.post(`${baseURL}/api/v1/invitations/redeem`, {
+      const joined = await guest.request.post(`${baseURL}/api/v2/invitations/redeem`, {
         headers: {
           Origin: baseURL!,
           'X-OVS-CSRF': session.csrfToken,

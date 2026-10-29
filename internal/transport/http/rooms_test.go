@@ -46,15 +46,15 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 		return w.Body.Bytes()
 	}
 	var created rooms.Result
-	if err := json.Unmarshal(keyed(host, "/api/v1/rooms", string(createBody), newKey()), &created); err != nil {
+	if err := json.Unmarshal(keyed(host, "/api/v2/rooms", string(createBody), newKey()), &created); err != nil {
 		t.Fatal(err)
 	}
 	id := created.Snapshot.RoomID
-	if w := call(t, a, third, "GET", "/api/v1/rooms/"+id, ""); w.Code != 404 {
+	if w := call(t, a, third, "GET", "/api/v2/rooms/"+id, ""); w.Code != 404 {
 		t.Fatal("third profile read room")
 	}
 	var joined rooms.Result
-	_ = json.Unmarshal(keyed(guest, "/api/v1/invitations/redeem", fmt.Sprintf(`{"code":%q}`, created.Invitation.Code), newKey()), &joined)
+	_ = json.Unmarshal(keyed(guest, "/api/v2/invitations/redeem", fmt.Sprintf(`{"code":%q}`, created.Invitation.Code), newKey()), &joined)
 	snap := joined.Snapshot
 	session, err := identities.Authenticate(context.Background(), host.token)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 	var commandErr error
 	go func() {
 		defer wg.Done()
-		httpCode = call(t, a, host, "PATCH", "/api/v1/rooms/"+id+"/settings", string(patch)).Code
+		httpCode = call(t, a, host, "PATCH", "/api/v2/rooms/"+id+"/settings", string(patch)).Code
 	}()
 	go func() {
 		defer wg.Done()
@@ -79,21 +79,21 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 	if !((httpCode == 200 && commandErr == contracts.Failure("stale_state")) || (httpCode == 409 && commandErr == nil)) {
 		t.Fatalf("HTTP and command did not serialize: %d %v", httpCode, commandErr)
 	}
-	if w := call(t, a, guest, "GET", "/api/v1/rooms?limit=1", ""); w.Code != 200 {
+	if w := call(t, a, guest, "GET", "/api/v2/rooms?limit=1", ""); w.Code != 200 {
 		t.Fatal(w.Body)
 	}
 	for _, query := range []string{"?other=1", "?limit=101", "?cursor=wrong", "?limit=1&limit=2"} {
-		if w := call(t, a, host, "GET", "/api/v1/rooms"+query, ""); w.Code != 400 {
+		if w := call(t, a, host, "GET", "/api/v2/rooms"+query, ""); w.Code != 400 {
 			t.Fatal("bad pagination accepted", w.Code)
 		}
 	}
-	w := call(t, a, host, "GET", "/api/v1/rooms/"+id, "")
+	w := call(t, a, host, "GET", "/api/v2/rooms/"+id, "")
 	_ = json.Unmarshal(w.Body.Bytes(), &snap)
 	preconditions := fmt.Sprintf(`{"epoch":%q,"expectedRevision":%d}`, snap.Epoch, snap.Revision)
-	if w := call(t, a, host, "DELETE", "/api/v1/rooms/"+id, preconditions); w.Code != 200 {
+	if w := call(t, a, host, "DELETE", "/api/v2/rooms/"+id, preconditions); w.Code != 200 {
 		t.Fatal("close failed", w.Body)
 	}
-	if w := call(t, a, guest, "GET", "/api/v1/rooms/"+id, ""); w.Code != 404 {
+	if w := call(t, a, guest, "GET", "/api/v2/rooms/"+id, ""); w.Code != 404 {
 		t.Fatal("closed room available")
 	}
 }

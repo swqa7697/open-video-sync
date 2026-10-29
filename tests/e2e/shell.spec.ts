@@ -17,7 +17,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.goto('/');
     await expect(page.locator('header [role="status"]')).toHaveText('Server: ready');
     await expect(page.getByLabel('Display name (optional)')).toBeEnabled();
-    const firstIdentity = await (await page.request.get('/api/v1/me')).json();
+    const firstIdentity = await (await page.request.get('/api/v2/me')).json();
     await page.getByLabel('Display name (optional)').fill('<b>Alice 😀</b>');
     await page.getByRole('button', { name: 'Save name', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Name saved.' })).toBeVisible();
@@ -26,6 +26,8 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.getByRole('heading', { name: 'Stage one room' })).toBeVisible();
     const roomURL = page.url();
     const inviteURL = await page.getByLabel('Invitation link').inputValue();
+    await page.getByRole('button', { name: 'Share invitation', exact: true }).click();
+    await expect(page.getByLabel('Invitation link')).toHaveValue(inviteURL);
     const firstCode = (await page.locator('.invite-code').innerText()).replaceAll(' ', '');
     await expect(page.locator('.roster')).toContainText('<b>Alice 😀</b>');
     expect(await page.locator('.roster b').count()).toBe(0);
@@ -35,17 +37,17 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(new URL(guestPage.url()).hash).toBe('');
     await guestPage.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(guestPage.getByRole('heading', { name: 'Stage one room' })).toBeVisible();
-    const guestIdentity = await (await guest.request.get(`${baseURL}/api/v1/me`)).json();
+    const guestIdentity = await (await guest.request.get(`${baseURL}/api/v2/me`)).json();
     expect(guestIdentity.identity.identityId).not.toBe(firstIdentity.identity.identityId);
     await guestPage.reload();
     await expect(guestPage.getByRole('heading', { name: 'Stage one room' })).toBeVisible();
-    const returnedIdentity = await (await guest.request.get(`${baseURL}/api/v1/me`)).json();
+    const returnedIdentity = await (await guest.request.get(`${baseURL}/api/v2/me`)).json();
     expect(returnedIdentity.identity.identityId).toBe(guestIdentity.identity.identityId);
     await outsiderPage.goto(baseURL);
     await expect(outsiderPage.getByLabel('Display name (optional)')).toBeEnabled();
-    const denied = await outsider.request.get(`${baseURL}/api/v1${new URL(roomURL).pathname}`);
+    const denied = await outsider.request.get(`${baseURL}/api/v2${new URL(roomURL).pathname}`);
     expect(denied.status()).toBe(404);
-    const listing = await (await outsider.request.get(`${baseURL}/api/v1/rooms`)).json();
+    const listing = await (await outsider.request.get(`${baseURL}/api/v2/rooms`)).json();
     expect(listing.rooms).toEqual([]);
     await page.getByRole('button', { name: 'Refresh room', exact: true }).click();
     await expect(page.locator('.roster li')).toHaveCount(2);
@@ -58,7 +60,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.getByLabel('Invitation link')).not.toHaveValue(inviteURL);
     await outsiderPage.getByLabel('Invitation code', { exact: true }).fill(firstCode);
     await outsiderPage.getByRole('button', { name: 'Join room', exact: true }).click();
-    await expect(outsiderPage.getByRole('alert')).toContainText('invalid or expired');
+    await expect(outsiderPage.getByRole('alert')).toContainText('unavailable');
     await page.getByRole('button', { name: /^Remove / }).click();
     await expect(page.locator('.roster li')).toHaveCount(1);
     await guestPage.getByRole('button', { name: 'Refresh room', exact: true }).click();
@@ -72,7 +74,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       page.getByRole('status').filter({ hasText: 'A new identity is active.' }),
     ).toBeVisible();
-    const newIdentity = await (await page.request.get('/api/v1/me')).json();
+    const newIdentity = await (await page.request.get('/api/v2/me')).json();
     expect(newIdentity.identity.identityId).not.toBe(firstIdentity.identity.identityId);
     const cookies = await page.context().cookies();
     const sessionCookie = cookies.find((cookie) => cookie.name === 'ovs_session');

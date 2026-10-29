@@ -39,29 +39,19 @@ type rollbackRepository struct {
 	rejections atomic.Int64
 }
 
-type recordingTx struct {
-	rooms.Tx
-	playbackWrite bool
-}
-
-func (t *recordingTx) SavePlayback(r rooms.Room, now int64) error {
-	t.playbackWrite = true
-	return t.Tx.SavePlayback(r, now)
-}
 func (r *rollbackRepository) Transact(ctx context.Context, run func(rooms.Tx) error) error {
+	r.rejections.Add(1)
 	return r.Repository.Transact(ctx, func(tx rooms.Tx) error {
-		observed := &recordingTx{Tx: tx}
-		if err := run(observed); err != nil {
+		if err := run(tx); err != nil {
 			return err
 		}
-		if observed.playbackWrite && r.reject.Load() {
-			r.rejections.Add(1)
+		if r.reject.Load() {
 			return contracts.Failure("busy")
 		}
 		return nil
 	})
 }
-func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
+func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(ctx, t.TempDir())
 	if err != nil {
@@ -78,7 +68,7 @@ func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
 	service.Monotonic = monotonic.Load
 	host := participant(t, store, time.Now)
 	settings := contracts.DefaultSettings()
-	settings.WaitMode = "none"
+	settings.WaitForAll = false
 	created, err := service.Create(ctx, host, key(t), "Rollback", settings)
 	if err != nil {
 		t.Fatal(err)
@@ -116,11 +106,10 @@ func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Handle(ctx, replacement, contracts.ClientFrame{Type: "member.activate", Epoch: snap.Epoch, RequestID: key(t)}); err != nil {
-		t.Fatal(err)
-	}
+	_ = replacement
+
 	err = service.Handle(ctx, bound, play)
-	expectCode(t, err, "session_required")
+	expectCode(t, err, "forbidden")
 	service.Close()
 	fresh, err := rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
 	if err != nil {
@@ -131,12 +120,12 @@ func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 5000 || restored.Epoch == snap.Epoch || restored.Revision != 3 || restored.Media == nil || *restored.Media != command.Media {
-		t.Fatal("checkpoint did not restore paused", restored)
+	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 0 || restored.Epoch == snap.Epoch || restored.Revision != 1 || restored.Media == nil || *restored.Media != command.Media {
+		t.Fatal("selected media did not restart paused at zero", restored)
 	}
 }
 
-func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
+func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(ctx, t.TempDir())
 	if err != nil {
@@ -207,22 +196,24 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	report := contracts.Readiness{Status: "ready", MediaGeneration: snap.MediaGeneration, BarrierID: &oldBarrier, PositionMs: &position, DurationMs: &duration, Capabilities: contracts.Capabilities{CanPlay: true, CanPause: true, CanSeek: true, CanReadPosition: true, CanDetectBuffering: true}}
 	err = service.Handle(ctx, g, contracts.ClientFrame{Type: "member.readiness", Epoch: snap.Epoch, Report: report})
 	expectCode(t, err, "stale_state")
-	if err := send(g, contracts.ClientFrame{Type: "waiting.exclude", MemberID: g.MemberID, Excluded: true}); err != contracts.Failure("forbidden") {
-		t.Fatal("guest excluded itself", err)
-	}
-	if err := send(h, contracts.ClientFrame{Type: "waiting.exclude", MemberID: h.MemberID, Excluded: true}); err != contracts.Failure("forbidden") {
-		t.Fatal("host excluded itself", err)
-	}
-	if err := send(h, contracts.ClientFrame{Type: "waiting.exclude", MemberID: g.MemberID, Excluded: true}); err != nil {
-		t.Fatal(err)
-	}
-	if len(snap.Barrier.RequiredMemberIDs) != 1 {
-		t.Fatal("exclusion did not update barrier")
-	}
 	id := snap.Barrier.BarrierID
 	report.BarrierID = &id
 	if err := service.Handle(ctx, h, contracts.ClientFrame{Type: "member.readiness", Epoch: snap.Epoch, Report: report}); err != nil {
 		t.Fatal(err)
+	}
+	if err := service.Handle(ctx, g, contracts.ClientFrame{Type: "member.readiness", Epoch: snap.Epoch, Report: report}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		refresh()
+		if snap.Playback.Phase == "playing" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stable ready members did not release wait")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	refresh()
 	if snap.Playback.Phase != "playing" {
@@ -231,7 +222,7 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	change := mutation(snap, "settings")
 	change.Settings = snap.Settings
 	change.Settings.Controllers = "everyone"
-	change.Settings.SyncMode = "seek"
+
 	updated, _, err := service.Mutate(ctx, host, snap.RoomID, change)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +233,7 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	}
 	change = mutation(snap, "settings")
 	change.Settings = snap.Settings
-	change.Settings.WaitMode = "none"
+	change.Settings.WaitForAll = false
 	updated, _, err = service.Mutate(ctx, host, snap.RoomID, change)
 	if err != nil {
 		t.Fatal(err)
@@ -264,11 +255,7 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	if err := send(h, contracts.ClientFrame{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("b", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range snap.Members {
-		if m.ExcludedFromWaiting {
-			t.Fatal("exclusion leaked to new generation")
-		}
-	}
+
 	// Removing a required member must revoke its socket and return a coherent barrier snapshot.
 	newGuest := participant(t, store, time.Now)
 	if _, err := service.Redeem(ctx, newGuest, key(t), "code", created.Invitation.Code); err != nil {
@@ -282,7 +269,7 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	refresh()
 	change = mutation(snap, "settings")
 	change.Settings = snap.Settings
-	change.Settings.WaitMode = "all"
+	change.Settings.WaitForAll = true
 	if _, _, err := service.Mutate(ctx, host, snap.RoomID, change); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +298,7 @@ func TestWaitingSeekExclusionSettingsAndSessionRevocation(t *testing.T) {
 	}
 }
 
-func TestEmptyCoordinatorEvictionSavesPausedAndReactivatesFresh(t *testing.T) {
+func TestEmptyCoordinatorEvictionReactivatesAtZeroWithoutStorage(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(ctx, t.TempDir())
 	if err != nil {
@@ -330,7 +317,7 @@ func TestEmptyCoordinatorEvictionSavesPausedAndReactivatesFresh(t *testing.T) {
 	service.Monotonic = clock.Load
 	host := participant(t, store, time.Now)
 	settings := contracts.DefaultSettings()
-	settings.WaitMode = "none"
+	settings.WaitForAll = false
 	created, err := service.Create(ctx, host, key(t), "Eviction", settings)
 	if err != nil {
 		t.Fatal(err)
@@ -354,49 +341,22 @@ func TestEmptyCoordinatorEvictionSavesPausedAndReactivatesFresh(t *testing.T) {
 		}
 	}
 	clock.Store(5000)
-	repository.reject.Store(true)
+	writes := repository.rejections.Load()
 	service.Disconnect(conn)
-	deadline := time.Now().Add(time.Second)
-	for repository.rejections.Load() == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("idle checkpoint was not attempted")
-		}
-		time.Sleep(5 * time.Millisecond)
+	time.Sleep(80 * time.Millisecond)
+	if repository.rejections.Load() != writes {
+		t.Fatal("idle eviction accessed persistence")
 	}
-	var failedSave rooms.Room
-	if err := store.Transact(ctx, func(tx rooms.Tx) error {
-		var err error
-		failedSave, err = tx.LoadRoom(snap.RoomID)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if failedSave.Playback.Phase != "playing" {
-		t.Fatal("failed idle checkpoint was published")
-	}
-	repository.reject.Store(false)
-	for {
-		var saved rooms.Room
-		if err := store.Transact(ctx, func(tx rooms.Tx) error { var err error; saved, err = tx.LoadRoom(snap.RoomID); return err }); err != nil {
-			t.Fatal(err)
-		}
-		if saved.Playback.Phase == "paused" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("empty coordinator did not save paused before eviction")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+
 	restored, err := service.Snapshot(ctx, host, snap.RoomID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Epoch == snap.Epoch || restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 5000 || restored.Revision != snap.Revision || restored.Barrier != nil {
+	if restored.Epoch == snap.Epoch || restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 0 || restored.Revision != 1 || restored.Barrier != nil {
 		t.Fatal("reactivation reused stale runtime state", restored)
 	}
 	for _, m := range restored.Members {
-		if m.PlaybackActive || m.PlaybackEligible || m.Readiness != nil {
+		if m.Presence != "offline" || m.Readiness != nil {
 			t.Fatal("ephemeral playback state survived eviction")
 		}
 	}

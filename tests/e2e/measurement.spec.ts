@@ -71,6 +71,17 @@ async function clockOffset(page: Page): Promise<{ offset: number; uncertainty: n
   return samples.sort((a, b) => a.uncertainty - b.uncertainty)[0]!;
 }
 function stats(values: number[]) {
+  if (!values.length)
+    return {
+      count: 0,
+      mean: null,
+      median: null,
+      standardDeviation: null,
+      min: null,
+      max: null,
+      p95: null,
+      p99: null,
+    };
   const sorted = [...values].sort((a, b) => a - b),
     n = sorted.length,
     mean = values.reduce((a, b) => a + b, 0) / n;
@@ -111,7 +122,7 @@ test('three independent nearby trials observe decoded frames separately from con
       await guest.goto(invitation);
       await guest.getByRole('button', { name: 'Join room', exact: true }).click();
       await expect(guest.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-      await host.getByLabel('Wait for participants').selectOption('none');
+      await host.getByLabel('Wait for everyone', { exact: true }).uncheck();
       await host.getByRole('button', { name: 'Save preferences', exact: true }).click();
       const file = { name: 'generated-timecode.webm', mimeType: 'video/webm', buffer: fixture };
       await host.locator('#local-video').setInputFiles(file);
@@ -159,6 +170,10 @@ test('three independent nearby trials observe decoded frames separately from con
         await expect
           .poll(async () => (await capture(player)).samples.at(-1)!.frame)
           .toBeGreaterThanOrEqual(600);
+      for (const player of [host, guest])
+        await expect
+          .poll(() => player.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
+          .toBe(true);
       await host.getByRole('button', { name: 'Pause together', exact: true }).click();
       for (const player of [host, guest])
         await expect
@@ -189,7 +204,20 @@ test('three independent nearby trials observe decoded frames separately from con
           alignment.push(delta);
         }
       }
-      const controls: { action: string; hostMs: number; guestMs: number }[] = [];
+      await writeFile(
+        testInfo.outputPath(`trial-${trial}-observations.json`),
+        JSON.stringify({ started, ended, offsets, host: h, guest: g }) + '\n',
+      );
+      const controls: {
+        action: string;
+        hostMs: number;
+        guestMs: number | null;
+        guestEstimateMs: number;
+        guestIntervalMs: [number, number];
+      }[] = [];
+      // Offset brackets and each browser's millisecond timestamp resolution can
+      // place a real event just before the estimated input time.
+      const controlUncertaintyMs = offsets[0]!.uncertainty + offsets[1]!.uncertainty + 2;
       for (const input of h.inputs) {
         const at = input.at + offsets[0]!.offset;
         if (at < started) continue;
@@ -200,12 +228,20 @@ test('three independent nearby trials observe decoded frames separately from con
               ? 'pause'
               : 'seeked';
         const he = h.events.find((e) => e.kind === kind && e.at >= input.at),
-          ge = g.events.find((e) => e.kind === kind && e.at + offsets[1]!.offset >= at);
+          ge = g.events.find(
+            (e) => e.kind === kind && e.at + offsets[1]!.offset + controlUncertaintyMs >= at,
+          );
         if (!he || !ge) throw new Error(`Missing ${kind} observation.`);
+        const guestEstimateMs = ge.at + offsets[1]!.offset - at;
         controls.push({
           action: input.kind,
           hostMs: he.at - input.at,
-          guestMs: ge.at + offsets[1]!.offset - at,
+          guestMs: guestEstimateMs < 0 ? null : guestEstimateMs,
+          guestEstimateMs,
+          guestIntervalMs: [
+            Math.max(0, guestEstimateMs - controlUncertaintyMs),
+            Math.max(0, guestEstimateMs + controlUncertaintyMs),
+          ],
         });
       }
       expect(controls).toHaveLength(3);
@@ -222,8 +258,10 @@ test('three independent nearby trials observe decoded frames separately from con
         controls,
         controlApplicationMs: {
           host: stats(controls.map((c) => c.hostMs)),
-          guest: stats(controls.map((c) => c.guestMs)),
+          guest: stats(controls.flatMap((c) => (c.guestMs === null ? [] : [c.guestMs]))),
         },
+        controlUncertaintyMs,
+        unresolvedGuestLatencies: controls.filter((c) => c.guestMs === null).length,
         displayedSkewMs: stats(skew),
         maximumPairingDeltaMs: Math.max(...alignment),
         combinedObservationUncertaintyMs:
@@ -254,7 +292,7 @@ test('three independent nearby trials observe decoded frames separately from con
         fixtureBytes: fixture.length,
         trials,
         limitations:
-          'Three independent foreground-document trials in separate headless processes of the named browser on one host; VP8 without audio, encoded with Chromium; canvas reads decoded displayed pixels and was calibrated at three paused source positions. No physical display/camera timing, injected impairment, cross-region, stable-browser, or release guarantee. Tails are sparse. Samples within trials are correlated. Not a before/after performance comparison.',
+          'Three independent foreground-document trials in separate headless processes of the named browser on one host; VP8 without audio, encoded with Chromium; canvas reads decoded displayed pixels and was calibrated at three paused source positions. No physical display/camera timing, injected impairment, cross-region, stable-browser, or release guarantee. Control intervals include clock brackets and two milliseconds for timestamp resolution; negative point estimates are unresolved and excluded from latency summaries. Tails are sparse. Samples within trials are correlated. Not a before/after performance comparison.',
       },
       null,
       2,

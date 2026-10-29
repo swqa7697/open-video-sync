@@ -37,9 +37,6 @@ const active = ref(false),
 const waitTimedOut = ref(false);
 const current = ref(props.room);
 const host = computed(() => current.value.selfMemberId === current.value.hostMemberId);
-const self = computed(() =>
-  current.value.members.find((m) => m.memberId === current.value.selfMemberId),
-);
 const controls = computed(
   () =>
     connected.value &&
@@ -59,6 +56,12 @@ let probedBarrier = '',
 const sync = new SyncController();
 const transport = new RoomSocket(props.room.roomId, {
   snapshot(snapshot) {
+    if (snapshot.epoch !== current.value.epoch) {
+      sync.invalidate();
+      lastReport = '';
+      probedBarrier = '';
+      probingBarrier = '';
+    }
     const barrier = current.value.barrier;
     if (
       barrier &&
@@ -71,7 +74,10 @@ const transport = new RoomSocket(props.room.roomId, {
       snapshot.mediaGeneration !== current.value.mediaGeneration
     )
       waitTimedOut.value = false;
-    if (snapshot.mediaGeneration !== current.value.mediaGeneration) {
+    if (
+      snapshot.mediaGeneration !== current.value.mediaGeneration ||
+      snapshot.epoch !== current.value.epoch
+    ) {
       if (
         !(
           descriptor &&
@@ -375,7 +381,7 @@ async function sample(): Promise<void> {
 }
 function publish(report: Readiness, now: number): void {
   const key = JSON.stringify([report.status, report.mediaGeneration, report.barrierId]);
-  if (key !== lastReport || now - lastReportAt >= 1000) {
+  if (key !== lastReport || (report.barrierId !== null && now - lastReportAt >= 1000)) {
     transport.readiness(report);
     lastReport = key;
     lastReportAt = now;
@@ -432,8 +438,8 @@ onUnmounted(() => {
     <h2 id="player-title">Watch together</h2>
     <p role="status">{{ status }} · {{ calibration }}</p>
     <p v-if="error" role="alert" class="notice error">{{ error }}</p>
-    <p v-if="!active && !transport.roomClosed" class="notice">
-      Playback is inactive in this tab. <button @click="transport.activate()">Use this tab</button>
+    <p v-if="!active && transport.replaced" class="notice">
+      This room is open elsewhere. Reload this page to take over playback.
     </p>
     <p v-if="uncertain" class="notice">
       Checking the command result.
@@ -520,47 +526,26 @@ onUnmounted(() => {
       }}
     </p>
     <p v-if="waitTimedOut" class="notice">
-      Waiting timed out. The room stays paused. The host can retry Play together, exclude a
-      participant, or change the waiting policy.
-    </p>
-    <p v-if="current.playback.phase === 'playing' && !self?.playbackEligible" class="notice">
-      You are outside active playback. Select matching media. With Wait at next play, wait for the
-      next explicit Play together command.
+      Waiting timed out. The room stays paused. An allowed controller can retry Play together.
     </p>
     <ul aria-label="Playback readiness">
       <li v-for="member in current.members" :key="member.memberId">
         {{ member.displayName }}:
         {{
-          !member.playbackActive
+          member.presence !== 'connected'
             ? 'inactive tab or disconnected'
             : member.readiness?.status === 'no_media' || !member.readiness
               ? 'select matching media'
               : member.readiness.status
         }}
-        <span v-if="member.excludedFromWaiting"> · excluded from waiting for this media</span>
         <span
           v-if="
             member.readiness?.capabilities.canPlay &&
-            !member.readiness.capabilities.canDetectBuffering &&
-            current.settings.waitMode === 'all' &&
-            current.settings.waitOnBuffering &&
-            !member.excludedFromWaiting
+            !member.readiness.capabilities.canDetectBuffering
           "
         >
-          · buffering detection unavailable; the host must disable waiting on buffering or exclude
-          this participant
+          · automatic buffering detection unavailable
         </span>
-        <button
-          v-if="host && member.role !== 'host' && current.media"
-          class="quiet"
-          :disabled="!controls"
-          :aria-label="`${member.excludedFromWaiting ? 'Include' : 'Exclude'} ${member.displayName} ${member.excludedFromWaiting ? 'in' : 'from'} waiting`"
-          @click="
-            transport.command({ memberId: member.memberId, excluded: !member.excludedFromWaiting })
-          "
-        >
-          {{ member.excludedFromWaiting ? 'Include in waiting' : 'Exclude from waiting' }}
-        </button>
       </li>
     </ul>
     <div ref="stage" class="video-stage">
@@ -634,8 +619,8 @@ onUnmounted(() => {
     </div>
     <p class="hint">
       After reloading, select your file or load the room’s Bilibili video again. Sampled file
-      matching detects accidental differences. Browser and codec support varies. The host keeps
-      ownership while disconnected and must resume after the 15-second grace.
+      matching detects accidental differences. Browser and codec support varies. Controller
+      permission still applies while the host is disconnected.
     </p>
   </section>
 </template>

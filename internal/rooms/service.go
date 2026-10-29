@@ -3,6 +3,7 @@ package rooms
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/swqa7697/open-video-sync/internal/contracts"
@@ -17,143 +18,266 @@ func validateSettings(settings contracts.RoomSettings) error {
 	_, err = contracts.DecodeRoomSettings(b)
 	return err
 }
-func outcome(tx Tx, p identity.Session, op, key string, now int64) (Outcome, bool, error) {
-	if err := tx.SessionValid(p.TokenHash, p.IdentityID, now); err != nil {
-		return Outcome{}, false, err
+func cloneRoom(r Room) Room { r.Members = append([]Member{}, r.Members...); return r }
+func (s *Service) install(r Room) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.records[r.ID]; ok {
+		delete(s.links, old.Invite.LinkHash)
+		delete(s.codes, old.Invite.CodeHash)
 	}
-	o, found, err := tx.Outcome(p.IdentityID, op, key, now)
-	if err != nil {
-		return o, false, err
+	for _, m := range r.Members {
+		if _, ok := s.names[m.IdentityID]; !ok {
+			s.names[m.IdentityID] = m.DisplayName
+		}
 	}
-	return o, found, nil
+	s.records[r.ID] = cloneRoom(r)
+	if r.Invite.LinkHash != "" {
+		s.links[r.Invite.LinkHash] = r.ID
+	}
+	if r.Invite.CodeHash != "" {
+		s.codes[r.Invite.CodeHash] = r.ID
+	}
+}
+func (s *Service) validSession(p identity.Session) error {
+	if s.SessionValid != nil {
+		return s.SessionValid(p)
+	}
+	s.mu.Lock()
+	revoked := s.revoked[p.TokenHash]
+	s.mu.Unlock()
+	if revoked || p.ExpiresAtMs <= s.Now().UnixMilli() {
+		return contracts.Failure("session_required")
+	}
+	return nil
+}
+func (s *Service) access(p identity.Session, id string) error {
+	if err := s.validSession(p); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	r, ok := s.records[id]
+	s.mu.Unlock()
+	if !ok {
+		return contracts.Failure("not_found")
+	}
+	return authorize(r, p, false)
 }
 
-// Create atomically creates the host membership, room, invitation and retry result.
+// Request recovery is serialized per request, without holding the registry lock across storage.
+func (s *Service) requestOwner(ctx context.Context, k string) (func(), error) {
+	for {
+		s.receiptMu.Lock()
+		if s.requests == nil {
+			s.requests = make(map[string]chan struct{})
+		}
+		wait := s.requests[k]
+		if wait == nil {
+			if len(s.requests) >= 4096 {
+				s.receiptMu.Unlock()
+				return nil, contracts.Failure("busy")
+			}
+			wait = make(chan struct{})
+			s.requests[k] = wait
+			s.receiptMu.Unlock()
+			return func() { s.receiptMu.Lock(); delete(s.requests, k); close(wait); s.receiptMu.Unlock() }, nil
+		}
+		s.receiptMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-wait:
+		}
+	}
+}
+func (s *Service) receipt(k string) (Outcome, bool) {
+	s.receiptMu.Lock()
+	defer s.receiptMu.Unlock()
+	s.pruneReceipts()
+	o, ok := s.receipts[k]
+	return o, ok
+}
+func (s *Service) pruneReceipts() {
+	for k, o := range s.receipts {
+		if o.ExpiresAtMs <= s.Now().UnixMilli() {
+			delete(s.receipts, k)
+			delete(s.receiptOwners, k)
+		}
+	}
+}
+func (s *Service) saveReceipt(k, owner string, o Outcome) {
+	s.receiptMu.Lock()
+	defer s.receiptMu.Unlock()
+	s.pruneReceipts()
+	for {
+		count := 0
+		oldest := ""
+		var expiry int64
+		for key, value := range s.receipts {
+			if s.receiptOwners[key] == owner {
+				count++
+				if oldest == "" || value.ExpiresAtMs < expiry {
+					oldest = key
+					expiry = value.ExpiresAtMs
+				}
+			}
+		}
+		if count < 256 {
+			break
+		}
+		delete(s.receipts, oldest)
+		delete(s.receiptOwners, oldest)
+	}
+	if len(s.receipts) >= 4096 {
+		oldest := ""
+		var expiry int64
+		for key, value := range s.receipts {
+			if oldest == "" || value.ExpiresAtMs < expiry {
+				oldest = key
+				expiry = value.ExpiresAtMs
+			}
+		}
+		delete(s.receipts, oldest)
+		delete(s.receiptOwners, oldest)
+	}
+	s.receipts[k] = o
+	s.receiptOwners[k] = owner
+}
+
+// Create commits the room and host membership before publishing memory state.
 func (s *Service) Create(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings) (Result, error) {
+	return s.create(ctx, p, key, title, settings, false)
+}
+
+// RecoverCreate checks a retained result without ever creating another room.
+func (s *Service) RecoverCreate(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings) (Result, error) {
+	return s.create(ctx, p, key, title, settings, true)
+}
+func (s *Service) create(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings, recoveryOnly bool) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if !contracts.ValidID(key) || !contracts.ValidTitle(title) || validateSettings(settings) != nil {
 		return Result{}, contracts.Failure("invalid_input")
 	}
-	digest := contracts.CanonicalDigest([]any{"ovs-http-v1", "rooms.create", title, contracts.SettingsArray(settings)})
-	var roomID string
-	var inv *Invitation
-	replayed := false
-	err := s.Repository.Transact(ctx, func(tx Tx) error {
-		now := s.Now().UnixMilli()
-		o, found, err := outcome(tx, p, "rooms.create", key, now)
-		if err != nil {
-			return err
-		}
-		if found {
-			r, err := tx.LoadRoom(o.RoomID)
-			if err != nil {
-				return err
-			}
-			if err := authorize(r, p, true); err != nil {
-				return err
-			}
-			if o.Digest != digest {
-				return contracts.Failure("idempotency_conflict")
-			}
-			roomID = o.RoomID
-			replayed = true
-			return nil
-		}
-		total, owned, err := tx.Counts(p.IdentityID)
-		if err != nil {
-			return err
-		}
-		if total >= s.Limits.MaxStored || owned >= s.Limits.MaxOwned {
-			return contracts.Failure("capacity_reached")
-		}
-		id, err := contracts.RandomID(s.Random)
-		if err != nil {
-			return err
-		}
-		mid, err := contracts.RandomID(s.Random)
-		if err != nil {
-			return err
-		}
-		invitation, record, err := invitation(s.Random, 1, now)
-		if err != nil {
-			return err
-		}
-		r := Room{ID: id, Title: title, HostIdentityID: p.IdentityID, Revision: 1, CreatedAtMs: now, LastActiveAtMs: now, Settings: settings, Members: []Member{{mid, p.IdentityID, p.DisplayName, now}}, Invite: record}
-		if err := tx.InsertRoom(r); err != nil {
-			return err
-		}
-		if err := tx.SaveOutcome(p.IdentityID, "rooms.create", key, Outcome{digest, id, now + 86400000}); err != nil {
-			return err
-		}
-		roomID = id
-		inv = &invitation
-		return nil
-	})
+	if err := s.validSession(p); err != nil {
+		return Result{}, err
+	}
+	k := p.IdentityID + ":create:" + key
+	release, err := s.requestOwner(ctx, k)
 	if err != nil {
 		return Result{}, err
 	}
-	snap, err := s.Snapshot(ctx, p, roomID)
-	if err == contracts.Failure("capacity_reached") {
-		err = contracts.Failure("busy")
+	defer release()
+	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "rooms.create", title, contracts.SettingsArray(settings)})
+	if o, ok := s.receipt(k); ok {
+		snap, err := s.Snapshot(ctx, p, o.RoomID)
+		if err != nil {
+			return Result{}, err
+		}
+		if snap.SelfMemberID != snap.HostMemberID {
+			return Result{}, contracts.Failure("forbidden")
+		}
+		if o.Digest != digest {
+			return Result{}, contracts.Failure("idempotency_conflict")
+		}
+		inv, err := s.Invitation(ctx, p, o.RoomID)
+		return Result{Snapshot: snap, Invitation: &inv, Replayed: true}, err
 	}
-	return Result{snap, inv, replayed}, err
+	if recoveryOnly {
+		return Result{}, contracts.Failure("request_outcome_unknown")
+	}
+	id, err := contracts.RandomID(s.Random)
+	if err != nil {
+		return Result{}, err
+	}
+	mid, err := contracts.RandomID(s.Random)
+	if err != nil {
+		return Result{}, err
+	}
+	inv, record, err := invitation(s.Random, 1, s.Now().UnixMilli())
+	if err != nil {
+		return Result{}, err
+	}
+	s.mu.Lock()
+	owned := 0
+	for _, r := range s.records {
+		if r.HostIdentityID == p.IdentityID {
+			owned++
+		}
+	}
+	for _, owner := range s.pending {
+		if owner == p.IdentityID {
+			owned++
+		}
+	}
+	if s.stopping || len(s.records)+len(s.pending) >= s.Limits.MaxStored || owned >= s.Limits.MaxOwned {
+		s.mu.Unlock()
+		return Result{}, contracts.Failure("capacity_reached")
+	}
+	s.pending[id] = p.IdentityID
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
+	now := s.Now().UnixMilli()
+	r := Room{ID: id, Title: title, HostIdentityID: p.IdentityID, Revision: 1, CreatedAtMs: now, Settings: settings, Members: []Member{{mid, p.IdentityID, p.DisplayName, now}}, Invite: record}
+	if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.InsertRoom(r) }); err != nil {
+		return Result{}, err
+	}
+	s.install(r)
+	s.saveReceipt(k, p.IdentityID, Outcome{digest, id, now + 60000})
+	snap, err := s.Snapshot(ctx, p, id)
+	return Result{Snapshot: snap, Invitation: &inv}, err
 }
 
-// Snapshot activates only an authorized room and refreshes its authenticated visit time.
+// Snapshot authorizes from memory before allocating a playback coordinator.
 func (s *Service) Snapshot(ctx context.Context, p identity.Session, id string) (Snapshot, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	if !contracts.ValidID(id) {
 		return Snapshot{}, contracts.Failure("not_found")
 	}
-	// Check membership before allocating an active coordinator for a guessed room ID.
-	if err := s.Repository.Transact(ctx, func(tx Tx) error {
-		if err := tx.SessionValid(p.TokenHash, p.IdentityID, s.Now().UnixMilli()); err != nil {
-			return err
-		}
-		r, err := tx.LoadRoom(id)
-		if err != nil {
-			return err
-		}
-		return authorize(r, p, false)
-	}); err != nil {
+	if err := s.access(p, id); err != nil {
 		return Snapshot{}, err
 	}
 	var result Snapshot
-	err := s.submit(ctx, id, func(ctx context.Context, epoch string) error {
-		return s.Repository.Transact(ctx, func(tx Tx) error {
-			if err := tx.SessionValid(p.TokenHash, p.IdentityID, s.Now().UnixMilli()); err != nil {
-				return err
-			}
-			r, err := tx.LoadRoom(id)
-			if err != nil {
-				return err
-			}
-			if err := authorize(r, p, false); err != nil {
-				return err
-			}
-			// Batch activity writes to at most once per minute per room.
-			now := s.Now().UnixMilli()
-			if now-r.LastActiveAtMs >= 60000 {
-				r.LastActiveAtMs = now
-				if err := tx.SaveRoom(r); err != nil {
-					return err
-				}
-			}
-			result = s.roomSnapshot(r, epoch, p.IdentityID)
-			return nil
-		})
+	err := s.submit(ctx, id, func(_ context.Context, epoch string) error {
+		if err := s.access(p, id); err != nil {
+			return err
+		}
+		c := s.coordinator(id)
+		result = s.roomSnapshot(c.room, epoch, p.IdentityID)
+		return nil
 	})
 	return result, err
 }
 
-// Redeem normalizes the invitation before hashing, and never stores its plaintext.
+// Invitation returns the existing recoverable invitation to its host only.
+func (s *Service) Invitation(ctx context.Context, p identity.Session, id string) (Invitation, error) {
+	if err := s.access(p, id); err != nil {
+		return Invitation{}, err
+	}
+	var result Invitation
+	err := s.submit(ctx, id, func(_ context.Context, _ string) error {
+		if err := s.validSession(p); err != nil {
+			return err
+		}
+		r := s.coordinator(id).room
+		if err := authorize(r, p, true); err != nil {
+			return err
+		}
+		if r.Invite.LinkSecret == "" {
+			return contracts.Failure("invitation_reset_required")
+		}
+		result = Invitation{r.Invite.LinkSecret, r.Invite.Code}
+		return nil
+	})
+	return result, err
+}
+
+// Redeem persists a new membership once. Verifiers and retry receipts live in memory.
 func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, secret string) (Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	if !contracts.ValidID(key) {
 		return Result{}, contracts.Failure("invalid_input")
+	}
+	if err := s.validSession(p); err != nil {
+		return Result{}, err
 	}
 	var hash string
 	switch kind {
@@ -173,231 +297,221 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 	default:
 		return Result{}, contracts.Failure("invalid_input")
 	}
-	digest := contracts.CanonicalDigest([]any{"ovs-http-v1", "invitations.redeem", kind, secret})
-	o, found, err := s.Repository.FindOutcome(ctx, p.IdentityID, "invitations.redeem", key, s.Now().UnixMilli())
+	k := p.IdentityID + ":redeem:" + key
+	release, err := s.requestOwner(ctx, k)
 	if err != nil {
 		return Result{}, err
 	}
+	defer release()
+	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "invitations.redeem", kind, secret})
+	o, replay := s.receipt(k)
 	id := o.RoomID
-	if !found {
-		id, err = s.Repository.ResolveInvitation(ctx, kind, hash)
-		if err != nil {
-			return Result{}, err
+	if !replay {
+		s.mu.Lock()
+		if kind == "link" {
+			id = s.links[hash]
+		} else {
+			id = s.codes[hash]
 		}
+		s.mu.Unlock()
+	}
+	if id == "" {
+		return Result{}, contracts.Failure("invalid_invitation")
 	}
 	var result Result
 	err = s.submit(ctx, id, func(ctx context.Context, epoch string) error {
-		return s.Repository.Transact(ctx, func(tx Tx) error {
-			now := s.Now().UnixMilli()
-			stored, replay, err := outcome(tx, p, "invitations.redeem", key, now)
-			if err != nil {
-				return err
+		if err := s.validSession(p); err != nil {
+			return err
+		}
+		c := s.coordinator(id)
+		r := cloneRoom(c.room)
+		_, existing := member(r, p.IdentityID)
+		if replay {
+			if !existing {
+				return contracts.Failure("invalid_invitation")
 			}
-			r, err := tx.LoadRoom(id)
-			if err != nil {
-				if err == contracts.Failure("not_found") {
-					return contracts.Failure("invalid_invitation")
-				}
-				return err
+			if o.Digest != digest {
+				return contracts.Failure("idempotency_conflict")
 			}
-			_, existing := member(r, p.IdentityID)
-			if replay {
-				if !existing {
-					return contracts.Failure("invalid_invitation")
+		} else {
+			expected := r.Invite.LinkHash
+			if kind == "code" {
+				expected = r.Invite.CodeHash
+			}
+			if expected != hash || (r.Invite.LinkSecret == "" && r.Invite.ExpiresAtMs <= s.Now().UnixMilli()) {
+				return contracts.Failure("invalid_invitation")
+			}
+			if !existing {
+				if len(r.Members) >= s.Limits.MaxMembers || r.Revision >= contracts.MaxSafeInteger {
+					return contracts.Failure("capacity_reached")
 				}
-				if stored.Digest != digest {
-					return contracts.Failure("idempotency_conflict")
-				}
-			} else {
-				expectedHash := r.Invite.LinkHash
-				if kind == "code" {
-					expectedHash = r.Invite.CodeHash
-				}
-				if expectedHash != hash || r.Invite.ExpiresAtMs <= now {
-					return contracts.Failure("invalid_invitation")
-				}
-				if !existing {
-					if len(r.Members) >= s.Limits.MaxMembers {
-						return contracts.Failure("capacity_reached")
-					}
-					if r.Revision >= contracts.MaxSafeInteger {
-						return contracts.Failure("capacity_reached")
-					}
-					mid, err := contracts.RandomID(s.Random)
-					if err != nil {
-						return err
-					}
-					r.Members = append(r.Members, Member{mid, p.IdentityID, p.DisplayName, now})
-					r.Revision++
-					r.LastActiveAtMs = now
-					if err := tx.SaveRoom(r); err != nil {
-						return err
-					}
-				}
-				if err := tx.SaveOutcome(p.IdentityID, "invitations.redeem", key, Outcome{digest, id, now + 86400000}); err != nil {
+				mid, err := contracts.RandomID(s.Random)
+				if err != nil {
 					return err
 				}
+				m := Member{mid, p.IdentityID, p.DisplayName, s.Now().UnixMilli()}
+				if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.AddMember(id, m) }); err != nil {
+					return err
+				}
+				r.Members = append(r.Members, m)
+				r.Revision++
+				c.room = r
+				s.install(r)
+				s.refreshLive(id, c)
 			}
-			result = Result{Snapshot: s.roomSnapshot(r, epoch, p.IdentityID), Replayed: replay}
-			return nil
-		})
+			s.saveReceipt(k, p.IdentityID, Outcome{digest, id, s.Now().UnixMilli() + 60000})
+		}
+		result = Result{Snapshot: s.roomSnapshot(c.room, epoch, p.IdentityID), Replayed: replay}
+		return nil
 	})
+	if err == contracts.Failure("not_found") {
+		err = contracts.Failure("invalid_invitation")
+	}
 	return result, err
 }
 
-// Mutate serializes management with socket commands in the same room coordinator.
+// Mutate uses the same coordinator as playback and installs durable state after commit.
 func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m Mutation) (Result, Receipt, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if !contracts.ValidID(id) {
-		return Result{}, Receipt{}, contracts.Failure("not_found")
-	}
-	if !contracts.ValidID(m.Epoch) || m.ExpectedRevision < 1 || m.ExpectedRevision > contracts.MaxSafeInteger {
+	if !contracts.ValidID(m.Epoch) || m.ExpectedRevision < 1 || m.ExpectedRevision > contracts.MaxSafeInteger || (m.Operation == "settings" && validateSettings(m.Settings) != nil) {
 		return Result{}, Receipt{}, contracts.Failure("invalid_input")
 	}
-	if m.Operation == "settings" && validateSettings(m.Settings) != nil {
-		return Result{}, Receipt{}, contracts.Failure("invalid_input")
-	}
-	// The snapshot path authorizes before allocating any coordinator.
 	if _, err := s.Snapshot(ctx, p, id); err != nil {
 		return Result{}, Receipt{}, err
 	}
 	var result Result
 	var receipt Receipt
-	var removed string
 	err := s.submit(ctx, id, func(ctx context.Context, epoch string) error {
-		var next *liveRoom
-		var updated Room
-		err := s.Repository.Transact(ctx, func(tx Tx) error {
-			now := s.Now().UnixMilli()
-			if err := tx.SessionValid(p.TokenHash, p.IdentityID, now); err != nil {
-				return err
+		if err := s.validSession(p); err != nil {
+			return err
+		}
+		c := s.coordinator(id)
+		r := cloneRoom(c.room)
+		if err := authorize(r, p, m.Operation != "remove"); err != nil {
+			return err
+		}
+		removed := ""
+		if m.Operation == "remove" {
+			for i, target := range r.Members {
+				if target.ID == m.MemberID {
+					if target.IdentityID == r.HostIdentityID || (p.IdentityID != r.HostIdentityID && target.IdentityID != p.IdentityID) {
+						return contracts.Failure("forbidden")
+					}
+					removed = target.ID
+					r.Members = append(r.Members[:i], r.Members[i+1:]...)
+					break
+				}
 			}
-			r, err := tx.LoadRoom(id)
+			if removed == "" {
+				return contracts.Failure("not_found")
+			}
+		}
+		if epoch != m.Epoch || r.Revision != m.ExpectedRevision {
+			return contracts.Failure("stale_state")
+		}
+		if r.Revision >= contracts.MaxSafeInteger {
+			return contracts.Failure("capacity_reached")
+		}
+		oldSettings := r.Settings
+		switch m.Operation {
+		case "settings":
+			r.Settings = m.Settings
+		case "rotate", "remove":
+			if r.Invite.Generation >= contracts.MaxSafeInteger {
+				return contracts.Failure("capacity_reached")
+			}
+			inv, record, err := invitation(s.Random, r.Invite.Generation+1, s.Now().UnixMilli())
 			if err != nil {
 				return err
 			}
-			if err := authorize(r, p, m.Operation != "remove"); err != nil {
-				return err
+			r.Invite = record
+			if m.Operation == "rotate" {
+				result.Invitation = &inv
 			}
-			if m.Operation == "remove" {
-				targetFound := false
-				for _, target := range r.Members {
-					if target.ID == m.MemberID {
-						targetFound = true
-						if target.IdentityID == r.HostIdentityID {
-							return contracts.Failure("forbidden")
-						}
-						if p.IdentityID != r.HostIdentityID && target.IdentityID != p.IdentityID {
-							return contracts.Failure("forbidden")
-						}
-					}
-				}
-				if !targetFound {
-					return contracts.Failure("not_found")
-				}
-			}
-			if epoch != m.Epoch || r.Revision != m.ExpectedRevision {
-				return contracts.Failure("stale_state")
-			}
-			if r.Revision >= contracts.MaxSafeInteger {
-				return contracts.Failure("capacity_reached")
-			}
-			r.Revision++
-			r.LastActiveAtMs = now
+		case "close":
+		default:
+			return contracts.Failure("invalid_input")
+		}
+		if err := s.Repository.Transact(ctx, func(tx Tx) error {
 			switch m.Operation {
 			case "settings":
-				if waitingChanged(r.Settings, m.Settings) {
-					l := s.live(r, s.coordinator(id))
-					copy := l.clone()
-					copy.playback.PositionMs = l.position(s.monotonicMs())
-					copy.playback.AnchorServerMs = s.monotonicMs()
-					if copy.media != nil {
-						copy.playback.Phase = "paused"
-					}
-					copy.playback.DesiredPlaying = false
-					copy.barrier = nil
-					copy.bufferSince = make(map[string]int64)
-					copy.readySince = make(map[string]int64)
-					copy.writeTo(&r, s.monotonicMs())
-					if err := tx.SavePlayback(r, now); err != nil {
-						return err
-					}
-					next = &copy
-				}
-				r.Settings = m.Settings
-			case "rotate", "remove":
-				if r.Invite.Generation >= contracts.MaxSafeInteger {
-					return contracts.Failure("capacity_reached")
-				}
-				inv, record, err := invitation(s.Random, r.Invite.Generation+1, now)
-				if err != nil {
+				return tx.UpdateSettings(id, r.Settings)
+			case "rotate":
+				return tx.ResetInvitation(id, r.Invite)
+			case "remove":
+				if err := tx.RemoveMember(id, removed); err != nil {
 					return err
 				}
-				r.Invite = record
-				if m.Operation == "rotate" {
-					result.Invitation = &inv
-				} else {
-					for i, member := range r.Members {
-						if member.ID == m.MemberID {
-							r.Members = append(r.Members[:i], r.Members[i+1:]...)
-							removed = member.ID
-							break
-						}
-					}
-				}
+				return tx.ResetInvitation(id, r.Invite)
 			case "close":
-				if err := tx.DeleteRoom(id); err != nil {
-					return err
-				}
-				receipt = Receipt{RoomID: id, Revision: r.Revision, Closed: true}
-				return nil
-			default:
-				return contracts.Failure("invalid_input")
+				return tx.DeleteRoom(id)
 			}
-			if err := tx.SaveRoom(r); err != nil {
-				return err
-			}
-			result.Snapshot = s.roomSnapshot(r, epoch, p.IdentityID)
-			updated = r
-			receipt = Receipt{RoomID: id, Revision: r.Revision, RemovedMemberID: removed}
 			return nil
-		})
-		if err == nil {
-			if next != nil {
-				s.coordinator(id).live = next
-				result.Snapshot = s.roomSnapshot(updated, epoch, p.IdentityID)
-			}
-			s.managementCommitted(id, epoch, m.Operation, removed, receipt.Revision)
-			if m.Operation != "close" {
-				result.Snapshot = s.roomSnapshot(updated, epoch, p.IdentityID)
-			}
-			if removed != "" && s.OnRemoved != nil {
-				s.OnRemoved(id, removed)
-			}
-			if m.Operation == "close" {
-				if s.OnClosed != nil {
-					s.OnClosed(id)
-				}
-				s.mu.Lock()
-				s.coordinators[id].closed = true
-				s.mu.Unlock()
-			}
+		}); err != nil {
+			return err
 		}
-		return err
+		r.Revision++
+		c.room = r
+		if m.Operation == "close" {
+			s.mu.Lock()
+			delete(s.records, id)
+			delete(s.links, r.Invite.LinkHash)
+			delete(s.codes, r.Invite.CodeHash)
+			s.mu.Unlock()
+		} else {
+			s.install(r)
+		}
+		if m.Operation == "settings" && oldSettings.WaitForAll != r.Settings.WaitForAll {
+			l := s.live(r, c)
+			l.playback.PositionMs = l.position(s.monotonicMs())
+			l.playback.AnchorServerMs = s.monotonicMs()
+			if l.media != nil {
+				l.playback.Phase = "paused"
+			}
+			l.playback.DesiredPlaying = false
+			l.barrier = nil
+			l.bufferSince = make(map[string]int64)
+			l.readySince = make(map[string]int64)
+		}
+		receipt = Receipt{RoomID: id, Revision: r.Revision, RemovedMemberID: removed, Closed: m.Operation == "close"}
+		s.managementCommitted(id, epoch, m.Operation, removed, r.Revision)
+		if removed != "" && s.OnRemoved != nil {
+			s.OnRemoved(id, removed)
+		}
+		if m.Operation == "close" {
+			if s.OnClosed != nil {
+				s.OnClosed(id)
+			}
+			c.closed = true
+		} else {
+			result.Snapshot = s.roomSnapshot(r, epoch, p.IdentityID)
+			s.refreshLive(id, c)
+		}
+		return nil
 	})
 	return result, receipt, err
 }
 
-// List returns memberships only and never activates room coordinators.
-func (s *Service) List(ctx context.Context, p identity.Session, cursor string, limit int) ([]Summary, *string, error) {
+// List reads authorized memberships from application memory without activating playback.
+func (s *Service) List(_ context.Context, p identity.Session, cursor string, limit int) ([]Summary, *string, error) {
+	if err := s.validSession(p); err != nil {
+		return nil, nil, err
+	}
 	if (cursor != "" && !contracts.ValidID(cursor)) || limit < 1 || limit > 100 {
 		return nil, nil, contracts.Failure("invalid_input")
 	}
-	rows, err := s.Repository.List(ctx, p.IdentityID, cursor, limit+1)
-	if err != nil {
-		return nil, nil, err
+	rows := []Summary{}
+	s.mu.Lock()
+	for _, r := range s.records {
+		if _, ok := member(r, p.IdentityID); ok && r.ID > cursor {
+			role := "participant"
+			if r.HostIdentityID == p.IdentityID {
+				role = "host"
+			}
+			rows = append(rows, Summary{RoomID: r.ID, Title: r.Title, Role: role})
+		}
 	}
+	s.mu.Unlock()
+	sort.Slice(rows, func(i, j int) bool { return rows[i].RoomID < rows[j].RoomID })
 	var next *string
 	if len(rows) > limit {
 		rows = rows[:limit]

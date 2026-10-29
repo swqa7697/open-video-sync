@@ -29,80 +29,66 @@ type Member struct {
 	JoinedAtMs                  int64
 }
 
-// Room is a durable aggregate. Epoch and presence belong to its coordinator.
+// Room combines persistent metadata with epoch-scoped runtime counters. Storage never writes runtime fields.
 type Room struct {
-	ID, Title, HostIdentityID             string
-	Revision, CreatedAtMs, LastActiveAtMs int64
-	Settings                              contracts.RoomSettings
-	Members                               []Member
-	Media                                 *contracts.MediaDescriptor
-	MediaGeneration                       int64
-	Playback                              Playback
-	Invite                                InvitationRecord
+	ID, Title, HostIdentityID string
+	Revision, CreatedAtMs     int64
+	Settings                  contracts.RoomSettings
+	Members                   []Member
+	Media                     *contracts.MediaDescriptor
+	Invite                    InvitationRecord
 }
 
-// InvitationRecord stores only verifiers for one active generation.
+// InvitationRecord keeps private sharing values and indexed verifiers. Legacy records have hashes and expiry only.
 type InvitationRecord struct {
 	Generation, ExpiresAtMs int64
 	LinkHash, CodeHash      string
+	LinkSecret, Code        string
 }
 
 // Invitation contains newly generated secrets; never put it in snapshots or logs.
 type Invitation struct {
-	LinkSecret  string `json:"linkSecret"`
-	Code        string `json:"code"`
-	Generation  int64  `json:"generation"`
-	ExpiresAtMs int64  `json:"expiresAtMs"`
+	LinkSecret string `json:"linkSecret"`
+	Code       string `json:"code"`
 }
 
-// Outcome is a nonsecret idempotency result.
+// Outcome retains nonsecret request recovery for at most sixty seconds.
 type Outcome struct {
 	Digest, RoomID string
 	ExpiresAtMs    int64
 }
 
-// Tx is the transaction capability consumed by room use cases.
+// Tx exposes record-specific durable operations. Playback has no persistence method.
 type Tx interface {
-	SessionValid(hash, identityID string, now int64) error
-	LoadRoom(string) (Room, error)
 	InsertRoom(Room) error
-	SaveRoom(Room) error
-	SavePlayback(Room, int64) error
-	Command(roomID, identityID, commandID string, now int64) (CommandRecord, bool, error)
-	SaveCommand(roomID, identityID, commandID string, record CommandRecord) error
+	UpdateSettings(string, contracts.RoomSettings) error
+	AddMember(string, Member) error
+	ResetInvitation(string, InvitationRecord) error
+	RemoveMember(string, string) error
+	SelectMedia(string, contracts.MediaDescriptor) error
 	DeleteRoom(string) error
-	Counts(identityID string) (stored, owned int, err error)
-	Outcome(identityID, operation, key string, now int64) (Outcome, bool, error)
-	SaveOutcome(identityID, operation, key string, outcome Outcome) error
 }
 
-// Repository implements atomic persistence without leaking database types into rules.
+// Repository loads metadata once at startup and commits low-frequency changes.
 type Repository interface {
+	LoadRooms(context.Context) ([]Room, error)
 	Transact(context.Context, func(Tx) error) error
-	List(context.Context, string, string, int) ([]Summary, error)
-	ResolveInvitation(context.Context, string, string) (string, error)
-	FindOutcome(context.Context, string, string, string, int64) (Outcome, bool, error)
 }
 
 // Summary is an authorized list entry.
 type Summary struct {
-	RoomID         string `json:"roomId"`
-	Title          string `json:"title"`
-	Role           string `json:"role"`
-	Revision       int64  `json:"revision"`
-	LastActiveAtMs int64  `json:"lastActiveAtMs"`
+	RoomID string `json:"roomId"`
+	Title  string `json:"title"`
+	Role   string `json:"role"`
 }
 
 // RosterMember excludes identity IDs and all credentials.
 type RosterMember struct {
-	MemberID            string               `json:"memberId"`
-	DisplayName         string               `json:"displayName"`
-	Role                string               `json:"role"`
-	Presence            string               `json:"presence"`
-	PlaybackActive      bool                 `json:"playbackActive"`
-	PlaybackEligible    bool                 `json:"playbackEligible"`
-	ExcludedFromWaiting bool                 `json:"excludedFromWaiting"`
-	Readiness           *contracts.Readiness `json:"readiness"`
+	MemberID    string               `json:"memberId"`
+	DisplayName string               `json:"displayName"`
+	Role        string               `json:"role"`
+	Presence    string               `json:"presence"`
+	Readiness   *contracts.Readiness `json:"readiness"`
 }
 
 // Playback anchors the authoritative timeline in this process clock domain.
@@ -110,11 +96,10 @@ type Playback struct {
 	Phase          string `json:"phase"`
 	PositionMs     int64  `json:"positionMs"`
 	AnchorServerMs int64  `json:"anchorServerMs"`
-	BaseRate       int    `json:"baseRate"`
 	DesiredPlaying bool   `json:"desiredPlaying"`
 }
 
-// Snapshot is a credential-free, caller-specific v1 room snapshot.
+// Snapshot is a credential-free, caller-specific v2 room snapshot.
 type Snapshot struct {
 	RoomID          string                     `json:"roomId"`
 	Title           string                     `json:"title"`
@@ -173,7 +158,7 @@ func authorize(r Room, p identity.Session, host bool) error {
 	return nil
 }
 func snapshot(r Room, epoch string, now int64, identityID string) Snapshot {
-	s := Snapshot{RoomID: r.ID, Title: r.Title, Epoch: epoch, Revision: r.Revision, Settings: r.Settings, Playback: Playback{Phase: "empty", BaseRate: 1}, Members: make([]RosterMember, 0, len(r.Members)), ServerNowMs: now}
+	s := Snapshot{RoomID: r.ID, Title: r.Title, Epoch: epoch, Revision: r.Revision, Settings: r.Settings, Playback: Playback{Phase: "empty"}, Members: make([]RosterMember, 0, len(r.Members)), ServerNowMs: now}
 	for _, m := range r.Members {
 		if m.IdentityID == identityID {
 			s.SelfMemberID = m.ID
@@ -205,6 +190,5 @@ func invitation(random io.Reader, generation, now int64) (Invitation, Invitation
 		b[i] = alphabet[b[i]&31]
 	}
 	hash, _ := contracts.SecretHash(secret, 16)
-	expires := now + int64(7*24*time.Hour/time.Millisecond)
-	return Invitation{secret, string(b), generation, expires}, InvitationRecord{generation, expires, hash, contracts.Hash(b)}, nil
+	return Invitation{secret, string(b)}, InvitationRecord{Generation: generation, LinkHash: hash, CodeHash: contracts.Hash(b), LinkSecret: secret, Code: string(b)}, nil
 }

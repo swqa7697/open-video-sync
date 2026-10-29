@@ -9,13 +9,13 @@ import {
   text,
   type Snapshot,
 } from './api';
-import { decodeReadiness, parseFrame } from './protocol-values';
+import { parseFrame } from './protocol-values';
 import { ClockEstimator } from '../sync/clock';
 import { decodeMedia, type MediaDescriptor } from './contracts';
 
 export interface Command {
-  v: 1;
-  type: 'playback.command' | 'media.select' | 'waiting.exclude';
+  v: 2;
+  type: 'playback.command' | 'media.select';
   commandId: string;
   epoch: string;
   mediaGeneration: number;
@@ -23,8 +23,7 @@ export interface Command {
   payload:
     | { action: 'play' | 'pause' | 'replay' }
     | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor }
-    | { memberId: string; excluded: boolean };
+    | { media: MediaDescriptor };
 }
 export interface SocketEvents {
   snapshot(snapshot: Snapshot): void;
@@ -37,6 +36,7 @@ export class RoomSocket {
   readonly clock = new ClockEstimator();
   snapshot?: Snapshot;
   active = false;
+  replaced = false;
   connected = false;
   private socket?: WebSocket;
   private stopped = false;
@@ -52,7 +52,6 @@ export class RoomSocket {
   private timer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private pending: Command | undefined;
-  private activateAfterWelcome = false;
   private pings = new Map<string, number>();
   constructor(
     private roomId: string,
@@ -77,7 +76,7 @@ export class RoomSocket {
     this.pings.clear();
     this.sequence = 0;
     this.events.status('Connecting…');
-    const url = new URL(`/ws/v1/rooms/${this.roomId}`, location.href);
+    const url = new URL(`/ws/v2/rooms/${this.roomId}`, location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -100,7 +99,9 @@ export class RoomSocket {
         this.closedRoom
           ? 'Room closed.'
           : this.terminal
-            ? 'Playback inactive.'
+            ? this.replaced
+              ? 'Room open elsewhere. Reload to use this page.'
+              : 'Your room session ended.'
             : 'Disconnected. Playback paused.',
       );
       if (!this.terminal) {
@@ -111,7 +112,7 @@ export class RoomSocket {
     };
   }
   private receive(f: Record<string, unknown>): void {
-    if (f.v !== 1) {
+    if (f.v !== 2) {
       this.upgrade();
       return;
     }
@@ -124,7 +125,7 @@ export class RoomSocket {
         shape(p, ['reply']);
         if (typeof p.reply !== 'boolean') throw new Error('Invalid heartbeat.');
         if (!p.reply)
-          this.send({ v: 1, type: 'heartbeat', requestId: key, payload: { reply: true } });
+          this.send({ v: 2, type: 'heartbeat', requestId: key, payload: { reply: true } });
       } else {
         shape(p, ['clientSendMs', 'serverReceiveMs', 'serverSendMs']);
         const c0 = this.pings.get(key);
@@ -149,63 +150,18 @@ export class RoomSocket {
     }
     const epoch = id(f.epoch);
     if (kind === 'session.welcome') {
-      shape(p, ['connectionId', 'connectionGeneration', 'playbackLease', 'snapshot']);
+      shape(p, ['connectionId', 'snapshot']);
       id(p.connectionId);
-      integer(p.connectionGeneration);
-      if (typeof p.playbackLease !== 'boolean') throw new Error('Invalid lease.');
-      this.active = p.playbackLease;
-      this.events.lease(this.active);
+      this.active = true;
+      this.events.lease(true);
       this.connected = true;
       this.attempts = 0;
       sessionStorage.removeItem('ovs-protocol-reload');
       this.events.status('Connected');
       this.acceptSnapshot(decodeSnapshot(p.snapshot), epoch);
       this.calibrate(5);
-      if (this.activateAfterWelcome) {
-        this.activateAfterWelcome = false;
-        this.activate();
-      }
     } else if (kind === 'room.snapshot') this.acceptSnapshot(decodeSnapshot(p), epoch);
-    else if (kind === 'member.status') {
-      shape(p, [
-        'memberId',
-        'presence',
-        'playbackActive',
-        'playbackEligible',
-        'excludedFromWaiting',
-        'readiness',
-      ]);
-      const memberId = id(p.memberId),
-        snapshot = this.snapshot;
-      if (
-        !snapshot ||
-        snapshot.epoch !== epoch ||
-        !snapshot.members.some((m) => m.memberId === memberId)
-      )
-        throw new Error('Invalid member status.');
-      const readiness = p.readiness === null ? null : decodeReadiness(p.readiness);
-      if (readiness && readiness.mediaGeneration < snapshot.mediaGeneration) return;
-      if (readiness && readiness.mediaGeneration > snapshot.mediaGeneration)
-        throw new Error('Invalid readiness generation.');
-      this.acceptSnapshot(
-        decodeSnapshot({
-          ...snapshot,
-          members: snapshot.members.map((m) =>
-            m.memberId === memberId
-              ? {
-                  ...m,
-                  presence: p.presence,
-                  playbackActive: p.playbackActive,
-                  playbackEligible: p.playbackEligible,
-                  excludedFromWaiting: p.excludedFromWaiting,
-                  readiness,
-                }
-              : m,
-          ),
-        }),
-        epoch,
-      );
-    } else if (kind === 'command.result') {
+    else if (kind === 'command.result') {
       if (this.snapshot?.epoch !== epoch) throw new Error('Invalid result epoch.');
       shape(p, ['commandId', 'accepted', 'revision', 'error']);
       const key = id(p.commandId);
@@ -223,15 +179,16 @@ export class RoomSocket {
       }
     } else if (kind === 'session.replaced') {
       shape(p, ['reason']);
-      if (!['lease_transferred', 'session_revoked'].includes(text(p.reason)))
+      if (!['connection_replaced', 'session_revoked'].includes(text(p.reason)))
         throw new Error('Invalid lifecycle.');
+      this.replaced = p.reason === 'connection_replaced';
       this.active = false;
       this.events.lease(false);
       this.terminal = true;
       this.connected = false;
       this.socket?.close();
       this.events.status(
-        p.reason === 'lease_transferred'
+        p.reason === 'connection_replaced'
           ? 'Playback is active in another tab.'
           : 'Your room session ended.',
       );
@@ -265,10 +222,6 @@ export class RoomSocket {
       return;
     }
     this.events.error(new APIError(code).message);
-    if (code === 'storage_unavailable') {
-      this.connected = false;
-      this.socket?.close();
-    }
   }
   private upgrade(): void {
     this.terminal = true;
@@ -304,7 +257,7 @@ export class RoomSocket {
       const key = requestKey(),
         at = Math.floor(performance.now());
       this.pings.set(key, at);
-      this.send({ v: 1, type: 'clock.ping', requestId: key, payload: { clientSendMs: at } });
+      this.send({ v: 2, type: 'clock.ping', requestId: key, payload: { clientSendMs: at } });
     }
     if (this.pings.size > 20) this.pings = new Map([...this.pings].slice(-20));
   }
@@ -316,13 +269,8 @@ export class RoomSocket {
     }
     const safePayload = 'media' in payload ? { media: decodeMedia(payload.media) } : payload;
     const command: Command = {
-      v: 1,
-      type:
-        'media' in safePayload
-          ? 'media.select'
-          : 'memberId' in safePayload
-            ? 'waiting.exclude'
-            : 'playback.command',
+      v: 2,
+      type: 'media' in safePayload ? 'media.select' : 'playback.command',
       commandId: requestKey(),
       epoch: s.epoch,
       mediaGeneration: s.mediaGeneration,
@@ -339,22 +287,7 @@ export class RoomSocket {
   }
   readiness(payload: unknown): void {
     if (this.connected && this.active && this.snapshot)
-      this.send({ v: 1, type: 'member.readiness', epoch: this.snapshot.epoch, payload });
-  }
-  activate(): void {
-    if (this.closedRoom) return;
-    this.terminal = false;
-    if (this.connected && this.snapshot)
-      this.send({
-        v: 1,
-        type: 'member.activate',
-        requestId: requestKey(),
-        epoch: this.snapshot.epoch,
-      });
-    else {
-      this.activateAfterWelcome = true;
-      this.connect();
-    }
+      this.send({ v: 2, type: 'member.readiness', epoch: this.snapshot.epoch, payload });
   }
   resetClock(): void {
     this.clock.reset();

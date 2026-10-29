@@ -9,7 +9,7 @@ import (
 
 func policyRoom() (Room, *liveRoom, *Service) {
 	r := Room{HostIdentityID: "host", Settings: contracts.DefaultSettings(), Members: []Member{{ID: "h", IdentityID: "host"}, {ID: "g", IdentityID: "guest"}, {ID: "late", IdentityID: "late"}}}
-	l := &liveRoom{media: &contracts.MediaDescriptor{DurationMs: 60000}, generation: 1, playback: Playback{Phase: "playing", BaseRate: 1, DesiredPlaying: true}, connections: map[string]*Connection{"h": {}, "g": {}, "late": {}}, active: map[string]string{"h": "h", "g": "g", "late": "late"}, cohort: map[string]bool{"h": true, "g": true}, reports: map[string]*contracts.Readiness{}, excluded: map[string]bool{}, disconnected: map[string]int64{}, bufferSince: map[string]int64{}, readySince: map[string]int64{}}
+	l := &liveRoom{media: &contracts.MediaDescriptor{DurationMs: 60000}, generation: 1, playback: Playback{Phase: "playing", DesiredPlaying: true}, connections: map[string]*Connection{"h": {}, "g": {}, "late": {}}, active: map[string]string{"h": "h", "g": "g", "late": "late"}, cohort: map[string]bool{"h": true, "g": true}, reports: map[string]*contracts.Readiness{}, disconnected: map[string]int64{}, bufferSince: map[string]int64{}, readySince: map[string]int64{}}
 	return r, l, &Service{Random: rand.Reader}
 }
 func reportAt(l *liveRoom, status string, position int64) *contracts.Readiness {
@@ -54,36 +54,25 @@ func TestBufferingCohortStableRecoveryAndDeadline(t *testing.T) {
 	if l.playback.Phase != "playing" || l.playback.AnchorServerMs != 3000 {
 		t.Fatal("stable cohort did not resume")
 	}
-	if err := s.startBarrier(l, r, "play", []string{"h", "g"}, 4000); err != nil {
+	if err := s.startBarrier(l, "play", []string{"h", "g"}, 4000); err != nil {
 		t.Fatal(err)
 	}
 	l.reports["h"] = reportAt(l, "ready", 850)
 	l.reports["g"] = reportAt(l, "ready", 850)
 	advance(t, s, l, r, l.barrier.DeadlineServerMs)
-	if l.playback.Phase != "paused" || l.playback.DesiredPlaying || !l.hostLost {
+	if l.playback.Phase != "paused" || l.playback.DesiredPlaying {
 		t.Fatal("deadline silently resumed playback")
 	}
 }
 func TestLateJoinCapabilitiesStaleReportsAndHostLoss(t *testing.T) {
 	r, l, s := policyRoom()
-	r.Settings.LateJoin = "wait_at_next_play"
 	l.reports["late"] = reportAt(l, "ready", 0)
-	advance(t, s, l, r, 100)
-	if l.cohort["late"] {
-		t.Fatal("late participant joined before explicit play")
-	}
-	r.Settings.LateJoin = "catch_up"
 	l.reports["late"].Capabilities.CanDetectBuffering = false
-	advance(t, s, l, r, 200)
-	if l.cohort["late"] {
-		t.Fatal("incompatible capability joined active cohort")
-	}
-	l.excluded["late"] = true
-	advance(t, s, l, r, 300)
+	advance(t, s, l, r, 100)
 	if !l.cohort["late"] {
-		t.Fatal("excluded participant cannot catch up")
+		t.Fatal("ready late joiner did not catch up with buffering fallback")
 	}
-	if err := s.startBarrier(l, r, "play", []string{"h", "g"}, 400); err != nil {
+	if err := s.startBarrier(l, "play", []string{"h", "g"}, 400); err != nil {
 		t.Fatal(err)
 	}
 	l.reports["h"] = reportAt(l, "ready", 0)
@@ -107,8 +96,8 @@ func TestLateJoinCapabilitiesStaleReportsAndHostLoss(t *testing.T) {
 	l.disconnected["h"] = 30000
 	delete(l.connections, "h")
 	advance(t, s, l, r, 30000)
-	if l.playback.Phase != "paused" || l.playback.DesiredPlaying || !l.hostLost || l.barrier != nil {
-		t.Fatal("host loss retained pending play")
+	if l.playback.Phase != "playing" || l.barrier != nil {
+		t.Fatal("host loss changed controller policy")
 	}
 	// A client's early ended observation is not an authoritative duration timer.
 	r, l, s = policyRoom()

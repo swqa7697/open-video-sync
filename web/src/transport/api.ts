@@ -17,9 +17,6 @@ export interface Member {
   displayName: string;
   role: 'host' | 'participant';
   presence: 'offline' | 'connected';
-  playbackActive: boolean;
-  playbackEligible: boolean;
-  excludedFromWaiting: boolean;
   readiness: Readiness | null;
 }
 export interface Snapshot {
@@ -36,7 +33,6 @@ export interface Snapshot {
     phase: 'empty' | 'paused' | 'waiting' | 'playing' | 'ended';
     positionMs: number;
     anchorServerMs: number;
-    baseRate: 1;
     desiredPlaying: boolean;
   };
   barrier: {
@@ -52,15 +48,11 @@ export interface Snapshot {
 export interface Invitation {
   linkSecret: string;
   code: string;
-  generation: number;
-  expiresAtMs: number;
 }
 export interface RoomSummary {
   roomId: string;
   title: string;
   role: 'host' | 'participant';
-  revision: number;
-  lastActiveAtMs: number;
 }
 export interface RoomResult {
   snapshot: Snapshot;
@@ -149,12 +141,11 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if (!Array.isArray(v.members) || v.members.length < 1 || v.members.length > 32)
     throw new Error('Invalid server response.');
   const playback = object(v.playback);
-  shape(playback, ['phase', 'positionMs', 'anchorServerMs', 'baseRate', 'desiredPlaying']);
+  shape(playback, ['phase', 'positionMs', 'anchorServerMs', 'desiredPlaying']);
   const media = v.media === null ? null : decodeMedia(v.media);
   const generation = integer(v.mediaGeneration);
   if (
     !['empty', 'paused', 'waiting', 'playing', 'ended'].includes(text(playback.phase)) ||
-    playback.baseRate !== 1 ||
     typeof playback.desiredPlaying !== 'boolean'
   )
     throw new Error('Invalid playback.');
@@ -190,23 +181,8 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if ((playback.phase === 'waiting') !== (barrier !== null)) throw new Error('Invalid barrier.');
   const members: Member[] = v.members.map((value: unknown) => {
     const m = object(value);
-    shape(m, [
-      'memberId',
-      'displayName',
-      'role',
-      'presence',
-      'playbackActive',
-      'playbackEligible',
-      'excludedFromWaiting',
-      'readiness',
-    ]);
-    if (
-      !['offline', 'connected'].includes(text(m.presence)) ||
-      typeof m.playbackActive !== 'boolean' ||
-      typeof m.playbackEligible !== 'boolean' ||
-      typeof m.excludedFromWaiting !== 'boolean'
-    )
-      throw new Error('Invalid member.');
+    shape(m, ['memberId', 'displayName', 'role', 'presence', 'readiness']);
+    if (!['offline', 'connected'].includes(text(m.presence))) throw new Error('Invalid member.');
     const displayName = text(m.displayName);
     decodeProfilePatch({ displayName });
     return {
@@ -214,9 +190,6 @@ export function decodeSnapshot(value: unknown): Snapshot {
       displayName,
       role: role(m.role),
       presence: m.presence as Member['presence'],
-      playbackActive: m.playbackActive,
-      playbackEligible: m.playbackEligible,
-      excludedFromWaiting: m.excludedFromWaiting,
       readiness: m.readiness === null ? null : decodeReadiness(m.readiness),
     };
   });
@@ -252,7 +225,6 @@ export function decodeSnapshot(value: unknown): Snapshot {
       phase: playback.phase as Snapshot['playback']['phase'],
       positionMs,
       anchorServerMs,
-      baseRate: 1,
       desiredPlaying: playback.desiredPlaying,
     },
     serverNowMs: integer(v.serverNowMs),
@@ -262,7 +234,7 @@ export function decodeInvitation(value: unknown): Invitation {
   const v = object(value),
     linkSecret = text(v.linkSecret),
     code = text(v.code);
-  shape(v, ['linkSecret', 'code', 'generation', 'expiresAtMs']);
+  shape(v, ['linkSecret', 'code']);
   if (
     !/^[A-Za-z0-9_-]{21}[AQgw]$/.test(linkSecret) ||
     !/^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{16}$/.test(code)
@@ -271,8 +243,6 @@ export function decodeInvitation(value: unknown): Invitation {
   return {
     linkSecret,
     code,
-    generation: positive(v.generation),
-    expiresAtMs: integer(v.expiresAtMs),
   };
 }
 export function decodeRoomResult(value: unknown): RoomResult {
@@ -297,13 +267,11 @@ export function decodeList(value: unknown): { rooms: RoomSummary[]; nextCursor: 
   return {
     rooms: v.rooms.map((value: unknown) => {
       const r = object(value);
-      shape(r, ['roomId', 'title', 'role', 'revision', 'lastActiveAtMs']);
+      shape(r, ['roomId', 'title', 'role']);
       return {
         roomId: id(r.roomId),
         title: title(r.title),
         role: role(r.role),
-        revision: positive(r.revision),
-        lastActiveAtMs: integer(r.lastActiveAtMs),
       };
     }),
     nextCursor: v.nextCursor === null ? null : id(v.nextCursor),
@@ -311,12 +279,16 @@ export function decodeList(value: unknown): { rooms: RoomSummary[]; nextCursor: 
 }
 
 const errors: Record<string, string> = {
+  request_outcome_unknown:
+    'Request recovery expired. Check Your rooms before choosing a new action.',
   invalid_input: 'Check the entered values.',
   invalid_command: 'This playback action is unavailable. Check room state and choose a new action.',
   session_required: 'Your identity session ended. Reload to start a new identity.',
   forbidden: 'You do not have permission for this action.',
   not_found: 'This room is unavailable.',
-  invalid_invitation: 'This invitation is invalid or expired.',
+  invalid_invitation: 'This invitation is unavailable.',
+  invitation_reset_required: 'Replace this legacy invitation before sharing.',
+  upgrade_required: 'Reload to use the updated application.',
   stale_state: 'The room changed. Refresh the room, then choose your action again.',
   idempotency_conflict: 'This request key was already used.',
   message_too_large: 'The request is too large.',
@@ -338,6 +310,7 @@ export async function request(
   payload: unknown,
   signal: AbortSignal,
   key?: string,
+  replayOnly = false,
 ): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
@@ -345,7 +318,8 @@ export async function request(
     if (csrf) headers['X-OVS-CSRF'] = csrf;
   }
   if (key) headers['Idempotency-Key'] = key;
-  const response = await fetch(`/api/v1${path}`, {
+  if (replayOnly) headers['Idempotency-Replay-Only'] = 'true';
+  const response = await fetch(`/api/v2${path}`, {
     method,
     headers,
     credentials: 'same-origin',
@@ -395,12 +369,6 @@ export function requestKey(): string {
 export function defaultSettings(): RoomSettings {
   return {
     controllers: 'host',
-    syncMode: 'adaptive',
-    waitMode: 'all',
-    waitOnBuffering: true,
-    waitTimeoutMs: 30000,
-    lateJoin: 'catch_up',
-    softDriftMs: 100,
-    hardDriftMs: 750,
+    waitForAll: true,
   };
 }

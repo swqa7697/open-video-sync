@@ -92,7 +92,16 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	}
 	defer func() { err = errors.Join(err, roomService.Close()) }()
 	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}
+	if err := identities.Initialize(startup); err != nil {
+		return err
+	}
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	cleanupDone := make(chan struct{})
+	go func() { defer close(cleanupDone); identities.RunCleanup(cleanupCtx) }()
+	defer func() { stopCleanup(); <-cleanupDone }()
+	roomService.SessionValid = identities.Validate
 	identities.OnRevoked = roomService.RevokeSession
+	identities.OnRenamed = roomService.RenameIdentity
 	api := transport.NewAPI(cfg.origin.String(), identities).WithRooms(roomService)
 	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)
 	server := &http.Server{

@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -24,13 +25,13 @@ type Barrier struct {
 	DeadlineServerMs  int64    `json:"deadlineServerMs"`
 }
 
-// CommandRecord is persisted atomically with the accepted transition.
+// CommandRecord records accepted runtime intent for at most sixty seconds.
 type CommandRecord struct {
 	Epoch, Digest         string
 	Revision, ExpiresAtMs int64
 }
 
-// CommandResult acknowledges only committed mutations.
+// CommandResult acknowledges an applied runtime transition.
 type CommandResult struct {
 	CommandID string                 `json:"commandId"`
 	Accepted  bool                   `json:"accepted"`
@@ -46,22 +47,18 @@ type Connection struct {
 	Sink                 Sink
 }
 type liveRoom struct {
-	media          *contracts.MediaDescriptor
-	generation     int64
-	playback       Playback
-	barrier        *Barrier
-	connections    map[string]*Connection
-	active         map[string]string
-	generations    map[string]int64
-	disconnected   map[string]int64
-	reports        map[string]*contracts.Readiness
-	excluded       map[string]bool
-	cohort         map[string]bool
-	bufferSince    map[string]int64
-	readySince     map[string]int64
-	storageVersion uint64
-	hostLost       bool
-	lastCheckpoint int64
+	media                   *contracts.MediaDescriptor
+	generation              int64
+	playback                Playback
+	barrier                 *Barrier
+	connections             map[string]*Connection
+	active                  map[string]string
+	generations             map[string]int64
+	disconnected            map[string]int64
+	reports                 map[string]*contracts.Readiness
+	cohort                  map[string]bool
+	bufferSince, readySince map[string]int64
+	receipts                map[string]CommandRecord
 }
 
 func (s *Service) coordinator(id string) *coordinator {
@@ -71,35 +68,45 @@ func (s *Service) coordinator(id string) *coordinator {
 }
 func (s *Service) live(r Room, c *coordinator) *liveRoom {
 	if c.live == nil {
-		p := Playback{Phase: "empty", BaseRate: 1}
+		p := Playback{Phase: "empty", AnchorServerMs: s.monotonicMs()}
+		generation := int64(0)
 		if r.Media != nil {
-			p = Playback{Phase: "paused", PositionMs: r.Playback.PositionMs, AnchorServerMs: s.monotonicMs(), BaseRate: 1}
+			p.Phase = "paused"
+			generation = 1
 		}
-		c.live = &liveRoom{media: r.Media, generation: r.MediaGeneration, playback: p, connections: make(map[string]*Connection), active: make(map[string]string), generations: make(map[string]int64), disconnected: make(map[string]int64), reports: make(map[string]*contracts.Readiness), excluded: make(map[string]bool), cohort: make(map[string]bool), bufferSince: make(map[string]int64), readySince: make(map[string]int64), storageVersion: s.storageVersion(), lastCheckpoint: s.monotonicMs()}
-		c.live.hostLost = r.Media != nil
+		c.live = &liveRoom{media: r.Media, generation: generation, playback: p, connections: make(map[string]*Connection), active: make(map[string]string), generations: make(map[string]int64), disconnected: make(map[string]int64), reports: make(map[string]*contracts.Readiness), cohort: make(map[string]bool), bufferSince: make(map[string]int64), readySince: make(map[string]int64), receipts: make(map[string]CommandRecord)}
 	}
 	return c.live
 }
 func (s *Service) roomSnapshot(r Room, epoch, identityID string) Snapshot {
 	c := s.coordinator(r.ID)
 	l := s.live(r, c)
-	now := s.monotonicMs()
-	result := snapshot(r, epoch, now, identityID)
+	r = cloneRoom(r)
+	s.mu.Lock()
+	for i, m := range r.Members {
+		if name, ok := s.names[m.IdentityID]; ok {
+			r.Members[i].DisplayName = name
+		}
+	}
+	s.mu.Unlock()
+	result := snapshot(r, epoch, s.monotonicMs(), identityID)
 	result.Media = l.media
 	result.MediaGeneration = l.generation
 	result.Playback = l.playback
-	result.Barrier = l.barrier
+	if l.barrier != nil {
+		b := *l.barrier
+		b.RequiredMemberIDs = append([]string{}, b.RequiredMemberIDs...)
+		result.Barrier = &b
+	}
 	for i := range result.Members {
 		m := &result.Members[i]
-		for _, connection := range l.connections {
-			if connection.MemberID == m.MemberID {
-				m.Presence = "connected"
-			}
+		if l.connections[l.active[m.MemberID]] != nil {
+			m.Presence = "connected"
 		}
-		m.PlaybackActive = l.active[m.MemberID] != "" && l.connections[l.active[m.MemberID]] != nil
-		m.Readiness = l.reports[m.MemberID]
-		m.ExcludedFromWaiting = l.excluded[m.MemberID]
-		m.PlaybackEligible = l.cohort[m.MemberID]
+		if report := l.reports[m.MemberID]; report != nil {
+			copy := *report
+			m.Readiness = &copy
+		}
 	}
 	return result
 }
@@ -113,30 +120,8 @@ func (l *liveRoom) position(now int64) int64 {
 	}
 	return min(l.media.DurationMs, max(0, p))
 }
-func (l *liveRoom) writeTo(r *Room, now int64) {
-	r.Media = l.media
-	r.MediaGeneration = l.generation
-	r.Playback = l.playback
-	r.Playback.PositionMs = l.position(now)
-	r.Playback.AnchorServerMs = now
-}
-func (s *Service) loadAuthorized(ctx context.Context, p identity.Session, id string, run func(Tx, Room) error) error {
-	return s.Repository.Transact(ctx, func(tx Tx) error {
-		if err := tx.SessionValid(p.TokenHash, p.IdentityID, s.Now().UnixMilli()); err != nil {
-			return err
-		}
-		r, err := tx.LoadRoom(id)
-		if err != nil {
-			return err
-		}
-		if err = authorize(r, p, false); err != nil {
-			return err
-		}
-		return run(tx, r)
-	})
-}
 
-// Connect admits at most 500 instance sockets and four tabs per membership.
+// Connect makes the latest authenticated page the sole playback owner.
 func (s *Service) Connect(ctx context.Context, p identity.Session, id string, sink Sink) (*Connection, error) {
 	if _, err := s.Snapshot(ctx, p, id); err != nil {
 		return nil, err
@@ -150,49 +135,37 @@ func (s *Service) Connect(ctx context.Context, p identity.Session, id string, si
 	s.mu.Unlock()
 	var connection *Connection
 	installed := false
-	err := s.submit(ctx, id, func(ctx context.Context, epoch string) error {
-		var admitted *liveRoom
-		var room Room
-		err := s.loadAuthorized(ctx, p, id, func(_ Tx, r Room) error {
-			c := s.coordinator(id)
-			next := s.live(r, c).clone()
-			l := &next
-			m, _ := member(r, p.IdentityID)
-			tabs := 0
-			for _, v := range l.connections {
-				if v.MemberID == m.ID {
-					tabs++
-				}
-			}
-			if tabs >= 4 {
-				return contracts.Failure("capacity_reached")
-			}
-			cid, err := contracts.RandomID(s.Random)
-			if err != nil {
-				return err
-			}
-			l.generations[m.ID]++
-			connection = &Connection{cid, id, m.ID, l.generations[m.ID], p, sink}
-			l.connections[cid] = connection
-			if l.active[m.ID] == "" || l.connections[l.active[m.ID]] == nil {
-				l.active[m.ID] = cid
-				delete(l.disconnected, m.ID)
-				delete(l.reports, m.ID)
-			}
-			admitted = l
-			room = r
-			return nil
-		})
-		if err == nil {
-			s.coordinator(id).live = admitted
-			installed = true
-			sink.Offer("session.welcome", epoch, map[string]any{"connectionId": connection.ID, "connectionGeneration": connection.Generation, "playbackLease": admitted.active[connection.MemberID] == connection.ID, "snapshot": s.roomSnapshot(room, epoch, p.IdentityID)})
+	err := s.submit(ctx, id, func(_ context.Context, epoch string) error {
+		if err := s.access(p, id); err != nil {
+			return err
 		}
-		return err
+		c := s.coordinator(id)
+		r := c.room
+		l := s.live(r, c)
+		m, _ := member(r, p.IdentityID)
+		cid, err := contracts.RandomID(s.Random)
+		if err != nil {
+			return err
+		}
+		if old := l.connections[l.active[m.ID]]; old != nil {
+			old.Sink.Offer("session.replaced", epoch, map[string]string{"reason": "connection_replaced"})
+			s.drop(l, old)
+		}
+		l.generations[m.ID]++
+		connection = &Connection{cid, id, m.ID, l.generations[m.ID], p, sink}
+		l.connections[cid] = connection
+		l.active[m.ID] = cid
+		delete(l.disconnected, m.ID)
+		delete(l.reports, m.ID)
+		delete(l.readySince, m.ID)
+		delete(l.bufferSince, m.ID)
+		installed = true
+		sink.Offer("session.welcome", epoch, map[string]any{"connectionId": cid, "snapshot": s.roomSnapshot(r, epoch, p.IdentityID)})
+		s.refreshLive(id, c)
+		return nil
 	})
 	if err != nil {
 		if installed {
-			// A deadline can win after admission committed. Release that actual connection.
 			s.Disconnect(connection)
 		} else {
 			s.mu.Lock()
@@ -220,7 +193,7 @@ func (s *Service) drop(l *liveRoom, c *Connection) {
 	c.Sink.Close()
 }
 
-// Disconnect releases a socket, keeping its playback lease for the reconnect grace.
+// Disconnect releases a socket and retains its existing waiting membership for the reconnect grace.
 func (s *Service) Disconnect(c *Connection) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -239,76 +212,78 @@ func (s *Service) active(l *liveRoom, c *Connection) error {
 	return nil
 }
 
-// Handle applies a validated socket frame through the room coordinator.
+// CheckConnection validates liveness traffic against current memory authorization.
+func (s *Service) CheckConnection(ctx context.Context, c *Connection) error {
+	return s.dispatch(ctx, c.RoomID, func(_ context.Context, _ string) error {
+		if err := s.validSession(c.Session); err != nil {
+			return err
+		}
+		return s.active(s.coordinator(c.RoomID).live, c)
+	}, false)
+}
+
+// Handle applies controls in memory; only media selection crosses persistence.
 func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientFrame) error {
 	return s.dispatch(ctx, c.RoomID, func(ctx context.Context, epoch string) error {
-		var resultRevision int64
-		var committed *liveRoom
-		err := s.loadAuthorized(ctx, c.Session, c.RoomID, func(tx Tx, r Room) error {
-			l := s.live(r, s.coordinator(r.ID))
-			if l.connections[c.ID] != c {
-				return contracts.Failure("session_required")
+		co := s.coordinator(c.RoomID)
+		r := co.room
+		l := s.live(r, co)
+		var revision int64
+		apply := func() error {
+			if err := s.validSession(c.Session); err != nil {
+				return err
 			}
-			if f.Epoch != epoch {
-				return contracts.Failure("stale_state")
-			}
-			if f.Type == "member.activate" {
-				old := l.connections[l.active[c.MemberID]]
-				if old != nil && old != c {
-					old.Sink.Offer("session.replaced", epoch, map[string]string{"reason": "lease_transferred"})
-					s.drop(l, old)
-				}
-				l.active[c.MemberID] = c.ID
-				delete(l.disconnected, c.MemberID)
-				delete(l.reports, c.MemberID)
-				c.Sink.Offer("session.welcome", epoch, map[string]any{"connectionId": c.ID, "connectionGeneration": c.Generation, "playbackLease": true, "snapshot": s.roomSnapshot(r, epoch, c.Session.IdentityID)})
-				return nil
+			if err := authorize(r, c.Session, false); err != nil {
+				return err
 			}
 			if err := s.active(l, c); err != nil {
 				return err
 			}
-			if f.Type == "member.readiness" || f.Type == "member.observation" {
-				if f.Report.MediaGeneration != l.generation {
+			if f.Epoch != epoch {
+				return contracts.Failure("stale_state")
+			}
+			if f.Type == "member.readiness" {
+				report := f.Report
+				if report.MediaGeneration != l.generation || (l.barrier != nil && (report.BarrierID == nil || *report.BarrierID != l.barrier.BarrierID)) || (l.barrier == nil && report.BarrierID != nil) {
 					return contracts.Failure("stale_state")
 				}
-				if f.Report.PositionMs != nil && (l.media == nil || *f.Report.PositionMs > l.media.DurationMs) {
+				if report.PositionMs != nil && (l.media == nil || *report.PositionMs > l.media.DurationMs) {
 					return contracts.Failure("invalid_command")
 				}
-				if f.Type == "member.readiness" {
-					if (l.barrier != nil && (f.Report.BarrierID == nil || *f.Report.BarrierID != l.barrier.BarrierID)) || (l.barrier == nil && f.Report.BarrierID != nil) {
-						return contracts.Failure("stale_state")
-					}
-					report := f.Report
-					l.reports[c.MemberID] = &report
-					if report.Status != "ready" {
-						delete(l.readySince, c.MemberID)
-					}
-					if report.Status != "buffering" {
-						delete(l.bufferSince, c.MemberID)
-					}
+				old := l.reports[c.MemberID]
+				changed := old == nil || old.Status != report.Status || old.MediaGeneration != report.MediaGeneration || old.Capabilities != report.Capabilities
+				l.reports[c.MemberID] = &report
+				if report.Status != "ready" {
+					delete(l.readySince, c.MemberID)
+				}
+				if report.Status != "buffering" {
+					delete(l.bufferSince, c.MemberID)
+				}
+				s.tickLive(c.RoomID, co)
+				if changed {
+					s.refreshLive(c.RoomID, co)
 				}
 				return nil
 			}
-			if f.Type == "media.select" || f.Type == "waiting.exclude" {
-				if r.HostIdentityID != c.Session.IdentityID {
-					return contracts.Failure("forbidden")
-				}
-			} else if r.Settings.Controllers != "everyone" && r.HostIdentityID != c.Session.IdentityID {
+			if f.Type != "playback.command" && f.Type != "media.select" {
+				return contracts.Failure("invalid_command")
+			}
+			if (f.Type == "media.select" || r.Settings.Controllers != "everyone") && r.HostIdentityID != c.Session.IdentityID {
 				return contracts.Failure("forbidden")
 			}
-			previous, found, err := tx.Command(r.ID, c.Session.IdentityID, f.CommandID, s.Now().UnixMilli())
-			if err != nil {
-				return err
-			}
+			now := s.monotonicMs()
 			digest := contracts.CommandDigest(f)
-			if found {
-				if previous.Epoch != epoch {
-					return contracts.Failure("stale_state")
+			receiptKey := c.Session.IdentityID + ":" + f.CommandID
+			for k, v := range l.receipts {
+				if v.ExpiresAtMs <= now {
+					delete(l.receipts, k)
 				}
+			}
+			if previous, ok := l.receipts[receiptKey]; ok {
 				if previous.Digest != digest {
 					return contracts.Failure("invalid_command")
 				}
-				resultRevision = previous.Revision
+				revision = previous.Revision
 				return nil
 			}
 			if f.ExpectedRevision != r.Revision || f.MediaGeneration != l.generation {
@@ -318,27 +293,34 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 				return contracts.Failure("capacity_reached")
 			}
 			next := l.clone()
-			now := s.monotonicMs()
 			next.playback.PositionMs = l.position(now)
 			next.playback.AnchorServerMs = now
 			switch f.Type {
 			case "media.select":
-				if f.Media.Kind != "local" && f.Media.Kind != "bilibili" {
-					return contracts.Failure("invalid_command")
-				}
 				if l.generation >= contracts.MaxSafeInteger {
 					return contracts.Failure("capacity_reached")
 				}
-				m := f.Media
-				next.media = &m
+				b, err := json.Marshal(f.Media)
+				if err != nil {
+					return err
+				}
+				media, err := contracts.DecodeMedia(b)
+				if err != nil {
+					return contracts.Failure("invalid_command")
+				}
+				if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.SelectMedia(r.ID, media) }); err != nil {
+					return err
+				}
+				next.media = &media
 				next.generation++
-				next.playback = Playback{Phase: "paused", AnchorServerMs: now, BaseRate: 1}
+				next.playback = Playback{Phase: "paused", AnchorServerMs: now}
 				next.barrier = nil
 				next.reports = make(map[string]*contracts.Readiness)
-				next.excluded = make(map[string]bool)
 				next.cohort = make(map[string]bool)
 				next.bufferSince = make(map[string]int64)
 				next.readySince = make(map[string]int64)
+				r.Media = &media
+				s.install(r)
 			case "playback.command":
 				if l.media == nil {
 					return contracts.Failure("invalid_command")
@@ -349,7 +331,7 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 					next.playback.DesiredPlaying = false
 					next.barrier = nil
 				case "seek":
-					if f.PositionMs > l.media.DurationMs {
+					if f.PositionMs < 0 || f.PositionMs > l.media.DurationMs {
 						return contracts.Failure("invalid_command")
 					}
 					next.playback.PositionMs = f.PositionMs
@@ -357,15 +339,11 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 						next.playback.Phase = "paused"
 					}
 					if next.playback.Phase == "waiting" {
-						if err := s.startBarrier(&next, r, l.barrier.Reason, l.barrier.RequiredMemberIDs, now); err != nil {
+						if err := s.startBarrier(&next, l.barrier.Reason, l.barrier.RequiredMemberIDs, now); err != nil {
 							return err
 						}
 					}
 				case "play", "replay":
-					if l.hostLost && r.HostIdentityID != c.Session.IdentityID {
-						return contracts.Failure("forbidden")
-					}
-					next.hostLost = false
 					if f.Action == "replay" || next.playback.PositionMs >= l.media.DurationMs {
 						next.playback.PositionMs = 0
 					}
@@ -373,103 +351,54 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 					next.playback.DesiredPlaying = true
 					next.barrier = nil
 					next.cohort = make(map[string]bool)
+					required := []string{}
 					for _, m := range r.Members {
-						if m.IdentityID == r.HostIdentityID || l.connections[l.active[m.ID]] != nil {
+						if l.connections[l.active[m.ID]] != nil {
 							next.cohort[m.ID] = true
+							required = append(required, m.ID)
 						}
 					}
-					if r.Settings.WaitMode == "all" {
-						required := []string{}
-						for _, m := range r.Members {
-							if next.cohort[m.ID] && !l.excluded[m.ID] {
-								required = append(required, m.ID)
-							}
-						}
-						if err := s.startBarrier(&next, r, "play", required, now); err != nil {
+					if r.Settings.WaitForAll {
+						if err := s.startBarrier(&next, "play", required, now); err != nil {
 							return err
 						}
 					}
 				default:
 					return contracts.Failure("invalid_command")
 				}
-			case "waiting.exclude":
-				found := false
-				for _, m := range r.Members {
-					if m.ID == f.MemberID {
-						if m.IdentityID == r.HostIdentityID {
-							return contracts.Failure("forbidden")
-						}
-						found = true
-					}
-				}
-				if !found || l.media == nil {
-					return contracts.Failure("invalid_command")
-				}
-				next.excluded[f.MemberID] = f.Excluded
-				if next.barrier != nil && f.Excluded {
-					ids := []string{}
-					for _, mid := range next.barrier.RequiredMemberIDs {
-						if mid != f.MemberID {
-							ids = append(ids, mid)
-						}
-					}
-					next.barrier.RequiredMemberIDs = ids
-				}
-				if next.barrier != nil && !f.Excluded && next.cohort[f.MemberID] {
-					found := false
-					for _, mid := range next.barrier.RequiredMemberIDs {
-						if mid == f.MemberID {
-							found = true
-						}
-					}
-					if !found {
-						next.barrier.RequiredMemberIDs = append(next.barrier.RequiredMemberIDs, f.MemberID)
-					}
-				}
-			default:
-				return contracts.Failure("invalid_command")
 			}
 			r.Revision++
-			r.LastActiveAtMs = s.Now().UnixMilli()
-			next.writeTo(&r, now)
-			if err := tx.SaveRoom(r); err != nil {
-				return err
+			co.room = r
+			if len(next.receipts) >= 256 {
+				oldest := ""
+				var expiry int64
+				for k, v := range next.receipts {
+					if oldest == "" || v.ExpiresAtMs < expiry {
+						oldest = k
+						expiry = v.ExpiresAtMs
+					}
+				}
+				delete(next.receipts, oldest)
 			}
-			if err := tx.SavePlayback(r, s.Now().UnixMilli()); err != nil {
-				return err
-			}
-			if err := tx.SaveCommand(r.ID, c.Session.IdentityID, f.CommandID, CommandRecord{epoch, digest, r.Revision, s.Now().UnixMilli() + 86400000}); err != nil {
-				return err
-			}
-			resultRevision = r.Revision
-			// Do not publish runtime state until Transact has committed.
-			committed = &next
+			next.receipts[receiptKey] = CommandRecord{epoch, digest, r.Revision, now + 60000}
+			co.live = &next
+			revision = r.Revision
 			return nil
-		})
-		if err == nil && f.Type == "member.readiness" {
-			s.tickLive(c.RoomID, s.coordinator(c.RoomID))
 		}
-		if err == nil && committed != nil {
-			s.coordinator(c.RoomID).live = committed
-		}
-		committed = nil
+		err := apply()
 		if f.CommandID != "" {
 			result := CommandResult{CommandID: f.CommandID, Accepted: err == nil}
 			if err == nil {
-				result.Revision = &resultRevision
+				result.Revision = &revision
 			} else {
 				result.Error = s.publicError(err)
 			}
 			c.Sink.Offer("command.result", epoch, result)
-		} else if err != nil && !(err == contracts.Failure("stale_state") && (f.Type == "member.readiness" || f.Type == "member.observation")) {
+		} else if err != nil && err != contracts.Failure("stale_state") {
 			c.Sink.Offer("error", epoch, s.publicError(err))
 		}
-		if err != nil {
-			s.refreshLive(c.RoomID, s.coordinator(c.RoomID))
-			var failure contracts.Failure
-			if !errors.As(err, &failure) {
-				s.failLive(s.coordinator(c.RoomID))
-			}
+		if f.Type != "member.readiness" {
+			s.refreshLive(c.RoomID, co)
 		}
 		return err
 	}, false)
@@ -483,53 +412,17 @@ func (s *Service) publicError(err error) *contracts.PublicError {
 	id, _ := contracts.RandomID(s.Random)
 	return &contracts.PublicError{Code: code, Message: "The room request could not complete.", RequestID: id, Retryable: code == "busy" || code == "storage_unavailable" || code == "rate_limited"}
 }
-func (s *Service) refreshLive(id string, c *coordinator) {
-	if c.live == nil || len(c.live.connections) == 0 {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var r Room
-	err := s.Repository.Transact(ctx, func(tx Tx) error {
-		var err error
-		r, err = tx.LoadRoom(id)
-		if err != nil {
-			return err
-		}
-		for _, conn := range c.live.connections {
-			_, exists := member(r, conn.Session.IdentityID)
-			sessionErr := tx.SessionValid(conn.Session.TokenHash, conn.Session.IdentityID, s.Now().UnixMilli())
-			if sessionErr != nil && sessionErr != contracts.Failure("session_required") {
-				return sessionErr
-			}
-			if !exists || sessionErr != nil {
-				conn.Sink.Offer("session.replaced", c.epoch, map[string]string{"reason": "session_revoked"})
-				s.drop(c.live, conn)
-			}
-		}
-		if len(c.live.connections) > 0 && s.Now().UnixMilli()-r.LastActiveAtMs >= 60000 {
-			r.LastActiveAtMs = s.Now().UnixMilli()
-			if err := tx.SaveRoom(r); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		s.failLive(c)
-		return
-	}
-	for _, conn := range c.live.connections {
-		conn.Sink.Offer("room.snapshot", c.epoch, s.roomSnapshot(r, c.epoch, conn.Session.IdentityID))
-	}
-}
-func (s *Service) failLive(c *coordinator) {
+func (s *Service) refreshLive(_ string, c *coordinator) {
 	if c.live == nil {
 		return
 	}
 	for _, conn := range c.live.connections {
-		conn.Sink.Offer("error", c.epoch, s.publicError(contracts.Failure("storage_unavailable")))
-		s.drop(c.live, conn)
+		if s.validSession(conn.Session) != nil {
+			conn.Sink.Offer("session.replaced", c.epoch, map[string]string{"reason": "session_revoked"})
+			s.drop(c.live, conn)
+			continue
+		}
+		conn.Sink.Offer("room.snapshot", c.epoch, s.roomSnapshot(c.room, c.epoch, conn.Session.IdentityID))
 	}
 }
 func (s *Service) managementCommitted(id, epoch, operation, removed string, revision int64) {
@@ -540,7 +433,6 @@ func (s *Service) managementCommitted(id, epoch, operation, removed string, revi
 	if removed != "" {
 		delete(c.live.cohort, removed)
 		delete(c.live.reports, removed)
-		delete(c.live.excluded, removed)
 		delete(c.live.disconnected, removed)
 		delete(c.live.bufferSince, removed)
 		delete(c.live.readySince, removed)
@@ -578,109 +470,33 @@ func abs(n int64) int64 {
 	}
 	return n
 }
-func (s *Service) tickLive(id string, c *coordinator) {
+func (s *Service) tickLive(_ string, c *coordinator) {
 	if c.live == nil {
 		return
 	}
 	l := c.live
-	now := s.monotonicMs()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var committed *liveRoom
-	var publish bool
-	err := s.Repository.Transact(ctx, func(tx Tx) error {
-		r, err := tx.LoadRoom(id)
-		if err != nil {
-			return err
+	for _, conn := range l.connections {
+		if s.validSession(conn.Session) != nil {
+			conn.Sink.Offer("session.replaced", c.epoch, map[string]string{"reason": "session_revoked"})
+			s.drop(l, conn)
 		}
-		next := l.clone()
-		transition, err := s.advancePolicy(&next, r, now)
-		if err != nil {
-			return err
-		}
-		checkpoint := l.media != nil && l.playback.Phase == "playing" && now-l.lastCheckpoint >= 10000
-		if !transition && !checkpoint {
-			// Timer observations are ephemeral, but retain their server receive times.
-			committed = &next
-			return nil
-		}
-		publish = true
-		if transition {
-			if r.Revision >= contracts.MaxSafeInteger {
-				return contracts.Failure("capacity_reached")
-			}
-			r.Revision++
-			r.LastActiveAtMs = s.Now().UnixMilli()
-			if err := tx.SaveRoom(r); err != nil {
-				return err
-			}
-		}
-		next.writeTo(&r, now)
-		if err := tx.SavePlayback(r, s.Now().UnixMilli()); err != nil {
-			return err
-		}
-		next.lastCheckpoint = now
-		if checkpoint {
-			r.LastActiveAtMs = s.Now().UnixMilli()
-			if err := tx.SaveRoom(r); err != nil {
-				return err
-			}
-		}
-		committed = &next
-		return nil
-	})
+	}
+	changed, err := s.advancePolicy(l, c.room, s.monotonicMs())
 	if err != nil {
-		s.failLive(c)
 		return
 	}
-	if committed != nil {
-		c.live = committed
-	}
-	// Periodic authorization also revokes otherwise idle sessions.
-	if now%5000 < 250 || publish {
-		s.refreshLive(id, c)
+	if changed {
+		c.room.Revision++
+		s.refreshLive(c.room.ID, c)
 	}
 }
-func (s *Service) finishLive(id string, c *coordinator) error {
-	if c.live == nil {
-		return nil
-	}
-	s.mu.Lock()
-	parent := s.shutdown
-	s.mu.Unlock()
-	shuttingDown := parent != nil
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
-	defer cancel()
-	for _, conn := range c.live.connections {
-		conn.Sink.Offer("server.stopping", c.epoch, map[string]string{"reason": "shutdown"})
-	}
-	err := s.Repository.Transact(ctx, func(tx Tx) error {
-		r, err := tx.LoadRoom(id)
-		if err != nil {
-			return err
+func (s *Service) finishLive(_ string, c *coordinator) {
+	if c.live != nil {
+		for _, conn := range c.live.connections {
+			conn.Sink.Offer("server.stopping", c.epoch, map[string]string{"reason": "shutdown"})
+			s.drop(c.live, conn)
 		}
-		if c.live.media == nil {
-			return nil
-		}
-		if c.live.storageVersion == s.storageVersion() {
-			c.live.writeTo(&r, s.monotonicMs())
-		}
-		r.Playback.Phase = "paused"
-		r.Playback.DesiredPlaying = false
-		return tx.SavePlayback(r, s.Now().UnixMilli())
-	})
-	if shuttingDown && err != nil && err != contracts.Failure("not_found") {
-		s.mu.Lock()
-		s.shutdownErr = errors.Join(s.shutdownErr, err)
-		s.mu.Unlock()
 	}
-	for _, conn := range c.live.connections {
-		s.drop(c.live, conn)
-	}
-	return err
 }
 
 // ServerTimeMs returns this process's monotonic clock for four-timestamp exchanges.

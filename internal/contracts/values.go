@@ -27,17 +27,10 @@ type ProfilePatch struct {
 	DisplayName string `json:"displayName"`
 }
 
-// RoomSettings is the complete version-1 settings object, including defaults.
-// Settings updates replace the complete object; no implicit patch defaults apply.
+// RoomSettings contains the two version-2 host preferences.
 type RoomSettings struct {
-	Controllers     string `json:"controllers"`
-	SyncMode        string `json:"syncMode"`
-	WaitMode        string `json:"waitMode"`
-	WaitOnBuffering bool   `json:"waitOnBuffering"`
-	WaitTimeoutMs   int64  `json:"waitTimeoutMs"`
-	LateJoin        string `json:"lateJoin"`
-	SoftDriftMs     int64  `json:"softDriftMs"`
-	HardDriftMs     int64  `json:"hardDriftMs"`
+	Controllers string `json:"controllers"`
+	WaitForAll  bool   `json:"waitForAll"`
 }
 
 // MediaDescriptor contains only allowlisted matching metadata. Kind determines
@@ -74,25 +67,15 @@ func DecodeRoomSettings(data []byte) (RoomSettings, error) {
 	if err != nil {
 		return RoomSettings{}, err
 	}
-	if !shape(object, "controllers", "syncMode", "waitMode", "waitOnBuffering", "waitTimeoutMs", "lateJoin", "softDriftMs", "hardDriftMs") {
+	if !shape(object, "controllers", "waitForAll") {
 		return RoomSettings{}, ErrInvalidInput
 	}
 	controllers, c := choice(object["controllers"], "host", "everyone")
-	syncMode, s := choice(object["syncMode"], "seek", "adaptive")
-	waitMode, w := choice(object["waitMode"], "none", "all")
-	buffering, b := object["waitOnBuffering"].(bool)
-	timeout, t := integer(object["waitTimeoutMs"], 5000, 120000)
-	lateJoin, l := choice(object["lateJoin"], "catch_up", "wait_at_next_play")
-	soft, f := integer(object["softDriftMs"], 50, 500)
-	hard, h := integer(object["hardDriftMs"], 250, 2000)
-	if !(c && s && w && b && t && l && f && h) || hard <= soft {
+	wait, w := object["waitForAll"].(bool)
+	if !c || !w {
 		return RoomSettings{}, ErrInvalidInput
 	}
-	return RoomSettings{
-		Controllers: controllers, SyncMode: syncMode, WaitMode: waitMode,
-		WaitOnBuffering: buffering, WaitTimeoutMs: timeout, LateJoin: lateJoin,
-		SoftDriftMs: soft, HardDriftMs: hard,
-	}, nil
+	return RoomSettings{Controllers: controllers, WaitForAll: wait}, nil
 }
 
 // DecodeMedia validates a local or Bilibili stable descriptor.

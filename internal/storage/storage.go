@@ -78,7 +78,7 @@ func (s *Store) Ready(ctx context.Context) error {
 	if s.writer.failed.Load() {
 		return errors.New("storage unavailable")
 	}
-	return s.db.PingContext(ctx)
+	return nil
 }
 
 // SQLiteVersion returns the actual engine version used by this database.

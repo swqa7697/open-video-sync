@@ -25,7 +25,6 @@ const snapshot = {
     phase: 'empty',
     positionMs: 0,
     anchorServerMs: 0,
-    baseRate: 1,
     desiredPlaying: false,
   },
   members: [
@@ -34,9 +33,6 @@ const snapshot = {
       displayName: 'Guest',
       role: 'host',
       presence: 'offline',
-      playbackActive: false,
-      playbackEligible: false,
-      excludedFromWaiting: false,
       readiness: null,
     },
   ],
@@ -83,41 +79,59 @@ test('aborts all pending requests when disposed', async () => {
   expect(signals.every((signal) => signal.aborted)).toBe(true);
 });
 
-test('retries uncertain creation with the original intent and idempotency key', async () => {
-  const attempts: RequestInit[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((url: string, options: RequestInit) => {
-      if (url.startsWith('/health')) return Promise.resolve(new Response(null, { status: 204 }));
-      if (url.endsWith('/session')) return Promise.resolve(json(identity));
-      if (options.method === 'GET') return Promise.resolve(json({ rooms: [], nextCursor: null }));
-      attempts.push(options);
-      return attempts.length === 1
-        ? Promise.reject(new TypeError('network failure'))
-        : Promise.resolve(json({ snapshot, invitation: null, replayed: true }));
-    }),
-  );
-  const wrapper = mount(App, { global: { plugins: [createPinia()] } });
-  await flushPromises();
-  await wrapper.get('#room-name').setValue('Private room');
-  await wrapper
-    .get('#create-title')
-    .element.parentElement?.querySelector('form')
-    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  await flushPromises();
-  expect(wrapper.get('#room-name').attributes('disabled')).toBeDefined();
-  const retry = wrapper
-    .findAll('button')
-    .find((button) => button.text() === 'Retry original request');
-  await retry?.trigger('click');
-  await flushPromises();
-  expect(attempts).toHaveLength(2);
-  expect(attempts[0]?.body).toBe(attempts[1]?.body);
-  expect(attempts[0]?.headers).toEqual(attempts[1]?.headers);
-  expect(wrapper.get('#room-title').text()).toBe('Private room');
-  expect(wrapper.text()).toContain('previous request succeeded');
-  wrapper.unmount();
-});
+test.each([true, false])(
+  'recovers uncertain creation without duplicating expired results (retained=%s)',
+  async (retained) => {
+    const attempts: RequestInit[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, options: RequestInit) => {
+        if (url.startsWith('/health')) return Promise.resolve(new Response(null, { status: 204 }));
+        if (url.endsWith('/session')) return Promise.resolve(json(identity));
+        if (options.method === 'GET') return Promise.resolve(json({ rooms: [], nextCursor: null }));
+        attempts.push(options);
+        return attempts.length === 1
+          ? Promise.reject(new TypeError('network failure'))
+          : Promise.resolve(
+              retained
+                ? json({ snapshot, invitation: null, replayed: true })
+                : new Response(JSON.stringify({ code: 'request_outcome_unknown' }), {
+                    status: 409,
+                  }),
+            );
+      }),
+    );
+    const wrapper = mount(App, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+    await wrapper.get('#room-name').setValue('Private room');
+    await wrapper
+      .get('#create-title')
+      .element.parentElement?.querySelector('form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+    expect(wrapper.get('#room-name').attributes('disabled')).toBeDefined();
+    const retry = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Retry original request');
+    await retry?.trigger('click');
+    await flushPromises();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]?.body).toBe(attempts[1]?.body);
+    expect(new Headers(attempts[0]!.headers).get('Idempotency-Key')).toEqual(
+      new Headers(attempts[1]!.headers).get('Idempotency-Key'),
+    );
+    expect(new Headers(attempts[1]!.headers).get('Idempotency-Replay-Only')).toBe('true');
+    if (retained) {
+      expect(wrapper.get('#room-title').text()).toBe('Private room');
+      expect(wrapper.text()).toContain('Room ready.');
+    } else {
+      expect(wrapper.find('#room-title').exists()).toBe(false);
+      expect(wrapper.text()).toContain('Check Your rooms');
+      expect(wrapper.get('#room-name').attributes('disabled')).toBeUndefined();
+    }
+    wrapper.unmount();
+  },
+);
 
 test('rejects malformed room responses before rendering authority', () => {
   expect(() => decodeSnapshot({ ...snapshot, selfMemberId: 'f'.repeat(32) })).toThrow();

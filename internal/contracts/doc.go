@@ -1,3 +1,3 @@
-// Package contracts defines version-1 wire validation without authorization.
-// Application routes and the room protocol remain unimplemented. See specs/wire-v1.md.
+// Package contracts validates the bounded version-2 application protocol.
+// See specs/wire-v2.md. Helper and local fingerprint encodings remain version 1.
 package contracts
