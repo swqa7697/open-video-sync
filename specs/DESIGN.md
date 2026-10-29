@@ -390,7 +390,9 @@ Cross-origin iframe internals are not directly accessible to the OVS page under 
 
 Use an **OVS-page-only Tampermonkey helper plus OVS's own player** as the proposed integration. Tampermonkey documents [privileged HTTP requests](https://www.tampermonkey.net/documentation.php?ext=d2&q=GM_xmlhttpRequest), including binary responses, cancellation, and browser-dependent cookie/header behavior. This supplies a plausible browser-local transport for platform metadata, media, and danmaku. OVS owns the video element, so playback control and actual position observations need no undocumented iframe messaging API.
 
-This is an architectural feasibility assessment, not a passing live integration result. Extension permissions do not guarantee Bilibili API availability, session reuse, accepted CDN requests, codecs, or access rights. No maintained official arbitrary-origin playback-resolution contract has been established by this investigation. Record the exact platform interfaces and their maintenance risks in the proof of concept; do not infer compatibility from a successful metadata request.
+The isolated B0 prototype passed local validation on 2026-10-28 with desktop Chrome 156.0.8078.73 / Tampermonkey 5.5.1 (Manifest V3) and Firefox 159.0 / Tampermonkey 5.5.0 (Manifest V2), on Ubuntu 24.04.5. It delivered audio, video, controls, observations, and danmaku inside an OVS-owned player over HTTP and HTTPS, including insecure LAN HTTP. This establishes a viable path for P8; it does not implement the production adapter or satisfy P8/P10 integration and release acceptance.
+
+Extension permissions do not guarantee future API availability, session reuse, accepted CDN requests, codecs, or access rights. No maintained official arbitrary-origin playback-resolution contract has been established. The selected interfaces and tested limits below require revalidation when the helper, platform, browser, or manager changes.
 
 | Approach | Decision |
 | --- | --- |
@@ -412,7 +414,7 @@ The helper expands the privileges available to a trusted OVS page. A bridge nonc
 
 ### 8.3 Proof-of-concept matrix
 
-Build an isolated prototype before finalizing the adapter. Keep prototype code and sanitized evidence under ignored `.misc/bilibili-poc/`; promote only the selected adapter and durable contracts into application code and this document.
+Keep the isolated prototype and sanitized evidence under ignored `.misc/bilibili-poc/`. Revalidate the affected experiments before finalizing or changing the production adapter. Promote only the selected implementation and durable contracts into application code and this document.
 
 | Area | Required experiment and result |
 | --- | --- |
@@ -434,6 +436,22 @@ Build an isolated prototype before finalizing the adapter. Keep prototype code a
 Require passing validation on current stable desktop Chromium and Firefox with Tampermonkey. Record exact browser, manager, extension mode, and OS versions. Both browsers must pass this gate before production integration; a missing or failing browser result keeps the gate incomplete. A combination that cannot install the helper or satisfy its request/session requirements is unsupported until a compatible route is proven. Safari is outside the roadmap. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
 
 The decision record must name the platform interfaces, helper permissions, request/header/cookie behavior, proven capabilities, missing optional capabilities, supported media classes, browser matrix, measured synchronization, and reproducible steps. If this approach fails, report Bilibili integration as blocked and revisit the design. Do not silently move execution to Bilibili pages, add a server media path, or declare a local-only release compliant.
+
+#### 8.3.1 Accepted B0 baseline
+
+The local decision record is `.misc/bilibili-poc/README.md`. Two independent profiles per browser retain separate platform sessions. The prototype passes 48 paired-profile trials across HTTP/HTTPS and nearby, cross-region, adverse, and asymmetric control paths. These are bounded feasibility measurements with three independent trials per cell and low statistical confidence, not release performance guarantees or hosted CI evidence.
+
+Use the following browser-local path for production integration:
+
+- Resolve metadata and multipart identities through `https://api.bilibili.com/x/web-interface/view`, using its `pages[]` entries. Resolve DASH tracks through `/x/player/playurl` with the participant's own available access. Load segmented protobuf danmaku through `/x/v2/dm/web/seg.so`. These observed interfaces are not an official maintained playback API.
+- Select supported AVC video and AAC audio tracks, including the tested HE-AAC stream. A small MediaSource loader can use SegmentBase initialization/index ranges and SIDX references. Create both source buffers before appending initialization data. Fill both tracks at the current position before fetching ahead. Keep media and seek cancellation identities separate from normal playback-clock advancement.
+- Keep signed locations and provider responses in helper memory. The page requests opaque-handle byte ranges; it cannot supply URLs, methods, or headers. Grant `GM_xmlhttpRequest` and the source-window access needed for the sandbox identity check. Limit `@connect` to `api.bilibili.com`, `bilivideo.com`, and the reviewed exact CDN `upos-hz-mirrorakam.akamaized.net`. Require HTTPS and approved paths at runtime. Use a fixed Bilibili Referer, helper-constructed Range, native browser cookies, and disabled request caching. Reject redirects before following them.
+- Bound the prototype bridge to 2-KiB UTF-8 requests, 384-KiB UTF-8 replies, 256-KiB successful media chunks, two concurrent helper requests, four pending page calls, and one current media handle per tab. Use a 12-second request deadline, a 15-second bridge deadline, a bounded backpressure retry budget, and at most one expired-location refresh for the same identity/codec/quality. The live oversized-response check aborted a 32-MiB diagnostic transfer after 320 KiB; account for in-flight bytes beyond the success limit.
+- Keep assembled fragments bounded (4 MiB in B0), evict old native buffers, and cap metadata, danmaku, visible comments, observations, and event queues. B0 retained less than 55 seconds per track during 70-second functional runs. Decode only bounded danmaku display fields and render them as text. A stale segment reply must not replace comments after a seek or media change.
+
+Native controls, rate changes, duration/ended, trusted input detection, decoded-frame observations, buffering/readiness information, fullscreen, permission denial, suspension/resume, disposal, and real rejected-URL refresh were exercised. Exact-origin and foreign-frame/source rejection passed on both managers. Missing or incompatible helpers and access errors remain local unready states.
+
+The verified access mode is each profile's own authenticated platform session, including the tested third-party-cookie blocking settings. Logged-out playback resolution returned HTTP 412 in this environment and failed visibly without affecting the other profile; do not claim anonymous platform access. Deleted/restricted provider failures also have controlled fault coverage, not blanket live compatibility claims. Live streams, paid episodic formats, DRM, other codecs, other operating systems, mobile, and stricter untested isolation modes remain outside the proven matrix. HTTPS used a local test certificate and test-profile exception; certificate provisioning and Caddy deployment validation remain P9 work.
 
 ### 8.4 Media and danmaku data flow
 
@@ -747,7 +765,7 @@ Foundation and local-media implementation can proceed while feasibility work is 
 
 Resolve these before first-release acceptance:
 
-- Which Bilibili interfaces, media loader, and Tampermonkey/browser combinations pass the proof of concept, and which media classes, session modes, and request permissions do they require?
+- Does the production Bilibili integration preserve the B0 request, credential, lifecycle, and observation boundaries, and which additional browser/OS/content combinations have passing evidence?
 - Which browser hash implementation meets HTTP compatibility and maintenance needs? SQLite and WebSocket libraries are selected in §12.2 and pinned in `go.mod`.
 - Do the measured adapters meet the proposed timing targets, especially without rate control or reliable buffering events?
 - Which browser/OS/codec combinations and image architectures are supported based on actual validation?

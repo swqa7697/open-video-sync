@@ -8,6 +8,8 @@
 !internal/**
 !migrations/
 !migrations/**
+!userscripts/
+!userscripts/**
 !scripts/
 !scripts/notices/
 !scripts/notices/**

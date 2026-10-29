@@ -301,10 +301,33 @@ This prevents localhost exceptions from hiding unavailable randomness, file-sele
 
 The socket route is `/ws/v1/rooms/{roomId}`. Exact Origin, session cookie, membership, and resource admission precede upgrade.
 A membership may open four sockets; the instance may open 500. Welcome explicitly identifies playback lease ownership.
-Accepted media selection currently permits only local descriptors. Bilibili syntax validation does not enable Bilibili playback.
+Accepted media selection permits validated local and Bilibili stable descriptors. The server validates metadata without fetching platform data.
 Startup waiting freezes active participants and the host, requires current-barrier readiness, and pauses at its deadline.
 `waiting.exclude` validates its envelope but returns `invalid_command` until P6 completes policy handling.
 Full buffering, late-join, disconnected-cohort handling, and waiting-settings transitions remain P6.
 Readiness transitions currently publish bounded complete snapshots; observation frames are validated and never change the timeline.
 Periodic checkpoints and shutdown preserve position. Reactivation restores paused without advancing through downtime.
 The storage failure latch requires restart; P7 owns automatic recovery.
+
+## Production Bilibili helper (P8)
+
+`GET /userscripts/ovs-bilibili.user.js` returns helper release 1.0.0, protocol 1, generated from validated `OVS_PUBLIC_ORIGIN`.
+The embedded source has no runtime dependency download or automatic update. Manual updates retain the same origin and permission scope.
+The userscript match specifies the exact scheme and hostname. Runtime activation additionally checks the exact port and top-level window.
+Only `GM_xmlhttpRequest` and `unsafeWindow` are granted. Approved destinations and B0 request limits remain those in DESIGN §8.3.1.
+
+Both bridge ends reject duplicate keys, malformed Unicode/numbers, and JSON nesting beyond eight levels.
+Operation and reply decoders reject unknown fields before effects.
+Same-window, exact-origin JSON messages use `ovs-bilibili-request` / `ovs-bilibili-response`, a random 128-bit `client` channel, and positive integer request `id`.
+Hello requires `{op:"hello",version:1}` and responds with `{version:1,helper:"1.0.0",maxChunk:262144}`.
+Startup retries hello at most five times within 2.5 seconds while the manager registers its document listener.
+A new channel invalidates the preceding owner, pending requests, and handles. Other operations require the current channel.
+Open/dispose use increasing generations; range and danmaku calls require the current generation and opaque handle.
+Replies echo channel and ID. Page deadlines and disposal remove pending waiters; late replies cannot reach a replacement player.
+Bridge data never enters room sockets, HTTP mutations, SQLite, diagnostics, or serializable frontend stores.
+
+Bilibili matching requires identical BV ID, CID, and part, with duration within 250 ms.
+Loading and access failures remain local readiness states. Comment failure does not become a playback failure.
+Generation replacement, room disposal, and playback-lease loss cancel delivery and clear native buffers and overlays.
+Danmaku renders bounded text modes 1/4/5 against observed media time. Visibility, density, and size are local preferences.
+The trusted OVS page can invoke this bridge. Plain HTTP also trusts the network; the bridge is not a defense against malicious same-origin code.

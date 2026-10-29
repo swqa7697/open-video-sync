@@ -323,7 +323,7 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 			next.playback.AnchorServerMs = now
 			switch f.Type {
 			case "media.select":
-				if f.Media.Kind != "local" {
+				if f.Media.Kind != "local" && f.Media.Kind != "bilibili" {
 					return contracts.Failure("invalid_command")
 				}
 				if l.generation >= contracts.MaxSafeInteger {

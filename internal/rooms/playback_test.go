@@ -87,7 +87,7 @@ func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 100, DurationMs: 60000}}
+	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}
 	repository.reject.Store(true)
 	err = service.Handle(ctx, bound, command)
 	expectCode(t, err, "busy")
@@ -131,7 +131,7 @@ func TestTimelineRollbackCheckpointAndRevokedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 5000 || restored.Epoch == snap.Epoch || restored.Revision != 3 {
+	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 5000 || restored.Epoch == snap.Epoch || restored.Revision != 3 || restored.Media == nil || *restored.Media != command.Media {
 		t.Fatal("checkpoint did not restore paused", restored)
 	}
 }

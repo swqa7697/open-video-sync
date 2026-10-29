@@ -5,6 +5,7 @@ RUN corepack enable pnpm && corepack install --global pnpm@latest
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
+COPY userscripts/ /src/userscripts/
 RUN pnpm run build && pnpm prune --prod && pnpm licenses list --prod --json > /src/frontend-licenses.json
 
 FROM golang:latest AS backend
@@ -14,6 +15,7 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY migrations/ migrations/
+COPY userscripts/ userscripts/
 COPY scripts/notices/ scripts/notices/
 COPY --from=frontend /src/internal/web/dist/ internal/web/dist/
 COPY --from=frontend /src/web/node_modules/ web/node_modules/

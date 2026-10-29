@@ -95,7 +95,7 @@ func DecodeRoomSettings(data []byte) (RoomSettings, error) {
 	}, nil
 }
 
-// DecodeMedia validates a local or provisional Bilibili stable descriptor.
+// DecodeMedia validates a local or Bilibili stable descriptor.
 // Bilibili syntax validation establishes neither access nor player support.
 func DecodeMedia(data []byte) (MediaDescriptor, error) {
 	object, err := DecodeObject(data)

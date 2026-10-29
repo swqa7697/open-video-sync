@@ -21,6 +21,7 @@ import (
 	transport "github.com/swqa7697/open-video-sync/internal/transport/http"
 	"github.com/swqa7697/open-video-sync/internal/transport/ws"
 	"github.com/swqa7697/open-video-sync/internal/web"
+	"github.com/swqa7697/open-video-sync/userscripts"
 )
 
 var (
@@ -74,6 +75,10 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	if err != nil {
 		return err
 	}
+	helper, err := userscripts.Handler(cfg.origin.String())
+	if err != nil {
+		return err
+	}
 	var stopping atomic.Bool
 	ready := func(ctx context.Context) error {
 		if stopping.Load() {
@@ -91,7 +96,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	api := transport.NewAPI(cfg.origin.String(), identities).WithRooms(roomService)
 	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)
 	server := &http.Server{
-		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, sockets),
+		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, sockets, helper),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

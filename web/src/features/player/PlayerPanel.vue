@@ -4,12 +4,23 @@ import type { Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
 import type { Readiness, ReadinessStatus } from '../../transport/protocol-values';
 import { RoomSocket, type Command } from '../../transport/room-socket';
-import { LocalAdapter } from '../../player/adapters/local';
+import { BilibiliAdapter } from '../../player/bilibili/adapter';
+import { parseSelection } from '../../player/bilibili/media';
+import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
 import { SyncController } from '../../sync/controller';
 
 const props = defineProps<{ room: Snapshot }>();
 const emit = defineEmits<{ snapshot: [snapshot: Snapshot] }>();
+const overlay = ref<HTMLElement>(),
+  stage = ref<HTMLElement>();
+const bilibiliURL = ref(''),
+  part = ref(1),
+  danmakuStatus = ref(''),
+  showDanmaku = ref(true),
+  density = ref(20),
+  danmakuSize = ref(20);
+let publishing = false;
 const video = ref<HTMLVideoElement>(),
   status = ref('Connecting…'),
   error = ref(''),
@@ -36,7 +47,7 @@ const controls = computed(
     (host.value || current.value.settings.controllers === 'everyone') &&
     !uncertain.value,
 );
-let adapter: LocalAdapter | undefined, descriptor: MediaDescriptor | undefined;
+let adapter: PlayerAdapter | undefined, descriptor: MediaDescriptor | undefined;
 let selection = new AbortController(),
   selectionGeneration = 0;
 let timer: ReturnType<typeof setInterval> | undefined, subscription: (() => void) | undefined;
@@ -60,6 +71,17 @@ const transport = new RoomSocket(props.room.roomId, {
       snapshot.mediaGeneration !== current.value.mediaGeneration
     )
       waitTimedOut.value = false;
+    if (snapshot.mediaGeneration !== current.value.mediaGeneration) {
+      if (
+        !(
+          descriptor &&
+          (publishing || descriptor.kind === 'local') &&
+          mediaMatches(snapshot.media, descriptor)
+        )
+      )
+        clearMedia();
+      publishing = false;
+    }
     current.value = snapshot;
     emit('snapshot', snapshot);
     void sample();
@@ -97,19 +119,98 @@ function clearMedia(): void {
   probedBarrier = '';
   probingBarrier = '';
   loading.value = false;
+  danmakuStatus.value = '';
+  publishing = false;
 }
 function matches(): boolean {
-  const selected = current.value.media,
-    local = descriptor;
+  return mediaMatches(current.value.media, descriptor);
+}
+function mediaMatches(
+  selected: MediaDescriptor | null,
+  local: MediaDescriptor | undefined,
+): boolean {
+  if (!selected || !local || Math.abs(selected.durationMs - local.durationMs) > 250) return false;
+  if (selected.kind === 'local' && local.kind === 'local')
+    return selected.digest === local.digest && selected.sizeBytes === local.sizeBytes;
   return (
-    !!selected &&
-    !!local &&
-    selected.kind === 'local' &&
-    local.kind === 'local' &&
-    selected.digest === local.digest &&
-    selected.sizeBytes === local.sizeBytes &&
-    Math.abs(selected.durationMs - local.durationMs) <= 250
+    selected.kind === 'bilibili' &&
+    local.kind === 'bilibili' &&
+    selected.bvid === local.bvid &&
+    selected.cid === local.cid &&
+    selected.part === local.part
   );
+}
+function danmakuPreferences(): void {
+  if (adapter instanceof BilibiliAdapter) {
+    adapter.danmaku.visible = showDanmaku.value;
+    adapter.danmaku.density = density.value;
+    adapter.danmaku.fontSize = danmakuSize.value;
+  }
+}
+async function fullscreen(): Promise<void> {
+  try {
+    await stage.value?.requestFullscreen();
+  } catch {
+    error.value = 'Fullscreen is unavailable in this browser.';
+  }
+}
+function reloadDanmaku(): void {
+  if (adapter instanceof BilibiliAdapter) adapter.reloadDanmaku();
+}
+async function chooseBilibili(): Promise<void> {
+  if (!video.value || !overlay.value || !active.value || !connected.value) return;
+  let selected: { bvid: string; part: number };
+  try {
+    const room = current.value.media;
+    selected =
+      !host.value && room?.kind === 'bilibili'
+        ? { bvid: room.bvid, part: room.part }
+        : parseSelection(bilibiliURL.value, part.value);
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : 'Invalid Bilibili selection.';
+    return;
+  }
+  clearMedia();
+  const generation = selectionGeneration,
+    signal = selection.signal;
+  loading.value = true;
+  error.value = '';
+  mediaStatus.value = 'loading';
+  const local = new BilibiliAdapter(
+    video.value,
+    overlay.value,
+    (value) => {
+      if (adapter === local) danmakuStatus.value = value;
+    },
+    (value) => {
+      if (adapter === local) error.value = value;
+    },
+  );
+  adapter = local;
+  danmakuPreferences();
+  void sample();
+  try {
+    const media = await local.load(selected.bvid, selected.part, signal);
+    if (signal.aborted || generation !== selectionGeneration) return;
+    descriptor = media;
+    subscription = local.subscribe(() => {
+      void sample();
+    });
+    if (host.value) {
+      publishing = true;
+      transport.command({ media });
+    }
+    await sample();
+  } catch (reason) {
+    if (!signal.aborted && generation === selectionGeneration) {
+      error.value = reason instanceof Error ? reason.message : 'Bilibili playback failed.';
+      clearMedia();
+      mediaStatus.value = 'error';
+      void sample();
+    }
+  } finally {
+    if (generation === selectionGeneration) loading.value = false;
+  }
 }
 async function choose(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement,
@@ -144,6 +245,7 @@ async function choose(event: Event): Promise<void> {
     sync.invalidate();
     if (host.value) {
       const media = { ...descriptor, ...(label.value ? { label: label.value } : {}) };
+      publishing = true;
       transport.command({ media });
     }
     await sample();
@@ -237,7 +339,7 @@ async function sample(): Promise<void> {
         error.value =
           local.getState().status === 'gesture_required'
             ? 'Select Enable playback to allow this browser to play.'
-            : 'The player could not apply room state. Select the file again.';
+            : 'The player could not apply room state. Reload the media.';
       }
     }
     if (adapter !== local || disposed) return;
@@ -300,7 +402,7 @@ async function enable(): Promise<void> {
     await sample();
   } catch {
     if (adapter === local && generation === selectionGeneration)
-      error.value = 'Playback needs permission or this browser cannot decode the file.';
+      error.value = 'Playback needs permission or this browser cannot decode this video.';
   }
 }
 function visibility(): void {
@@ -327,10 +429,10 @@ onUnmounted(() => {
 
 <template>
   <section class="player-panel" aria-labelledby="player-title">
-    <h2 id="player-title">Watch local video</h2>
+    <h2 id="player-title">Watch together</h2>
     <p role="status">{{ status }} · {{ calibration }}</p>
     <p v-if="error" role="alert" class="notice error">{{ error }}</p>
-    <p v-if="!active" class="notice">
+    <p v-if="!active && !transport.roomClosed" class="notice">
       Playback is inactive in this tab. <button @click="transport.activate()">Use this tab</button>
     </p>
     <p v-if="uncertain" class="notice">
@@ -343,6 +445,42 @@ onUnmounted(() => {
       ><label for="media-label">Shared media label (optional)</label
       ><input id="media-label" v-model="label" maxlength="120" :disabled="loading"
     /></template>
+    <form class="bilibili-selection" @submit.prevent="chooseBilibili">
+      <template v-if="host">
+        <label for="bilibili-url">Bilibili video URL or BV identifier</label>
+        <input
+          id="bilibili-url"
+          v-model="bilibiliURL"
+          maxlength="2048"
+          placeholder="https://www.bilibili.com/video/BV…"
+          :disabled="!active || !connected || loading || !!uncertain"
+        />
+        <label for="bilibili-part">Bilibili part</label>
+        <input
+          id="bilibili-part"
+          v-model.number="part"
+          type="number"
+          min="1"
+          max="10000"
+          required
+          :disabled="!active || !connected || loading || !!uncertain"
+        />
+      </template>
+      <button
+        v-if="host || current.media?.kind === 'bilibili'"
+        :disabled="!active || !connected || loading || !!uncertain"
+      >
+        {{ host ? 'Select Bilibili video' : 'Load room Bilibili video' }}
+      </button>
+    </form>
+    <p class="hint">
+      Bilibili needs the
+      <a href="/userscripts/ovs-bilibili.user.js" target="_blank" rel="noopener noreferrer"
+        >OVS Bilibili helper 1.0.0</a
+      >
+      in Tampermonkey. Install or update from this instance, then reload. Each browser uses its own
+      Bilibili access. Local files work without the helper.
+    </p>
     <label for="local-video">{{
       host ? 'Select local video for the room' : 'Select matching local video'
     }}</label>
@@ -359,12 +497,18 @@ onUnmounted(() => {
     </p>
     <p>
       Media:
-      {{ current.media?.kind === 'local' ? current.media.label || 'Local video' : 'None selected' }}
+      {{
+        current.media?.kind === 'local'
+          ? current.media.label || 'Local video'
+          : current.media?.kind === 'bilibili'
+            ? `${current.media.bvid} · part ${current.media.part}`
+            : 'None selected'
+      }}
       · <span data-testid="media-status">{{ loading ? 'loading' : mediaStatus }}</span> · Room:
       <span data-testid="playback-phase">{{ current.playback.phase }}</span>
     </p>
     <p v-if="mediaStatus === 'mismatch'" class="notice">
-      This file does not match the room. Select the same file as the host.
+      This media does not match the room. Select the same file or Bilibili part as the host.
     </p>
     <p v-if="current.barrier" class="notice" role="status">
       Waiting for participants at
@@ -390,7 +534,7 @@ onUnmounted(() => {
           !member.playbackActive
             ? 'inactive tab or disconnected'
             : member.readiness?.status === 'no_media' || !member.readiness
-              ? 'select matching file'
+              ? 'select matching media'
               : member.readiness.status
         }}
         <span v-if="member.excludedFromWaiting"> · excluded from waiting for this media</span>
@@ -419,14 +563,43 @@ onUnmounted(() => {
         </button>
       </li>
     </ul>
-    <video
-      ref="video"
-      preload="auto"
-      playsinline
-      :muted="muted"
-      :volume="volume"
-      aria-label="Local room video"
-    />
+    <div ref="stage" class="video-stage">
+      <video
+        ref="video"
+        preload="auto"
+        playsinline
+        :muted="muted"
+        :volume="volume"
+        aria-label="Room video"
+      />
+      <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
+    </div>
+    <div v-if="descriptor?.kind === 'bilibili'" class="danmaku-controls">
+      <p role="status">{{ showDanmaku ? danmakuStatus : `Danmaku hidden · ${danmakuStatus}` }}</p>
+      <label class="checkbox"
+        ><input v-model="showDanmaku" type="checkbox" @change="danmakuPreferences" /> Show danmaku
+        locally</label
+      >
+      <label for="danmaku-density">Danmaku density</label
+      ><input
+        id="danmaku-density"
+        v-model.number="density"
+        type="range"
+        min="1"
+        max="40"
+        @input="danmakuPreferences"
+      />
+      <label for="danmaku-size">Danmaku text size</label
+      ><input
+        id="danmaku-size"
+        v-model.number="danmakuSize"
+        type="range"
+        min="16"
+        max="32"
+        @input="danmakuPreferences"
+      />
+      <button @click="reloadDanmaku">Reload danmaku</button>
+    </div>
     <div class="form-row">
       <button
         :disabled="!controls || !current.media || !matches() || loading"
@@ -454,14 +627,15 @@ onUnmounted(() => {
       /><button :disabled="!controls || !current.media">Seek together</button>
     </form>
     <div class="form-row">
+      <button @click="fullscreen">Fullscreen locally</button>
       <label class="checkbox"><input v-model="muted" type="checkbox" /> Mute locally</label
       ><label for="local-volume">Local volume</label
       ><input id="local-volume" v-model.number="volume" type="range" min="0" max="1" step="0.05" />
     </div>
     <p class="hint">
-      Reloading requires file selection again. Sampled matching detects accidental differences.
-      Browser and codec support varies. The host keeps ownership while disconnected and must resume
-      after the 15-second grace.
+      After reloading, select your file or load the room’s Bilibili video again. Sampled file
+      matching detects accidental differences. Browser and codec support varies. The host keeps
+      ownership while disconnected and must resume after the 15-second grace.
     </p>
   </section>
 </template>

@@ -296,7 +296,7 @@ onUnmounted(() => {
       </template>
     </template>
     <footer>
-      Local synchronized viewing is in development. Bilibili and danmaku remain planned.
+      Video and danmaku stay in each participant’s browser. OVS shares playback state only.
     </footer>
   </main>
 </template>

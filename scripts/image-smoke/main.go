@@ -108,7 +108,7 @@ func run(image string) error {
 			return err
 		}
 	}
-	fmt.Println("Image passed: non-root/read-only startup, embedded UI, reserved routes, ownership, clean stop, and identity/room persistence across replacement.")
+	fmt.Println("Image passed: non-root/read-only startup, embedded UI and scoped helper, reserved routes, ownership, clean stop, and identity/room persistence across replacement.")
 	fmt.Printf("Isolated database copies: %s\n", directory)
 	return nil
 }
@@ -136,7 +136,7 @@ func checkHTTP(ctx context.Context, name string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	for path, code := range map[string]int{"/": 200, "/join": 200, "/api/v1/session": 404, "/api/v1/rooms/test/ws": 404} {
+	for path, code := range map[string]int{"/": 200, "/join": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v1/session": 404, "/api/v1/rooms/test/ws": 404} {
 		if err := request(ctx, client, base, path, code); err != nil {
 			return err
 		}
@@ -159,7 +159,11 @@ func request(ctx context.Context, client *http.Client, base, path string, code i
 	if err != nil {
 		return err
 	}
-	if response.StatusCode != code || (code == 200 && !strings.Contains(string(body), `<div id="app">`)) {
+	validBody := code != 200 || strings.Contains(string(body), `<div id="app">`)
+	if path == "/userscripts/ovs-bilibili.user.js" {
+		validBody = strings.Contains(string(body), "@name OVS Bilibili http://ovs.example") && strings.Contains(string(body), `const ORIGIN = "http://ovs.example"`) && strings.HasPrefix(response.Header.Get("Content-Type"), "application/javascript") && !strings.Contains(string(body), "{{")
+	}
+	if response.StatusCode != code || !validBody {
 		return fmt.Errorf("%s returned %d; want %d with expected content", path, response.StatusCode, code)
 	}
 	return nil

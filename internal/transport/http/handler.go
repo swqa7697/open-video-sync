@@ -36,6 +36,10 @@ func NewHandler(publicHost string, ready func(context.Context) error, frontend h
 		mux.HandleFunc(prefix, http.NotFound)
 		mux.HandleFunc(prefix+"/", http.NotFound)
 	}
+	if len(api) > 2 {
+		mux.Handle("/userscripts/ovs-bilibili.user.js", api[2])
+	}
+	mux.HandleFunc("/userscripts/", http.NotFound)
 	mux.Handle("/", frontend)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")

@@ -8,7 +8,6 @@ export interface PlayerObservation {
 }
 export interface PlayerAdapter {
   readonly capabilities: PlayerCapabilities;
-  load(file: File, signal: AbortSignal): Promise<void>;
   play(): Promise<void>;
   pause(): Promise<void>;
   seek(positionMs: number): Promise<void>;

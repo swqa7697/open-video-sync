@@ -5,7 +5,8 @@ OVS is a private, self-hosted application for synchronized viewing. Each partici
 This repository includes persistent anonymous identities and private rooms with invitation links and codes.
 Hosts can save room preferences, rotate invitations, remove participants, and close rooms. Participants can leave rooms.
 The Go application embeds the Vue frontend and stores identities, memberships, room settings, media descriptors, and playback checkpoints in SQLite.
-Authenticated room sockets and local synchronized playback are available as a development milestone. Bilibili and danmaku require the separate proof of concept described in [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept).
+Authenticated room sockets support local files and browser-local Bilibili AVC/AAC playback with danmaku.
+Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 This intermediate stage does not complete the [PRD](specs/PRD.md).
 
 ## Use identities and rooms
@@ -22,7 +23,7 @@ Invitation secrets appear only when created or replaced. If a response is lost, 
 
 ## Watch a local video
 
-The host selects a file under **Watch local video**. Each participant selects the same file independently.
+The host selects a file under **Watch together**. Each participant selects the same file independently.
 The optional shared label comes from host input. File names, timestamps, paths, handles, samples, and video bytes stay in each browser.
 A worker computes a room-specific sampled SHA-256 digest with pinned `@noble/hashes`; matching works on ordinary HTTP without SubtleCrypto.
 Equal size and digest plus duration within 250 ms permit matching. Sampled matching detects accidental differences; it does not prove identical content.
@@ -50,6 +51,39 @@ Chromium and Firefox automation check synthetic VP8/WebM playback, including a r
 An Opus audio track checks each browser's native autoplay permission handling.
 Current stable browser releases, other codecs, mobile suspension, physical displays, and impaired networks need separate evidence.
 Safari is outside the roadmap. OVS does not transcode unsupported files.
+
+## Watch Bilibili
+
+Install Tampermonkey in each participant's browser. Open **OVS Bilibili helper 1.0.0** in the room to install the reviewed code from your OVS instance.
+If the manager does not open automatically, create a new userscript and paste the complete code from that link.
+Allow user scripts in Chromium when the manager requires that setting. Enable the helper for the exact OVS scheme, host, and port.
+The helper never runs on Bilibili pages or frames. It permits only the reviewed Bilibili API and media CDN destinations.
+After installation or an update, reload OVS. Update manually from the same instance; automatic remote code updates are disabled.
+
+The host enters a canonical Bilibili video URL or BV identifier and part, then selects **Select Bilibili video**.
+A URL's `p` parameter selects its exact part. Short links require opening Bilibili and copying the canonical video URL.
+Other participants select **Load room Bilibili video**. Each profile uses its own platform access and must independently match the CID, part, and duration.
+Sign in on Bilibili in that browser profile when required. An access failure leaves only that participant unready; OVS supplies no shared access.
+Use the same room controls, waiting policies, and local playback permission button as local videos.
+Changing media or transferring tab ownership cancels requests, clears buffers and comments, and invalidates old helper handles.
+Reloading the page requires loading the room video again.
+
+Danmaku follows observed video time through pause, seek, and rate correction. Visibility, density, and text size remain local.
+Fetch/decode failures appear separately from hiding comments. **Reload danmaku** retries the current segment.
+Only ordinary scrolling, top, and bottom text comments are displayed. Executable and advanced-script modes are ignored.
+There is no comment submission, server persistence, or OVS media/danmaku relay.
+
+The helper keeps provider responses and signed locations in memory. Only stable `{bvid,cid,part,durationMs}` metadata enters the room protocol.
+The page requests bounded byte ranges through opaque handles; it cannot supply request URLs, methods, headers, or cookies.
+Missing or incompatible helpers do not affect local-file playback. Follow the visible guidance for installation, permissions, access, or codec failures.
+The supported delivery path is ordinary on-demand AVC/AAC DASH.
+The current helper selects Bilibili video quality 32 or lower, with AAC audio. Live, DRM, paid episodic formats, other codecs, and mobile remain unverified.
+Bilibili interfaces can change. See [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept) for the validated baseline and boundaries.
+
+The OVS origin and helper are trusted code. A malicious page on that origin can use its bridge privileges.
+Plain HTTP also trusts the network path. The bridge does not protect against a compromised instance, helper, or same-origin script.
+The production helper endpoint uses `OVS_PUBLIC_ORIGIN`, never request or forwarding headers.
+For Bilibili development, open the embedded Go application at its configured public origin. The Vite hot-reload origin is outside that helper scope.
 
 ## Start development
 
@@ -95,7 +129,7 @@ Run `make help` to list the available targets.
 | `clean` | Remove generated assets and binaries; preserve dependencies and data |
 | `format`, `tidy` | Apply Go and Oxfmt formatting |
 | `check` | Check Go formatting/vet, Bash syntax, Oxlint, Vue templates, and Vue types |
-| `test` | Run Go and frontend unit/integration tests |
+| `test` | Run Go, frontend, and userscript unit/integration tests |
 | `test-race` | Run Go tests with the race detector |
 | `web-build` | Generate `internal/web/dist/` for Go embedding |
 | `build` | Produce `build/ovs`, the project license, and dependency notices |
@@ -216,8 +250,10 @@ Three independent timing trials per browser read decoded source-frame pixels in 
 They report control application latency separately from frame skew, with calibration, uncertainty, and sparse-tail limits under `.misc/e2e/results/`.
 This method does not measure physical display presentation or establish cross-region acceptance.
 Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-1 contracts](specs/wire-v1.md) for exact shapes, bounds, and implementation ownership.
-No video transfer or platform credential handling exists.
-Live Bilibili/helper and danmaku validation, HTTPS, current stable browser validation, and the full network/release matrix remain required gates.
+OVS transports no video, danmaku payloads, signed media URLs, or platform credentials.
+Offline helper fault tests cover origin/channel ownership, request bounds, cancellation, expiry refresh, unsafe destinations, and sanitized failures.
+Live production Bilibili/helper validation is separate from the ordinary offline suite.
+The full deployment, network, and release matrix remains a required gate.
 
 GitHub Actions runs the same checks. A local pass does not establish a successful hosted CI run.
 Linux/amd64 browser automation covers Playwright-pinned Chromium and patched Firefox builds; it does not establish current stable browser acceptance.

@@ -32,7 +32,7 @@ deps: ## Check tool versions and install locked project dependencies
 format: ## Apply Go and frontend formatting
 	go run ./scripts/gofmt -write
 	pnpm --dir web run format
-	pnpm --dir web exec vp fmt "$(CURDIR)/tests/e2e"
+	pnpm --dir web exec vp fmt "$(CURDIR)/tests/e2e" "$(CURDIR)/userscripts"
 
 tidy: format ## Alias for format
 
@@ -41,11 +41,12 @@ check: web-build ## Check formatting, Go vet, frontend lint, and Vue types
 	go vet ./...
 	@for script in scripts/*.sh; do bash -n "$$script"; done
 	pnpm --dir web run check
-	pnpm --dir web exec vp check --deny-warnings "$(CURDIR)/tests/e2e"
+	pnpm --dir web exec vp check --deny-warnings "$(CURDIR)/tests/e2e" "$(CURDIR)/userscripts"
 
 test: web-build ## Run Go and frontend unit/integration tests
 	go test ./...
 	pnpm --dir web run test
+	node --test userscripts/*.test.mjs
 
 test-race: web-build ## Run Go tests with the race detector (requires a C compiler)
 	go test -race ./...

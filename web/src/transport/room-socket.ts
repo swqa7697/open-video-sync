@@ -41,6 +41,10 @@ export class RoomSocket {
   private socket?: WebSocket;
   private stopped = false;
   private terminal = false;
+  private closedRoom = false;
+  get roomClosed(): boolean {
+    return this.closedRoom;
+  }
   private sequence = 0;
   private attempts = 0;
   private lastMessage = 0;
@@ -92,7 +96,13 @@ export class RoomSocket {
       if (this.socket !== socket || this.stopped) return;
       this.connected = false;
       this.clock.reset();
-      this.events.status(this.terminal ? 'Playback inactive.' : 'Disconnected. Playback paused.');
+      this.events.status(
+        this.closedRoom
+          ? 'Room closed.'
+          : this.terminal
+            ? 'Playback inactive.'
+            : 'Disconnected. Playback paused.',
+      );
       if (!this.terminal) {
         const delay =
           Math.min(15000, 500 * 2 ** Math.min(this.attempts++, 5)) * (0.8 + Math.random() * 0.4);
@@ -237,6 +247,9 @@ export class RoomSocket {
       integer(p.revision);
       this.terminal = true;
       this.connected = false;
+      this.closedRoom = true;
+      this.active = false;
+      this.events.lease(false);
       this.events.status('Room closed.');
       this.socket?.close();
     } else throw new Error('Unknown event.');
@@ -329,6 +342,7 @@ export class RoomSocket {
       this.send({ v: 1, type: 'member.readiness', epoch: this.snapshot.epoch, payload });
   }
   activate(): void {
+    if (this.closedRoom) return;
     this.terminal = false;
     if (this.connected && this.snapshot)
       this.send({
