@@ -90,7 +90,8 @@ export class LocalAdapter implements PlayerAdapter {
       }
       this.status = 'ready';
     } catch (error) {
-      if (!this.disposed)
+      // A pause or a new source cancels a pending play with AbortError; the media stays usable.
+      if (!this.disposed && !(error instanceof DOMException && error.name === 'AbortError'))
         this.status =
           error instanceof DOMException && error.name === 'NotAllowedError'
             ? 'gesture_required'

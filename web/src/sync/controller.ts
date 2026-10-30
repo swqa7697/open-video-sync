@@ -86,9 +86,15 @@ export class SyncController {
     }
     const observed = adapter.getState();
     if (
-      ['gesture_required', 'unsupported', 'error', 'loading', 'no_media', 'mismatch'].includes(
-        observed.status,
-      )
+      [
+        'gesture_required',
+        'unsupported',
+        'access_denied',
+        'error',
+        'loading',
+        'no_media',
+        'mismatch',
+      ].includes(observed.status)
     )
       return;
     // Preserve a buffering report while the server decides whether to wait.

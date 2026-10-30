@@ -173,19 +173,22 @@ test('loss of connection cancels pending playback application', async () => {
   expect(p.getState().paused).toBe(true);
 });
 
-test('a late local player waits for playable media before catching up', async () => {
-  const c = new SyncController(),
-    p = new Player(),
-    snapshot = timeline('playing', 1);
-  p.state.status = 'loading';
-  await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
-  expect(p.getState().paused).toBe(true);
-  p.state.status = 'ready';
-  snapshot.revision++;
-  await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
-  expect(p.getState().paused).toBe(false);
-  expect(p.getState().positionMs).toBe(2000);
-});
+test.each(['loading', 'access_denied'] as const)(
+  'a late %s player waits for playable media before catching up',
+  async (status) => {
+    const c = new SyncController(),
+      p = new Player(),
+      snapshot = timeline('playing', 1);
+    p.state.status = status;
+    await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
+    expect(p.getState().paused).toBe(true);
+    p.state.status = 'ready';
+    snapshot.revision++;
+    await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
+    expect(p.getState().paused).toBe(false);
+    expect(p.getState().positionMs).toBe(2000);
+  },
+);
 test('readiness needs a usable clock estimate, and a degraded one does not block waits', () => {
   const base = { pending: false, matched: true, seeking: false, status: 'ready' as const };
   expect(reportedReadiness({ ...base, estimate: undefined })).toBe('loading');

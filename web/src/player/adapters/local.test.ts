@@ -96,3 +96,46 @@ test('a stalled fetch with playable data is not buffering; waiting is until play
   expect(adapter.getState().status).toBe('ready');
   adapter.dispose();
 });
+test.each([
+  ['AbortError', 'ready'],
+  ['NotSupportedError', 'error'],
+] as const)('a play rejection with %s leaves the status %s', async (name, status) => {
+  const nativeURL = URL;
+  vi.stubGlobal(
+    'URL',
+    class extends nativeURL {
+      static createObjectURL(): string {
+        return 'blob:fixture-rejection';
+      }
+      static revokeObjectURL(): void {}
+    },
+  );
+  const video = document.createElement('video');
+  Object.defineProperties(video, {
+    duration: { value: 10 },
+    videoWidth: { value: 640 },
+    readyState: { value: 4 },
+  });
+  video.load = () => {};
+  let reject: (error: DOMException) => void = () => {};
+  video.play = () =>
+    new Promise<void>((_, fail) => {
+      reject = fail;
+    });
+  // As in browsers, a pause cancels a pending play before playback starts.
+  video.pause = () => reject(new DOMException('Interrupted', 'AbortError'));
+  const adapter = new LocalAdapter(video);
+  const loading = adapter.load(
+    new File(['synthetic'], 'private.webm'),
+    new AbortController().signal,
+  );
+  video.dispatchEvent(new Event('loadeddata'));
+  await loading;
+  const playing = adapter.play();
+  if (name === 'AbortError') await adapter.pause();
+  else reject(new DOMException('Unsupported source', name));
+  // Callers still learn that playback did not start.
+  await expect(playing).rejects.toMatchObject({ name });
+  expect(adapter.getState().status).toBe(status);
+  adapter.dispose();
+});

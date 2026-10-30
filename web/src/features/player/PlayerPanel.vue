@@ -454,9 +454,14 @@ async function sample(): Promise<void> {
           if (probingBarrier === barrier.barrierId) probingBarrier = '';
         }
       }
-    } catch {
-      // Gesture denial has its own persistent notice with the Enable playback action.
-      if (adapter === local && local.getState().status !== 'gesture_required')
+    } catch (reason) {
+      // Gesture denial has its own persistent notice with the Enable playback action. An
+      // interrupted play is not a failure; a later sample applies room state again.
+      if (
+        adapter === local &&
+        !(reason instanceof DOMException && reason.name === 'AbortError') &&
+        local.getState().status !== 'gesture_required'
+      )
         showError('The player could not apply room state. Reload the media.');
     }
     if (adapter !== local || disposed) return;
@@ -517,13 +522,19 @@ async function enable(): Promise<void> {
     await sample();
     // The button disappears with the notice; keep keyboard focus in the player.
     heading.value?.focus();
-  } catch {
-    if (adapter === local && generation === selectionGeneration)
-      showError(
-        local.getState().status === 'gesture_required'
-          ? 'The browser still blocked playback. Select Enable playback again, or allow autoplay for this site.'
-          : 'This browser cannot decode this video. Try another file or browser.',
-      );
+  } catch (reason) {
+    if (adapter !== local || generation !== selectionGeneration) return;
+    if (reason instanceof DOMException && reason.name === 'AbortError') {
+      // An interrupted play is not a failure. If the notice stays, the participant can select
+      // it again; otherwise its button is gone, so keep keyboard focus in the player.
+      if (local.getState().status !== 'gesture_required') heading.value?.focus();
+      return;
+    }
+    showError(
+      local.getState().status === 'gesture_required'
+        ? 'The browser still blocked playback. Select Enable playback again, or allow autoplay for this site.'
+        : 'This browser cannot decode this video. Try another file or browser.',
+    );
   }
 }
 function reload(): void {
