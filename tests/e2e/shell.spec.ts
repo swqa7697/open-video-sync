@@ -44,7 +44,13 @@ test('independent identities manage a private room over direct HTTP', async ({
       [390, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
-      await page.screenshot({ path: testInfo.outputPath(`home-${width}.png`), fullPage: true });
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme });
+        await page.screenshot({
+          path: testInfo.outputPath(`home-${colorScheme}-${width}.png`),
+          fullPage: true,
+        });
+      }
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await createLocalRoom(page, file, 'Friday watch party');
@@ -70,13 +76,26 @@ test('independent identities manage a private room over direct HTTP', async ({
     await other.getByRole('button', { name: 'Save name', exact: true }).click();
     await other.keyboard.press('Escape');
     await expect(page.locator('.roster')).toContainText('W'.repeat(48));
+    const playerColors = () =>
+      page.locator('.player-controls').evaluate((node) => ({
+        text: getComputedStyle(node).color,
+        button: getComputedStyle(node.querySelector('button')!).color,
+      }));
+    const darkPlayerColors = await playerColors();
     for (const [width, height] of [
       [1440, 900],
       [1024, 768],
       [390, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
-      await page.screenshot({ path: testInfo.outputPath(`room-${width}.png`), fullPage: true });
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme });
+        expect(await playerColors()).toEqual(darkPlayerColors);
+        await page.screenshot({
+          path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
+          fullPage: true,
+        });
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -155,4 +174,121 @@ test('independent identities manage a private room over direct HTTP', async ({
     await guest.close();
     await outsider.close();
   }
+});
+
+// Appearance is a browser preference, independent of identity and room lifecycle.
+// This scenario covers persistence, live system changes, and storage failure in real browsers.
+test('appearance follows the system and preserves explicit local choices', async ({
+  page,
+}, testInfo) => {
+  const failures: string[] = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  const background = () =>
+    page.locator('html').evaluate((node) => getComputedStyle(node).backgroundColor);
+  const accent = () =>
+    page.locator('.create-submit').evaluate((node) => getComputedStyle(node).backgroundColor);
+  const appearance = page.getByRole('button', { name: 'Appearance', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Appearance', exact: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+  await dismissHelper(page);
+  await expect(page.getByRole('heading', { name: 'Start a watch party' })).toBeVisible();
+  const light = await background();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(background).not.toBe(light);
+  const dark = await background();
+  await appearance.click();
+  // Sample the rendered production animation: a seconds/ms conversion error makes this opaque.
+  const enteringOpacity = await dialog.evaluate((node) => {
+    const animation = node.getAnimations()[0]!;
+    animation.pause();
+    animation.currentTime = 50;
+    const opacity = Number(getComputedStyle(node).opacity);
+    animation.finish();
+    return opacity;
+  });
+  expect(enteringOpacity).toBeGreaterThan(0);
+  expect(enteringOpacity).toBeLessThan(1);
+  await expect(page.getByRole('radio', { name: 'System', exact: true })).toBeChecked();
+  await page.getByRole('radio', { name: 'Light', exact: true }).check();
+  await expect.poll(background).toBe(light);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(background).toBe(light);
+  const slate = await accent();
+  await page.getByRole('radio', { name: 'Soft iris' }).check();
+  await expect.poll(accent).not.toBe(slate);
+  const iris = await accent();
+  // Native radio arrow navigation changes the selected color without moving focus away.
+  await page.getByRole('radio', { name: 'Soft iris' }).press('ArrowRight');
+  await expect(page.getByRole('radio', { name: 'Graphite' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Graphite' })).toBeFocused();
+  await expect.poll(accent).not.toBe(iris);
+  await page.screenshot({ path: testInfo.outputPath('appearance-light.png') });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(appearance).toBeFocused();
+  await page.reload();
+  await dismissHelper(page);
+  await expect.poll(background).toBe(light);
+  await appearance.click();
+  await expect(page.getByRole('radio', { name: 'Light', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Graphite' })).toBeChecked();
+  await page.getByRole('radio', { name: 'System', exact: true }).check();
+  await expect.poll(background).toBe(dark);
+  await page.getByRole('radio', { name: 'Slate blue' }).check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath('appearance-dark-mobile.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(appearance).toBeFocused();
+  // Keyboard entry/exit is immediate; reduced motion uses a short fade without scaling.
+  await appearance.press('Enter');
+  await expect(dialog).toBeVisible();
+  expect(
+    await dialog.evaluate(
+      (node) => node.getAnimations().filter((a) => a.playState === 'running').length,
+    ),
+  ).toBe(0);
+  await page.keyboard.press('Escape');
+  // Close during entry and reopen immediately; no stranded focus trap or stale callback.
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await appearance.click();
+    await dialog.getByRole('button', { name: 'Close dialog' }).click({ force: true });
+    await expect(dialog).toHaveCount(0);
+    await expect(appearance).toBeFocused();
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await appearance.click();
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((node) => getComputedStyle(node).transform)).toBe('none');
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(appearance).toBeFocused();
+  // Malformed and unknown stored values fall back to system/slate without breaking startup.
+  for (const invalid of ['{bad', JSON.stringify({ mode: 'sepia', accent: 'unknown' })]) {
+    await page.evaluate((value) => localStorage.setItem('ovs.appearance', value), invalid);
+    await page.reload();
+    await dismissHelper(page);
+    await expect.poll(background).toBe(dark);
+    await appearance.click();
+    await expect(page.getByRole('radio', { name: 'System', exact: true })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Slate blue' })).toBeChecked();
+    await page.keyboard.press('Escape');
+  }
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => {
+      throw new DOMException('Blocked', 'SecurityError');
+    };
+    Storage.prototype.setItem = () => {
+      throw new DOMException('Blocked', 'SecurityError');
+    };
+  });
+  await page.reload();
+  await dismissHelper(page);
+  await appearance.click();
+  await page.getByRole('radio', { name: 'Light', exact: true }).check();
+  await expect.poll(background).toBe(light);
+  await expect(dialog.getByRole('status')).toContainText('storage is unavailable');
+  expect(failures).toEqual([]);
 });

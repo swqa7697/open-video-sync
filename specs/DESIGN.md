@@ -383,6 +383,7 @@ Retain the creator's browser-local file through the in-app transition. Automatic
 The host sees the two settings, sharing/reset, remove-member, and close-room actions. Keep engineering parameters out of the UI.
 Show actionable errors such as Choose the same file, Enable playback, Waiting for a participant, and Platform access unavailable.
 Keep keyboard operation, visible focus, text labels, responsive layouts, and reduced-motion support.
+Appearance is browser-local: use a muted Slate blue default, selectable Soft iris and Graphite accents, and system/light/dark modes. Follow live system changes unless overridden. Persist only the allowlisted mode and accent in local storage; storage failure leaves in-page switching usable. Apply saved appearance before the first styled paint with a same-origin, revalidated bootstrap. Keep the video surface dark in either mode. Dialog motion uses opacity and scale, with a brief opacity-only reduced-motion path; keyboard interaction stays immediate.
 
 Build the frontend before Go embedding. Ship one non-root application container with writable `/data`, without Node or an external database.
 Keep `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`; add optional trusted-proxy CIDRs (`OVS_TRUSTED_PROXIES`) only for proxy address handling.

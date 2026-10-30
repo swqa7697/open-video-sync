@@ -11,6 +11,11 @@ Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [fea
 ## Watch together
 
 Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
+Use **Appearance** in the header to choose Slate blue (default), Soft iris, or Graphite.
+Choose **System** (default), **Light**, or **Dark** for the color mode. System follows device changes automatically.
+These choices stay in this browser across reloads; they are not room settings. If browser storage is blocked, choices last until reload.
+Dialogs use short transitions and buttons give subtle pointer feedback. Keyboard actions stay immediate; reduced motion uses a brief dialog fade.
+
 On home, select **Bilibili** or **Local file**. Preview a canonical Bilibili URL/BV identifier, or choose/drop a supported local video.
 Select a multipart video's part in the preview. Short links must first be opened on Bilibili to obtain the canonical URL.
 The room name is optional; the default is **Watch party**. Local filenames never become shared room names.
@@ -315,7 +320,7 @@ On Linux, install missing system libraries with `pnpm --dir web exec playwright 
 After `make build`, select one project with `pnpm --dir web run test:e2e --project=firefox` or `--project=chromium-firefox`.
 The identity browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
 It uses the keyboard for the skip link, saving a name, creating and joining rooms, and confirming closure, and checks landmarks, page titles, and focus after each change.
-Browser screenshots cover light/dark themes and 375/768/1440-pixel widths for the landing page and a room with an unbroken 48-character name. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
+Browser screenshots cover light/dark themes at 390×844, 1024×768, and 1440×900 for home and a room with an unbroken 48-character name. Appearance checks cover live system changes, local persistence, keyboard selection, reduced motion, and blocked storage. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.
 Real WebSocket tests check admission, serialized HTTP/socket mutations, retry deduplication, stale/changed intents, connection replacement, and zero-position restart.
 Local player journeys cover matching, mismatch, unsupported decoding, replacement cancellation, play/pause/seek, reconnect, and tab ownership.
 Reconnect checks combine offline HTTP with explicit closure of the forwarded real room socket. Firefox offline emulation alone can leave an existing socket active.

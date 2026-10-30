@@ -33,6 +33,13 @@ func Handler() (http.Handler, error) {
 			return
 		}
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		// The blocking appearance bootstrap must load before CSS to avoid a theme flash.
+		// It has a stable URL, so revalidate it like HTML instead of caching it forever.
+		if name == "appearance.js" {
+			w.Header().Set("Cache-Control", "no-cache")
+			files.ServeHTTP(w, r)
+			return
+		}
 		if name == "assets" || strings.HasPrefix(name, "assets/") {
 			info, err := fs.Stat(root, name)
 			if err != nil || info.IsDir() {

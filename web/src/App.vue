@@ -30,6 +30,7 @@ import HelperNotice from './features/media/HelperNotice.vue';
 import SettingsForm from './features/rooms/SettingsForm.vue';
 import Modal from './components/Modal.vue';
 import Icon from './components/Icon.vue';
+import AppearancePanel from './features/AppearancePanel.vue';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
@@ -49,6 +50,7 @@ const picker = ref<InstanceType<typeof MediaPicker>>();
 const draftSettings = ref(defaultSettings()),
   settingsOpen = ref(false),
   profileOpen = ref(false);
+const appearanceOpen = ref(false);
 const helperGeneration = ref(0);
 let initialFile: File | undefined;
 const safeName = computed(() => identity.session?.identity.displayName || 'Guest');
@@ -405,7 +407,15 @@ function navigate(): void {
     if (route) await open(route[1]!, true);
   });
 }
+function keyboardInput(): void {
+  document.documentElement.dataset.input = 'keyboard';
+}
+function pointerInput(): void {
+  document.documentElement.dataset.input = 'pointer';
+}
 onMounted(() => {
+  document.addEventListener('keydown', keyboardInput, true);
+  document.addEventListener('pointerdown', pointerInput, true);
   recheck();
   window.addEventListener('popstate', navigate);
   window.addEventListener('online', recheck);
@@ -420,6 +430,8 @@ onMounted(() => {
   });
 });
 onUnmounted(() => {
+  document.removeEventListener('keydown', keyboardInput, true);
+  document.removeEventListener('pointerdown', pointerInput, true);
   controller.abort();
   initialFile = undefined;
   window.removeEventListener('popstate', navigate);
@@ -446,6 +458,14 @@ onUnmounted(() => {
         <p class="server-status" role="status" :data-state="connection.status">
           <span class="status-dot" />{{ serverText }}
         </p>
+        <button
+          class="quiet icon-button"
+          aria-label="Appearance"
+          title="Appearance"
+          @click="appearanceOpen = true"
+        >
+          <Icon name="appearance" />
+        </button>
         <button
           v-if="identity.session"
           :title="safeName"
@@ -599,6 +619,9 @@ onUnmounted(() => {
         <SettingsForm v-model="draftSettings" :disabled="busy" /><button>Apply settings</button>
       </form></Modal
     >
+    <Modal v-if="appearanceOpen" title="Appearance" @close="appearanceOpen = false">
+      <AppearancePanel />
+    </Modal>
     <Modal v-if="profileOpen" title="Your profile" @close="profileOpen = false"
       ><IdentityPanel
         :busy="busy || !!attempt"

@@ -16,6 +16,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Room Sharing: Let users create rooms, share invitation links or codes, and join shared rooms
 - Host Preferences: The room creator chooses who can control playback and whether to wait for participants. Synchronization uses automatic internal defaults.
 - Browser Player: Provide a web player for selecting and watching supported videos within a room
+- Appearance: Use a muted, cool accent by default and allow local accent changes. Support light and dark modes, following the system by default. Remember browser-local choices and respect reduced motion. Keep playback and keyboard actions immediate.
 - Synchronized Playback: Keep play, pause, seeking, and playback position aligned across participants according to room preferences
 - Online Video Support: Support Bilibili video links in the first release, including loading and displaying danmaku; more sources (like YouTube) are planned after the first release
 - Local Video Support: Let each participant select a local video file -- all participants must prepare the same video themselves (OVS does not distribute it)
