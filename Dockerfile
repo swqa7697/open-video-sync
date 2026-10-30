@@ -1,31 +1,38 @@
 FROM --platform=$BUILDPLATFORM node:24.19.0-bookworm-slim AS frontend
-WORKDIR /src/web
+WORKDIR /src/modules/web
 ENV COREPACK_ENABLE_AUTO_PIN=0
 RUN corepack enable pnpm && corepack install --global pnpm@latest
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+COPY modules/web/package.json modules/web/pnpm-lock.yaml modules/web/pnpm-workspace.yaml ./
+COPY modules/helper/package.json /src/modules/helper/package.json
 RUN pnpm install --frozen-lockfile
-COPY web/ ./
-COPY userscripts/ /src/userscripts/
-RUN pnpm run build && pnpm prune --prod && pnpm licenses list --prod --json > /src/frontend-licenses.json
+COPY versions.toml /src/versions.toml
+COPY scripts/versions.mjs scripts/versions.d.mts /src/scripts/
+COPY modules/web/ ./
+COPY modules/helper/ /src/modules/helper/
+RUN pnpm --dir ../helper run build \
+    && pnpm run build \
+    && node /src/scripts/versions.mjs sync > /src/sync-version \
+    && pnpm prune --prod \
+    && pnpm licenses list --prod --json > /src/frontend-licenses.json
 
 FROM --platform=$BUILDPLATFORM golang:latest AS backend
-WORKDIR /src
-COPY go.mod go.sum ./
+WORKDIR /src/modules/sync
+COPY modules/sync/go.mod modules/sync/go.sum ./
 RUN go mod download
-COPY cmd/ cmd/
-COPY internal/ internal/
-COPY migrations/ migrations/
-COPY userscripts/ userscripts/
-COPY scripts/notices/ scripts/notices/
-COPY --from=frontend /src/internal/web/dist/ internal/web/dist/
-COPY --from=frontend /src/web/node_modules/ web/node_modules/
-COPY --from=frontend /src/frontend-licenses.json frontend-licenses.json
-ARG VERSION=0.0.0-dev
+COPY modules/sync/cmd/ cmd/
+COPY modules/sync/internal/ internal/
+COPY modules/sync/sql/ sql/
+COPY modules/sync/scripts/notices/ scripts/notices/
+COPY --from=frontend /src/modules/web/dist/ internal/web/dist/
+COPY --from=frontend /src/modules/helper/dist/ internal/helper/dist/
+COPY --from=frontend /src/modules/web/node_modules/ /src/modules/web/node_modules/
+COPY --from=frontend /src/sync-version /src/sync-version
+COPY --from=frontend /src/frontend-licenses.json /src/frontend-licenses.json
 ARG CHANNEL=dev
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION} -X main.channel=${CHANNEL}" -o /out/ovs ./cmd/ovs \
-    && go run ./scripts/notices -frontend frontend-licenses.json > /out/THIRD_PARTY_NOTICES.txt \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(cat /src/sync-version) -X main.channel=${CHANNEL}" -o /out/ovs ./cmd/ovs \
+    && go run ./scripts/notices -frontend /src/frontend-licenses.json > /out/THIRD_PARTY_NOTICES.txt \
     && mkdir -p /out/data \
     && chown 10001:10001 /out/data \
     && chmod 0700 /out/data

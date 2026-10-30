@@ -84,8 +84,8 @@ and useful feedback in reduced-motion and no-animation paths.
   then `make browser-install` to install the browsers selected by locked Playwright.
   Keep the same browser and dependencies throughout the comparison. Record their versions.
 - Run `make test-e2e` for the production application served by Go over direct HTTP. Inspect
-  [playwright.config.ts](../../../web/playwright.config.ts),
-  [playwright-fixtures.ts](../../../web/playwright-fixtures.ts), and the owning journey under
+  [playwright.config.ts](../../../modules/web/playwright.config.ts),
+  [playwright-fixtures.ts](../../../modules/web/playwright-fixtures.ts), and the owning journey under
   `tests/e2e/`. Reuse the journey that owns the target state and inspect existing screenshot
   coverage before adding captures. Do not substitute a standalone preview for the shipped
   application.
@@ -124,7 +124,7 @@ and useful feedback in reduced-motion and no-animation paths.
    baseline. Check for clipping, displaced controls, lost focus, broken media, repeated status
    announcements, and new console errors. Preserve useful images before another run replaces
    them. For a focused browser iteration, build first with `make build`, then use
-   `pnpm --dir web run test:e2e --grep '<owning scenario>'`; finish with the full Make target.
+   `pnpm --dir modules/web run test:e2e --grep '<owning scenario>'`; finish with the full Make target.
 6. Keep a change when the evidence supports the stated outcome. Otherwise revise that batch
    while preserving unrelated work. Stop when the requested problems are resolved and the
    affected states remain usable. Do not weaken assertions, hide errors, or remove controls

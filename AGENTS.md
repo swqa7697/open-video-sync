@@ -22,15 +22,22 @@
 
 ## Architecture and ownership
 
-| Proposed location                                  | Responsibility                                                        |
-| -------------------------------------------------- | --------------------------------------------------------------------- |
-| `cmd/ovs`                                          | Composition, configuration, process lifecycle                         |
-| `internal/identity`                                | Anonymous identity, OVS sessions, profile lifecycle                   |
-| `internal/rooms`                                   | Membership, host rules, media, policies, timelines, room coordinators |
-| `internal/transport/http`, `internal/transport/ws` | Transport authentication, decoding, framing, connection bounds        |
-| `internal/contracts`, `internal/storage`           | Wire validation; SQLite setup, migrations, transaction support        |
-| `internal/web`, `web`                              | Embedded assets; Vue UI, browser adapters, synchronization engine     |
-| `migrations`, `tests`, `scripts`, `deploy`         | Recorded DDL, integration harnesses, automation, deployment examples  |
+| Location                                                           | Responsibility                                                          |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `modules/sync/cmd/ovs`                                             | Composition, configuration, process lifecycle                           |
+| `modules/sync/internal/identity`                                   | Anonymous identity, OVS sessions, profile lifecycle                     |
+| `modules/sync/internal/rooms`                                      | Membership, host rules, media, policies, timelines, room coordinators   |
+| `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds           |
+| `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                     |
+| `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                   |
+| `modules/sync/sql/migrations`                                      | Ordered, immutable SQL migrations                                       |
+| `modules/sync/scripts`                                             | Go automation, container and proxy checks                               |
+| `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling      |
+| `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests              |
+| `scripts`, `tests`, `specs`                                        | Cross-module orchestration, application journeys, shared contracts      |
+| `versions.toml`                                                    | Sole release-version source for sync, web, and helper                   |
+| `Dockerfile`, `.dockerignore`                                      | Complete application image build across all three modules               |
+| `deploy`                                                           | Shared application deployment examples, Compose and Caddy configuration |
 
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
@@ -61,12 +68,12 @@
 - Propagate `context.Context` through blocking operations. Every goroutine needs an owner and a termination path. Do not panic on malformed user input.
 - Prefer standard-library primitives where suitable. Record resolved third-party versions in the ecosystem's dependency files. Select container images and CI actions by tags. Use the latest stable Go compiler in CI and Docker; keep only the minimum Go version in `go.mod`.
 - Use Vue Composition API with `<script setup lang="ts">`, strict TypeScript, typed adapter boundaries, and runtime validation for network/platform data. Do not use `any` to bypass contract checking.
-- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Use pnpm with one lockfile; do not pin or require a specific pnpm version.
+- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Use pnpm with the frontend lockfile and Vite+ pnpm configuration under `modules/web/`; do not pin or require a specific pnpm version.
 - Use pnpm for all frontend package operations: `pnpm add`, `pnpm remove`, and `pnpm update` for dependencies; `pnpm pkg` for package scripts and metadata. Do not mix npm or npx commands or create competing lockfiles. Never edit `package.json` manually.
-- Use pnpm's default `^` ranges for frontend dependencies. Exception: let official `vp create` or `vp migrate` commands pin Vite+ toolchain catalog entries and generate matching aliases, overrides, and peer rules. Do not hand-edit that pairing. Let pnpm generate and maintain `pnpm-lock.yaml` for reproducible installs.
+- Use pnpm's default `^` ranges for frontend dependencies. Exception: let official `vp create` or `vp migrate` commands pin Vite+ toolchain catalog entries and generate matching aliases, overrides, and peer rules. Do not hand-edit that pairing. Let pnpm generate and maintain `modules/web/pnpm-lock.yaml` for reproducible installs.
 - Review skipped migration rules before removing lint tools. Keep required Vue template checks when Vite+ cannot replace them.
 - Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select one formatter during scaffolding; avoid competing tools for the same rule.
-- Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep reusable automation under `scripts/`.
+- Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep cross-module automation under `scripts/` and module automation under its module directory.
 - Prefer Go for standalone repository automation when no existing tool fits. Keep native frontend tests in the frontend test framework.
 - Keep changes focused. Remove dead code and share helpers only when they represent the same responsibility. Do not add unrelated cleanup or future-source abstractions.
 
@@ -92,7 +99,7 @@ Run `make check`, `make test test-race`, and `make build` in that order. Run `ma
 
 - For documentation-only changes, check references and contract consistency, then run `git diff --check`. Do not add application tests for documentation text.
 - Use Make as the common developer entry point once implemented. Separate mutation-only formatting from read-only format/lint checks; avoid targets that silently stage or commit.
-- Once the Go module exists, use `go vet ./...`, `go test ./...`, and `go test -race ./...` for concurrent code. Run the configured frontend format/lint, type checks, and tests from the frontend package.
+- Use `go -C modules/sync vet ./...`, `go -C modules/sync test ./...`, and `go -C modules/sync test -race ./...` for concurrent code. Run the configured frontend format/lint, type checks, and tests from the frontend package.
 - Validate in order: formatting/static checks, relevant tests, then production build. The production build must generate embedded assets before compiling Go.
 - Add browser, storage, deployment, and network checks when the changed contract needs them. Keep live platform validation explicit and separate from the ordinary offline suite.
 - Report checks actually run, their results, and missing prerequisites. A skipped check is unverified; claim hosted CI success only after a successful hosted run.

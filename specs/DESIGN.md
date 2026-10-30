@@ -298,7 +298,7 @@ Comment failure is distinct from playback failure and from hiding comments.
 The helper returns actual AVC quality IDs from the participant's DASH response and accepts a requested ID on `open`.
 Only returned tracks are offered. Quality switching opens a new local adapter, retains room playback intent, reports readiness, and converges to the current timeline.
 Never claim a pending/failed quality is active. No adaptive Auto mode is implemented. Live quality switching requires evidence beyond the fixed-quality B0 baseline.
-`userscripts/release.json` is the single helper release source; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.
+Root `versions.toml` is the sole module release-version source. The helper build generates `modules/helper/dist/release.json`; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.
 
 ## 9. HTTP and WebSocket contracts
 

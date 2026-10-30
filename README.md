@@ -8,6 +8,24 @@ The Go application embeds the Vue frontend and stores identities, memberships, r
 Authenticated room sockets support local files and browser-local Bilibili AVC/AAC playback with danmaku.
 Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 
+## Repository layout
+
+The monorepo contains three modules. Each module owns its source, configuration, and module-specific automation.
+
+| Module                             | Contents                                                           |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| [sync](modules/sync/README.md)     | Go server, SQLite migrations under `sql/migrations`, Go automation |
+| [web](modules/web/README.md)       | Vue frontend, browser adapters, frontend build and unit tests      |
+| [helper](modules/helper/README.md) | Tampermonkey script, bridge parser, helper build and tests         |
+
+Root `versions.toml` is the sole release-version source, with `sync`, `web`, and `helper` entries under `[versions]`.
+Each module owns its package manager files. Frontend pnpm configuration and its lockfile stay under `modules/web/`.
+Private package manifests have no release versions. The frontend declares its helper dependency with a local package link.
+Root `scripts/` and Make targets coordinate builds. Shared contracts stay in `specs/`, and application journeys stay in `tests/e2e/`.
+Build helper assets first, then the frontend, then the Go binary. `make build` performs this sequence and embeds both distributions.
+Root [Dockerfile](Dockerfile) and `.dockerignore` define one application image that builds and bundles all three modules.
+Root [deploy/](deploy/README.md) contains shared Compose and Caddy configuration for deploying that complete application.
+
 ## Watch together
 
 Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
@@ -82,7 +100,7 @@ A missing or outdated helper produces a top banner and an entry dialog. **Later*
 Use **Install OVS helper**, **Update helper**, or **Install matching helper**, then confirm installation/replacement in Tampermonkey.
 Return to OVS and recheck or refresh when required. Updating uses the same script name and namespace within an instance.
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
-The bundled `userscripts/release.json` supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
+The bundled `modules/helper/dist/release.json`, generated from root `versions.toml`, supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
 For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
 
 The helper runs only on the configured OVS origin, never on Bilibili pages or frames. Each profile uses its own platform access.
@@ -111,7 +129,7 @@ See [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concep
 
 Install these prerequisites:
 
-- The latest stable Go release. `go.mod` declares the minimum supported version.
+- The latest stable Go release. `modules/sync/go.mod` declares the minimum supported version.
 - Node 24.19.x and pnpm. `.node-version` selects Node 24.19.0.
 - Make and Bash on Linux or macOS.
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`) for Makefile formatting and format checks.
@@ -122,14 +140,14 @@ Install pnpm with your existing tool manager or the [official standalone install
 No specific pnpm version is required. CI and Docker install the latest release.
 Docker activates pnpm through its bundled Corepack and disables automatic manifest pinning.
 Installation scripts check system tools. They do not change system packages or Git state.
-`make install` retains timestamped logs under ignored `.misc/install/`.
+`make install` prints output to the terminal without creating a log file.
 
-Manage frontend dependencies with `pnpm --dir web add -w <package>`, `pnpm --dir web remove -w <package>`, and `pnpm --dir web update`.
+Manage frontend dependencies with `pnpm --dir modules/web add <package>`, `pnpm --dir modules/web remove <package>`, and `pnpm --dir modules/web update`.
 Use the default `^` version ranges. Let the official Vite+ CLI manage its toolchain catalog, including matching version pins and overrides.
-Reconcile that pairing with `pnpm --dir web exec vp migrate --no-interactive --no-agent --no-editor --no-hooks`.
+Reconcile that pairing with `pnpm --dir modules/web exec vp migrate --no-interactive --no-agent --no-editor --no-hooks`.
 Keep the separate ESLint Vue template checks; a full migration can skip those rules and remove ESLint.
-Use `pnpm --dir web pkg` for package scripts and metadata. Do not edit `package.json` manually or mix npm/npx commands.
-Let pnpm maintain `web/pnpm-lock.yaml`; installation and CI use `--frozen-lockfile` for reproducible installs.
+Use `pnpm --dir modules/web pkg` for package scripts and metadata. Do not edit `package.json` manually or mix npm/npx commands.
+Let pnpm maintain `modules/web/pnpm-lock.yaml`; installation and CI use `--frozen-lockfile` for reproducible installs.
 
 CI selects the latest stable Go release. Docker uses `golang:latest`; Make and Compose builds pull current base images.
 Container images and CI actions use tags. The Go compiler has no fixed toolchain pin.
@@ -144,7 +162,7 @@ For frontend hot reload, run `make dev-web` in another terminal and open `http:/
 Vite+ proxies health, API, and WebSocket requests to `127.0.0.1:8080`. The API and WebSocket proxies map the exact development Origin to the backend Origin.
 Keep the default backend public origin when using this development proxy.
 
-Go embedding requires generated frontend files. Run `make web-build` before direct `go vet`, `go test`, or `go build` commands.
+Go embedding requires generated frontend files. Run `make web-build` before direct Go commands. Run Go commands from `modules/sync`, or use `go -C modules/sync`.
 The Make lint, check, test, development, and build targets prepare these assets automatically.
 
 ## Commands
@@ -166,8 +184,9 @@ Run `make help` to list the available targets.
 | `check`                                  | Run `format-check`, `lint`, and Vue type checks                                                                        |
 | `test`                                   | Run Go, frontend, and userscript unit/integration tests                                                                |
 | `test-race`                              | Run Go tests with the race detector                                                                                    |
-| `web-build`                              | Generate `internal/web/dist/` for Go embedding                                                                         |
-| `build`                                  | Produce `build/ovs`, the project license, and dependency notices                                                       |
+| `helper-build`                           | Build helper assets and copy them for Go embedding                                                                     |
+| `web-build`                              | Generate `modules/sync/internal/web/dist/` for Go embedding                                                            |
+| `build`                                  | Produce `modules/sync/build/ovs`, the project license, and dependency notices                                          |
 | `dev`                                    | Run Go with loopback defaults and local storage                                                                        |
 | `dev-web`                                | Run the Vite+ development server                                                                                       |
 | `browser-install`                        | Install the Chromium and Firefox versions selected by Playwright                                                       |
@@ -175,11 +194,11 @@ Run `make help` to list the available targets.
 | `image`                                  | Build the single application container                                                                                 |
 | `image-smoke`                            | Check the built image with an isolated persistent volume                                                               |
 | `proxy-smoke`                            | Check the built image behind containerized Caddy HTTPS, including trusted-proxy addresses and reconnect after a reload |
-| `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations                                                                              |
+| `bump-major`, `bump-minor`, `bump-patch` | Increase a module version in `versions.toml`; no Git mutations                                                         |
 | `release-commit`                         | Preview, stage, commit, and push release files after confirmation                                                      |
 | `release-tag`                            | Confirm and push an annotated `vX.Y.Z` tag from clean, current `main`                                                  |
 
-`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `VERSION` supplies the application version.
+`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `versions.toml` supplies all module release versions; `versions.sync` selects the application version.
 Container targets accept `IMAGE=ovs:dev`; `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
 
 Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
@@ -187,12 +206,12 @@ Use `VERBOSE=1` to show recipe commands and enable tracing in installation and b
 
 `make tidy` and `make format` run the root `tidy.sh` script and update files in place.
 Run `./tidy.sh` from the repository root, or invoke the script by its path from another working directory.
-The script applies `gofmt` to Go files, including Go automation under `scripts/`.
+The script applies `gofmt` to Go files, including Go automation under `modules/sync/scripts/`.
 Prettier formats frontend sources, browser tests, userscripts, Markdown documentation, and JSON/YAML configuration.
 The `prettier-plugin-sh` plugin formats Bash scripts, including `tidy.sh`. Both packages are locked frontend development dependencies, installed by `make deps`.
 The script runs [mbake](https://github.com/EbodShojaei/bake) through `uvx` to format `Makefile`, using repository-owned `.bake.toml` settings.
 `./tidy.sh --check` checks all the same files without changing them; `make format-check` uses this mode.
-Root `.prettierrc.cjs` supplies shared options and resolves the shell plugin from `web/node_modules`, including for editor integrations.
+Root `.prettierrc.cjs` supplies shared options and resolves the shell plugin from `modules/web/node_modules`, including for editor integrations.
 `.gitignore` and `.prettierignore` exclude dependencies, generated files, local state, artifacts, and lockfiles.
 Frontend package format scripts also use `tidy.sh` to keep formatter commands in one place.
 `make lint` checks backend and frontend code without applying fixes. `make check` includes lint and adds formatting and Vue type checks.
@@ -205,31 +224,32 @@ Review migration notices before accepting the result.
 
 `make upgrade-backend` builds the embedded frontend assets, runs `go get -u -t ./...`, then runs `go mod tidy`.
 The [Go command](https://go.dev/ref/mod#go-get) upgrades modules and test dependencies within their existing module paths.
-Major versions that change a module path require a separate migration. Dependencies can raise the minimum Go version in `go.mod`.
+Major versions that change a module path require a separate migration. Dependencies can raise the minimum Go version in `modules/sync/go.mod`.
 The target removes any suggested `toolchain` directive so the project retains only its minimum Go requirement.
 
 After either upgrade, review the manifest and lockfile changes. Run `make check`, `make test test-race`, and `make build`.
 
 The Bash scripts under `scripts/` own dependency checks, installation, cleanup, and build sequencing.
-Go commands under `scripts/gofmt/`, `scripts/notices/`, `scripts/image-smoke/`, `scripts/proxy-smoke/`, and `scripts/release/` own formatting checks, dependency notices, container and proxy verification, and release maintenance. `scripts/internal/smoke/` holds their shared API and room-socket helpers.
+Go commands under `modules/sync/scripts/gofmt/`, `modules/sync/scripts/notices/`, `modules/sync/scripts/image-smoke/`, `modules/sync/scripts/proxy-smoke/`, and `modules/sync/scripts/release/` own formatting checks, dependency notices, container and proxy verification, and release maintenance. `modules/sync/scripts/internal/smoke/` holds their shared API and room-socket helpers.
 Use the matching Make targets as the common entry point.
 
 ## Release workflow
 
 Use `$release-pr` in Codex or `/release-pr` in Claude Code to prepare a release from `dev` into `main`.
 The repository instructions are in [release-pr](.agents/skills/release-pr/SKILL.md).
-The workflow reviews the complete branch diff, selects a version increase, prepares `VERSION`, and presents validation and PR text for approval.
+The workflow reviews the complete branch diff, selects a version increase, prepares `versions.toml`, and presents validation and PR text for approval.
 After explicit approval, the workflow runs `make release-commit YES=1` and opens the release PR.
 Invoking the workflow does not authorize Git writes before that approval.
 
 For manual preparation, run one `make bump-major`, `make bump-minor`, or `make bump-patch` on `dev` or a release topic branch.
-These targets change only root `VERSION`, using `MAJOR.MINOR.PATCH` without a prefix or leading zeroes.
-They reject an already modified `VERSION`. The private `web/package.json` version stays independent.
+These targets change only root `versions.toml`, using `MAJOR.MINOR.PATCH` without a prefix or leading zeroes.
+Select `MODULE=sync` (default), `MODULE=web`, or `MODULE=helper`. Each target rejects a second bump of the same module.
+Private package manifests omit release versions; generated metadata always reads `versions.toml`.
 No changelog is created. If `CHANGELOG.md` exists, prepare its matching release section before committing; preserve its spacing.
 
 Run the relevant validation, review the diff, then use `make release-commit` when ready to stage, commit, and push.
-The command requires a version greater than `HEAD` and rejects unrelated tracked or staged changes.
-It stages only `VERSION` and an existing tracked `CHANGELOG.md`, then commits `chore(release): release ovs X.Y.Z`.
+The command requires a sync version greater than `HEAD` and rejects decreases in any module version and rejects unrelated tracked or staged changes.
+It stages only `versions.toml` and an existing tracked `CHANGELOG.md`, then commits `chore(release): release ovs X.Y.Z`.
 An existing `origin` source branch must match `HEAD`, so the push contains only the new release commit.
 `YES=1` skips the commit prompt after explicit approval. A failed push retains the local commit; inspect remote state before retrying only the push.
 
@@ -257,7 +277,7 @@ An `https://` public origin makes the session cookie `Secure`. Links, cookies, a
 Address-based request limits use the direct peer address. When that peer matches `OVS_TRUSTED_PROXIES`, OVS reads `X-Forwarded-For` from right to left and uses the first address that is not a trusted proxy.
 A missing or malformed header falls back to the proxy's own address, which shares one limit for all its clients. Trust only proxy addresses that clients cannot reach directly.
 CIDRs must be masked, such as `10.0.0.0/8`; `/0` and IPv4-mapped prefixes are rejected. See [deployment examples](deploy/README.md#trusted-proxy-addresses) for each topology.
-`build/ovs version` prints the build version. `build/ovs healthcheck` checks readiness using the configured listener.
+`modules/sync/build/ovs version` prints the build version. `modules/sync/build/ovs healthcheck` checks readiness using the configured listener.
 
 `GET /health/live` checks HTTP process availability. `GET /health/ready` checks in-memory startup, shutdown, and persistent-write failure flags.
 Both return `204` when successful. Readiness returns `503` after a persistent transaction failure or during shutdown. Health checks do not query SQLite.
@@ -335,7 +355,7 @@ Migration 0006 preserves durable metadata and removes obsolete persisted playbac
 Persistent changes commit before memory installation and acknowledgement. Playback acknowledgements report applied memory state.
 Sockets have 64-frame/256-KiB outputs, five-second write deadlines, two-second heartbeats, and a 15-second liveness expiry. Pages pause after five seconds without a server message.
 The instance admits at most 500 sockets, with one playback connection per membership.
-Add each DDL change as a new numbered SQL file under `migrations/`.
+Add each DDL change as a new numbered SQL file under `modules/sync/sql/migrations/`.
 Startup checks applied checksums and rejects newer schemas. A second process cannot own the same data directory.
 
 The application image embeds the frontend, runs as UID/GID `10001:10001`, and requires writable `/data`.
@@ -357,8 +377,8 @@ They verify failed-write isolation and zero-position restart. They also cover mi
 Browser scenarios run serially because they share one server and its address-based admission budgets.
 The `chromium` and `firefox` projects run every shared scenario. The `chromium-firefox` project repeats the playback journey with one participant per browser.
 Both browser binaries are required: Chromium encodes the synthetic VP8/Opus source for every project, and each tested browser decodes those bytes locally.
-On Linux, install missing system libraries with `pnpm --dir web exec playwright install --with-deps chromium firefox`.
-After `make build`, select one project with `pnpm --dir web run test:e2e --project=firefox` or `--project=chromium-firefox`.
+On Linux, install missing system libraries with `pnpm --dir modules/web exec playwright install --with-deps chromium firefox`.
+After `make build`, select one project with `pnpm --dir modules/web run test:e2e --project=firefox` or `--project=chromium-firefox`.
 The identity browser journey uses three isolated profiles to check room creation, sharing, reload continuity, isolation, settings, removal, closure, and identity reset.
 It uses the keyboard for the skip link, saving a name, creating and joining rooms, and confirming closure, and checks landmarks, page titles, and focus after each change.
 Browser screenshots cover light/dark themes at 390×844, 1024×768, and 1440×900 for home and a room with an unbroken 48-character name. Appearance checks cover live system changes, local persistence, keyboard selection, reduced motion, and blocked storage. Run `OVS_E2E_HOST=<host-LAN-IP> make test-e2e` to check ordinary HTTP outside the loopback secure-context exception.

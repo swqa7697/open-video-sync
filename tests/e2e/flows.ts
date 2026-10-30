@@ -1,4 +1,4 @@
-import { expect, type Page } from '../../web/playwright-fixtures';
+import { expect, type Page } from '../../modules/web/playwright-fixtures';
 export interface VideoFile {
   name: string;
   mimeType: string;

@@ -2,7 +2,7 @@ import {
   chromium,
   type Browser,
   type Page,
-} from '../../web/playwright-fixtures';
+} from '../../modules/web/playwright-fixtures';
 
 function ebml(id: number, data: Uint8Array): Buffer {
   const size = data.length;

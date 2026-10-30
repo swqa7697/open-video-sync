@@ -5,7 +5,7 @@ import {
   settings,
   seekTo,
 } from './flows';
-import { expect, test } from '../../web/playwright-fixtures';
+import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 
 test('waiting timeout, buffering, ready late joining, and host absence preserve controller permissions', async ({

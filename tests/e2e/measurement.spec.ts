@@ -7,7 +7,7 @@ import {
 } from './flows';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type Page } from '../../web/playwright-fixtures';
+import { expect, test, type Page } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 interface Observation {
   at: number;

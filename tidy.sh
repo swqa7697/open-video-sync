@@ -23,10 +23,10 @@ for tool in go pnpm uvx; do
 done
 
 # Go application, tests, and automation.
-go run "${gofmt_args[@]}"
+go -C modules/sync run "${gofmt_args[@]}" -root ../..
 
 # Frontend, browser tests, userscripts, Bash (including this script), docs, and config.
-pnpm --dir web exec prettier --ignore-path ../.gitignore --ignore-path ../.prettierignore "$prettier_mode" ..
+pnpm --dir modules/web exec prettier --ignore-path ../../.gitignore --ignore-path ../../.prettierignore "$prettier_mode" ../..
 
 # Makefile recipes and declarations.
 uvx mbake "${mbake_args[@]}" Makefile

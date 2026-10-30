@@ -1,4 +1,4 @@
-import { expect, test } from '../../web/playwright-fixtures';
+import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
   closeRoom,

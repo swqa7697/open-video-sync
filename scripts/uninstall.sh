@@ -2,5 +2,5 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ./scripts/clean.sh
-rm -rf -- web/node_modules
+rm -rf -- modules/web/node_modules modules/helper/node_modules
 bash scripts/log.sh uninstall success "Removed local frontend dependencies. Data and lockfiles remain."

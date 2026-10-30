@@ -1,0 +1,13 @@
+{
+  "type": "module",
+  "name": "@ovs/helper",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test *.test.mjs"
+  },
+  "private": true,
+  "exports": {
+    "./bridge-json": "./bridge-json.js",
+    "./release": "./dist/release.json"
+  }
+}

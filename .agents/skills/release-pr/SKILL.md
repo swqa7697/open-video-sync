@@ -44,19 +44,20 @@ unless the user requested an update. An update still needs approval for its exac
 Preparation requires the checked-out source branch at `head_sha`, with no unrelated tracked
 or staged changes. Report unpushed, divergent, or dirty work as a prerequisite; do not include
 it silently or commit it as release metadata. The recovery instructions below cover an
-approved release commit awaiting push. A previously prepared VERSION/changelog diff can
+approved release commit awaiting push. A previously prepared versions.toml/changelog diff can
 be reviewed and reused. If another branch is checked out, finish read-only analysis and
 identify the required checkout without switching automatically.
 
-Read `VERSION` and `Makefile` from both resolved snapshots when present. Inspect the full
+Read `versions.toml` and `Makefile` from both resolved snapshots when present. Inspect the full
 application diff plus README, PRD, DESIGN, manifests, migrations, deployment, and workflows.
 Use the diff rather than commit prefixes alone to decide release behavior. Local files may
 contain proposed behavior that the remote release does not contain.
 
 ## Choose and prepare the version
 
-Root `VERSION` is the application version. The private `web/package.json` version is
-frontend tooling and must not be bumped for an OVS release. Use numeric `MAJOR.MINOR.PATCH`
+Root `versions.toml` is the sole module release-version source. `versions.sync` is the application version.
+`versions.web` and `versions.helper` record independently managed frontend and helper releases.
+Private package manifests omit versions; helper release metadata is generated during the build. Use numeric `MAJOR.MINOR.PATCH`
 comparison, not string ordering. If a release branch name contains a version, reconcile it
 with the proposed version rather than renaming the branch silently.
 
@@ -75,10 +76,10 @@ never an unsupported claim of a finished 1.0 application. Compare with the previ
 tag/release too when it predates `main`; label the PR commit range separately.
 
 When the source still has the base version, run the selected `make bump-major`,
-`make bump-minor`, or `make bump-patch`. These commands edit only `VERSION`; they do not
+`make bump-minor`, or `make bump-patch`. These commands edit only `versions.toml` (`MODULE=sync` by default); they do not
 stage, commit, or push. Review the resulting value against the recommendation.
 For an unversioned base, use the source's existing version as the starting point or edit
-`VERSION` directly to the justified initial version. Do not invent a base version.
+`versions.toml` directly to the justified initial version. Do not invent a base version.
 
 If the source or worktree already contains the recommended greater version, reuse it;
 do not bump a second time. If the existing version conflicts with the recommendation,
@@ -136,7 +137,7 @@ Follow the repository PR template when present; otherwise include these useful p
 
 Show the version rationale, full release-file diff, validation results, PR title/body,
 source/base SHAs, and draft status. State exactly which files `release-commit` will stage
-(`VERSION`, plus tracked `CHANGELOG.md` when present), its commit subject, and push destination.
+(`versions.toml`, plus tracked `CHANGELOG.md` when present), its commit subject, and push destination.
 Ask for approval to run `make release-commit YES=1` and open the reviewed PR. When the bump
 is already pushed, ask only for the remaining PR action. **Stop and wait for the reply.**
 A timeout, missing reply, or generic earlier request to prepare a release is not approval.
@@ -162,7 +163,7 @@ guards with a broad stage/commit or force push. On failure, inspect local/remote
 report the remaining action; a failed push retains the local release commit. Do not retry
 the whole release sequence or discard the approved files.
 
-Fetch again and resolve the resulting source SHA. Verify that its VERSION, release notes,
+Fetch again and resolve the resulting source SHA. Verify that its versions.toml, release notes,
 commit subject, and complete diff match the approved package, and that the source is pushed.
 If the base or source moved unexpectedly, refresh the review before creating the PR.
 Update the PR's validation wording to identify the new SHA and the identical tested contents;

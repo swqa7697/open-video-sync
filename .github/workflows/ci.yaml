@@ -23,7 +23,7 @@ jobs:
         with:
           go-version: stable
           check-latest: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: modules/sync/go.sum
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
@@ -35,7 +35,7 @@ jobs:
       - run: make check
       - run: make test test-race
       - run: make build
-      - run: pnpm --dir web exec playwright install --with-deps chromium firefox
+      - run: pnpm --dir modules/web exec playwright install --with-deps chromium firefox
       - run: make test-e2e
       - run: make image image-smoke proxy-smoke
       - run: git diff --exit-code

@@ -5,7 +5,7 @@ module.exports = {
   tabWidth: 2,
   semi: true,
   singleQuote: true,
-  plugins: [require('./web/node_modules/prettier-plugin-sh')],
+  plugins: [require('./modules/web/node_modules/prettier-plugin-sh')],
   overrides: [
     {
       files: ['*.jsonc', '**/tsconfig*.json', '.vscode/*.json'],

@@ -6,7 +6,7 @@ import {
   seekTo,
 } from './flows';
 import { writeFile } from 'node:fs/promises';
-import { expect, test } from '../../web/playwright-fixtures';
+import { expect, test } from '../../modules/web/playwright-fixtures';
 import { decodedFrame, generatedVideo } from './media';
 
 test('two independent local players match, play, seek, pause, reconnect, and transfer tab ownership', async ({

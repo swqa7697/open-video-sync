@@ -219,7 +219,10 @@ dist
 .tmp/
 
 # Generated application output and local state
-/build/
-/internal/web/dist/
+/modules/sync/build/
+/modules/sync/internal/web/dist/
+/modules/sync/internal/helper/dist/
+/modules/web/dist/
+/modules/helper/dist/
 /data/
-/web/.vitest/
+/modules/web/.vitest/

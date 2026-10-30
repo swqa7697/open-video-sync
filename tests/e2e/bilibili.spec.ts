@@ -1,7 +1,7 @@
-import { expect, test } from '../../web/playwright-fixtures';
+import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import { closeRoom, dismissHelper, invitationLink } from './flows';
-import release from '../../userscripts/release.json';
+import release from '../../modules/helper/dist/release.json';
 test('Bilibili helper failures preserve local playback and dispose closed rooms', async ({
   page,
   browser,
