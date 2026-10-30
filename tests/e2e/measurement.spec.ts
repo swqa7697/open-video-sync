@@ -1,3 +1,4 @@
+import { createLocalRoom, invitationLink, dismissHelper, settings, seekTo } from './flows';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { expect, test, type Page } from '../../web/playwright-fixtures';
@@ -31,16 +32,25 @@ async function observe(page: Page): Promise<void> {
     (globalThis as unknown as { ovsCapture: typeof capture }).ovsCapture = capture;
     for (const kind of ['playing', 'pause', 'seeked', 'ratechange', 'waiting'])
       video.addEventListener(kind, () => capture.events.push({ kind, at: performance.now() }));
-    document.addEventListener('click', (event) => {
-      const button = (event.target as Element).closest('button');
-      if (
-        button &&
-        ['Play together', 'Pause together', 'Seek together'].includes(
-          button.textContent?.trim() ?? '',
+    document.addEventListener(
+      'click',
+      (event) => {
+        const button = (event.target as Element).closest('button');
+        if (
+          button &&
+          ['Play together', 'Pause together', 'Seek together'].includes(
+            button.getAttribute('aria-label') ?? '',
+          )
         )
-      )
-        capture.inputs.push({ kind: button.textContent!.trim(), at: performance.now() });
-    });
+          capture.inputs.push({ kind: button.getAttribute('aria-label')!, at: performance.now() });
+      },
+      true,
+    );
+    document
+      .getElementById('seek-seconds')
+      ?.addEventListener('change', () =>
+        capture.inputs.push({ kind: 'Seek together', at: performance.now() }),
+      );
     function sample() {
       if (video.readyState >= 2) {
         ctx!.drawImage(video, 0, 0, 640, 360);
@@ -115,15 +125,17 @@ test('three independent nearby trials observe decoded frames separately from con
       const host = await hostBrowser.newPage(),
         guest = await guestBrowser.newPage();
       await host.goto(baseURL!);
-      await host.getByLabel('Room title', { exact: true }).fill(`Observed trial ${trial}`);
-      await host.getByRole('button', { name: 'Create room', exact: true }).click();
+      await createLocalRoom(
+        host,
+        { name: 'synthetic.webm', mimeType: 'video/webm', buffer: fixture },
+        `Observed trial ${trial}`,
+      );
       await expect(host.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-      const invitation = await host.getByLabel('Invitation link').inputValue();
+      const invitation = await invitationLink(host);
       await guest.goto(invitation);
-      await guest.getByRole('button', { name: 'Join room', exact: true }).click();
+      await dismissHelper(guest);
       await expect(guest.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-      await host.getByLabel('Wait for everyone', { exact: true }).uncheck();
-      await host.getByRole('button', { name: 'Save preferences', exact: true }).click();
+      await settings(host, 'host', false);
       const file = { name: 'generated-timecode.webm', mimeType: 'video/webm', buffer: fixture };
       await host.locator('#local-video').setInputFiles(file);
       await expect(host.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
@@ -136,8 +148,7 @@ test('three independent nearby trials observe decoded frames separately from con
       // Paused source frames validate the independent pixel code before timing trials.
       const calibration: { seconds: number; hostFrame: number; guestFrame: number }[] = [];
       for (const seconds of [1, 5, 10]) {
-        await host.getByLabel('Seek to seconds').fill(String(seconds));
-        await host.getByRole('button', { name: 'Seek together', exact: true }).click();
+        await seekTo(host, seconds);
         for (const player of [host, guest])
           await expect
             .poll(async () => {
@@ -164,8 +175,7 @@ test('three independent nearby trials observe decoded frames separately from con
         .toBeGreaterThan(315);
       // Retain every visible frame sample, including correction and degraded intervals.
       await new Promise((resolve) => setTimeout(resolve, 4000));
-      await host.getByLabel('Seek to seconds').fill('20');
-      await host.getByRole('button', { name: 'Seek together', exact: true }).click();
+      await seekTo(host, 20);
       for (const player of [host, guest])
         await expect
           .poll(async () => (await capture(player)).samples.at(-1)!.frame)

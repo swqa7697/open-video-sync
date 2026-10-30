@@ -280,14 +280,13 @@ export function decodeList(value: unknown): { rooms: RoomSummary[]; nextCursor: 
 
 const errors: Record<string, string> = {
   request_outcome_unknown:
-    'Request recovery expired. Check Your rooms before choosing a new action.',
+    'Request recovery expired. Check the original room link before starting a new request.',
   invalid_input: 'Check the entered values.',
   invalid_command: 'This playback action is unavailable. Check room state and choose a new action.',
   session_required: 'Your identity session ended. Reload to start a new identity.',
   forbidden: 'You do not have permission for this action.',
   not_found: 'This room is no longer available to you.',
-  invalid_invitation:
-    'This invitation is unavailable. Check the code, or ask the host for a current link or code.',
+  invalid_invitation: 'This invitation is unavailable or the room has closed.',
   invitation_reset_required:
     'This older invitation needs replacement. Select Replace invitation to create new sharing details.',
   upgrade_required: 'This page is out of date. Reload to use the updated application.',

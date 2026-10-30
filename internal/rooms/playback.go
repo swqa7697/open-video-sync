@@ -55,6 +55,7 @@ type liveRoom struct {
 	active                  map[string]string
 	generations             map[string]int64
 	disconnected            map[string]int64
+	departures              map[string]int64
 	reports                 map[string]*contracts.Readiness
 	cohort                  map[string]bool
 	bufferSince, readySince map[string]int64
@@ -74,7 +75,7 @@ func (s *Service) live(r Room, c *coordinator) *liveRoom {
 			p.Phase = "paused"
 			generation = 1
 		}
-		c.live = &liveRoom{media: r.Media, generation: generation, playback: p, connections: make(map[string]*Connection), active: make(map[string]string), generations: make(map[string]int64), disconnected: make(map[string]int64), reports: make(map[string]*contracts.Readiness), cohort: make(map[string]bool), bufferSince: make(map[string]int64), readySince: make(map[string]int64), receipts: make(map[string]CommandRecord)}
+		c.live = &liveRoom{media: r.Media, generation: generation, playback: p, connections: make(map[string]*Connection), active: make(map[string]string), generations: make(map[string]int64), disconnected: make(map[string]int64), departures: make(map[string]int64), reports: make(map[string]*contracts.Readiness), cohort: make(map[string]bool), bufferSince: make(map[string]int64), readySince: make(map[string]int64), receipts: make(map[string]CommandRecord)}
 	}
 	return c.live
 }
@@ -156,6 +157,14 @@ func (s *Service) Connect(ctx context.Context, p identity.Session, id string, si
 		l.connections[cid] = connection
 		l.active[m.ID] = cid
 		delete(l.disconnected, m.ID)
+		delete(l.departures, m.ID)
+		c.emptyDeadline = 0
+		if r.HostIdentityID == p.IdentityID {
+			c.hostDeadline = 0
+		}
+		s.mu.Lock()
+		delete(s.restored, id)
+		s.mu.Unlock()
 		delete(l.reports, m.ID)
 		delete(l.readySince, m.ID)
 		delete(l.bufferSince, m.ID)
@@ -186,6 +195,14 @@ func (s *Service) drop(l *liveRoom, c *Connection) {
 	s.mu.Unlock()
 	if l.active[c.MemberID] == c.ID {
 		l.disconnected[c.MemberID] = s.monotonicMs() + 15000
+		l.departures[c.MemberID] = s.monotonicMs() + departureGraceMs
+		co := s.coordinator(c.RoomID)
+		if len(l.connections) == 0 {
+			co.emptyDeadline = s.monotonicMs() + departureGraceMs
+		}
+		if co.room.HostIdentityID == c.Session.IdentityID {
+			co.hostDeadline = s.monotonicMs() + departureGraceMs
+		}
 		delete(l.reports, c.MemberID)
 		delete(l.readySince, c.MemberID)
 		delete(l.bufferSince, c.MemberID)
@@ -436,6 +453,7 @@ func (s *Service) managementCommitted(id, epoch, operation, removed string, revi
 		delete(c.live.cohort, removed)
 		delete(c.live.reports, removed)
 		delete(c.live.disconnected, removed)
+		delete(c.live.departures, removed)
 		delete(c.live.bufferSince, removed)
 		delete(c.live.readySince, removed)
 		if c.live.barrier != nil {
@@ -461,6 +479,7 @@ func (s *Service) managementCommitted(id, epoch, operation, removed string, revi
 		delete(c.live.active, removed)
 		delete(c.live.generations, removed)
 		delete(c.live.disconnected, removed)
+		delete(c.live.departures, removed)
 	}
 }
 func readyFor(r *contracts.Readiness, l *liveRoom, b *Barrier) bool {

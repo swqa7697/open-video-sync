@@ -4,13 +4,15 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { parseBridgeJSON } from './bridge-json.js';
 import { readFile } from 'node:fs/promises';
+const release = JSON.parse(await readFile(new URL('./release.json', import.meta.url), 'utf8'));
 const code = (await readFile(new URL('./helper.user.js', import.meta.url), 'utf8'))
   .replace(
     '/* OVS_BRIDGE_JSON */',
     (await readFile(new URL('./bridge-json.js', import.meta.url), 'utf8')).replace(/^export /, ''),
   )
   .replaceAll('{{ORIGIN}}', 'http://127.0.0.1:18090')
-  .replaceAll('{{MATCH}}', 'http://127.0.0.1/*');
+  .replaceAll('{{MATCH}}', 'http://127.0.0.1/*')
+  .replaceAll('{{HELPER_VERSION}}', release.version);
 const origin = 'http://127.0.0.1:18090',
   CANARY = 'SYNTHETIC_B0_CREDENTIAL_CANARY';
 function fixture(options = {}) {
@@ -43,7 +45,7 @@ function fixture(options = {}) {
   const play = {
     timelength: 100000,
     dash: {
-      video: [track],
+      video: [track, { ...track, id: 64 }],
       audio: [{ ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' }],
     },
     token: CANARY,
@@ -243,6 +245,18 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     open = await f.open();
   assert.equal(open.ok, true);
   assert.equal(open.value.tracks.length, 2);
+  assert.equal(open.value.quality, 32);
+  assert.deepEqual(Array.from(open.value.qualities), [64, 32]);
+  // A different inspection channel must not invalidate the active media owner.
+  const inspection = {
+    channel: 'ovs-bilibili-request',
+    client: 'b'.repeat(32),
+    id: 999,
+    op: 'probe',
+    version: 1,
+  };
+  await f.call('probe', { version: 1 }, { data: JSON.stringify(inspection) });
+  assert.equal(f.replies.find((r) => r.id === 999).value.helper, release.version);
   assert(!JSON.stringify(open).includes(CANARY));
   assert(!JSON.stringify(open).includes('https://'));
   const data = await f.call('bytes', {
@@ -269,6 +283,19 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     assert.equal(r.ok, false);
   }
   assert.equal(f.requests.filter((r) => r.url.includes('/upgcxcode/')).length, 1);
+  const switched = await f.call('open', {
+    bvid: 'BV1hf4y1N75G',
+    part: 1,
+    generation: 2,
+    quality: 64,
+  });
+  assert.equal(switched.value.quality, 64);
+  assert.equal(switched.value.tracks[0].id, 64);
+  assert.equal(
+    new URL(f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url).searchParams.get('qn'),
+    '64',
+  );
+  assert(!JSON.stringify(switched).includes(CANARY));
 });
 test('provider failures and restricted access cannot leak raw canaries', async () => {
   for (const options of [

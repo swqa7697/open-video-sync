@@ -237,7 +237,7 @@ func TestDeploymentSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	room, err := client.Call(ctx, "POST", "/rooms", map[string]any{"title": "Deployment persistence", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
+	room, err := client.Call(ctx, "POST", "/rooms", map[string]any{"title": "Deployment persistence", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "1", "part": 1, "durationMs": 100000}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Invitation, Snapshot } from '../../transport/api';
 import type { RoomSettings } from '../../transport/contracts';
-import { memberState, settingsSummary } from '../status-text';
+import { settingsSummary } from '../status-text';
 import SettingsForm from './SettingsForm.vue';
+import MembersPanel from './MembersPanel.vue';
+import Modal from '../../components/Modal.vue';
+import Icon from '../../components/Icon.vue';
 const props = defineProps<{
   room: Snapshot;
   invitation?: Invitation | undefined;
   host: boolean;
   busy: boolean;
+  error?: string | undefined;
 }>();
 const emit = defineEmits<{
   refresh: [];
@@ -18,148 +22,197 @@ const emit = defineEmits<{
   remove: [memberId: string];
   close: [];
   leave: [];
-  back: [];
 }>();
 const settings = ref<RoomSettings>({ ...props.room.settings });
-const closeConfirmation = ref(false);
-const closeButton = ref<HTMLButtonElement>(),
-  cancelButton = ref<HTMLButtonElement>(),
-  participants = ref<HTMLElement>();
-let removing: { memberId: string; index: number } | undefined;
+const inviteOpen = ref(false),
+  settingsOpen = ref(false),
+  closeConfirmation = ref(false),
+  membersOpen = ref(true),
+  narrow = ref(false),
+  copied = ref('');
+const shareURL = computed(() =>
+  props.invitation ? `${location.origin}/join#invite=${props.invitation.linkSecret}` : '',
+);
+let breakpoint: MediaQueryList | undefined;
+function resize(): void {
+  narrow.value = breakpoint?.matches ?? false;
+  membersOpen.value = !narrow.value;
+}
+onMounted(() => {
+  breakpoint = matchMedia('(max-width: 760px)');
+  resize();
+  breakpoint.addEventListener('change', resize);
+});
+onUnmounted(() => breakpoint?.removeEventListener('change', resize));
 watch(
-  () => JSON.stringify(props.room.settings),
+  () => props.room.settings,
   () => {
-    settings.value = { ...props.room.settings };
-    closeConfirmation.value = false;
+    if (!settingsOpen.value) settings.value = { ...props.room.settings };
   },
 );
-// After a removal, keep keyboard focus on the next Remove button or the roster heading.
-watch(
-  () => props.room.members.map((member) => member.memberId).join(),
-  async () => {
-    const pending = removing;
-    if (!pending || props.room.members.some((m) => m.memberId === pending.memberId)) return;
-    removing = undefined;
-    await nextTick();
-    const buttons = [...document.querySelectorAll<HTMLButtonElement>('.roster button')];
-    (buttons[pending.index] ?? buttons.at(-1) ?? participants.value)?.focus();
-  },
-);
-// A failed removal leaves the member listed; forget the pending focus target.
+function openSettings(): void {
+  settings.value = { ...props.room.settings };
+  settingsOpen.value = true;
+}
+let saving = false;
 watch(
   () => props.busy,
-  (busy) => {
-    if (!busy && props.room.members.some((m) => m.memberId === removing?.memberId))
-      removing = undefined;
+  (value) => {
+    if (!value && saving) {
+      saving = false;
+      if (!props.error) settingsOpen.value = false;
+    }
   },
 );
-function remove(memberId: string): void {
-  if (props.busy) return;
-  const removable = props.room.members.filter((m) => m.role !== 'host');
-  removing = { memberId, index: removable.findIndex((m) => m.memberId === memberId) };
-  emit('remove', memberId);
-}
-// Opening waits for idle; Cancel always works and returns focus to the trigger.
-async function confirmClose(open: boolean): Promise<void> {
-  if (open && props.busy) return;
-  closeConfirmation.value = open;
-  await nextTick();
-  (open ? cancelButton : closeButton).value?.focus();
-}
 function selectLink(event: FocusEvent): void {
   if (event.target instanceof HTMLInputElement) event.target.select();
 }
-const shareURL = (secret: string) => `${location.origin}/join#invite=${secret}`;
+async function copy(value: string, field: string): Promise<void> {
+  try {
+    if (!navigator.clipboard) throw new Error('unavailable');
+    await navigator.clipboard.writeText(value);
+    copied.value = 'Copied.';
+  } catch {
+    const input = document.getElementById(field) as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+    copied.value = 'Text selected. Use your browser’s Copy action.';
+  }
+}
 </script>
 <template>
   <section class="room" aria-labelledby="room-title">
-    <div class="actions">
-      <button class="quiet" :aria-disabled="busy || undefined" @click="!busy && emit('back')">
-        All rooms</button
-      ><button class="quiet" :aria-disabled="busy || undefined" @click="!busy && emit('refresh')">
-        Refresh room
-      </button>
-    </div>
-    <p class="eyebrow">{{ host ? 'Your room' : 'Private room' }}</p>
-    <h2 id="room-title" tabindex="-1">{{ room.title }}</h2>
-    <p class="hint">
-      {{ settingsSummary(room.settings) }}. Room updates arrive automatically. Each participant
-      selects the same local file or loads the room’s Bilibili video.
-    </p>
-    <slot />
-    <h3 id="participants-title" ref="participants" tabindex="-1">Participants</h3>
-    <ul class="roster" aria-labelledby="participants-title">
-      <li v-for="member in room.members" :key="member.memberId">
-        <span
-          >{{ member.displayName }}{{ member.memberId === room.selfMemberId ? ' (you)' : '' }}
-          <small
-            >{{ member.role === 'host' ? 'Host' : 'Participant' }} ·
-            {{ memberState(member, room.mediaGeneration) }}</small
-          ></span
-        ><button
-          v-if="host && member.role !== 'host'"
+    <div class="room-toolbar">
+      <div class="room-heading">
+        <span class="eyebrow">PRIVATE ROOM</span>
+        <h2 id="room-title" tabindex="-1" :title="room.title">{{ room.title }}</h2>
+      </div>
+      <div class="room-actions">
+        <button
+          v-if="host"
+          class="invite-button"
+          :disabled="busy"
+          @click="
+            inviteOpen = true;
+            emit('share');
+          "
+        >
+          <Icon name="link" /><span>Invite</span>
+        </button>
+        <button
           class="quiet"
-          :aria-disabled="busy || undefined"
-          :aria-label="`Remove ${member.displayName}`"
-          @click="remove(member.memberId)"
+          :aria-expanded="membersOpen"
+          :aria-label="`Members (${room.members.length})`"
+          @click="membersOpen = !membersOpen"
         >
-          Remove
+          <Icon name="users" /><span class="toolbar-label">Members</span
+          ><span>{{ room.members.length }}</span>
         </button>
-      </li>
-    </ul>
-    <template v-if="host">
-      <h3>Share this room</h3>
-      <template v-if="invitation">
-        <label for="invite-link">Invitation link</label
-        ><input
-          id="invite-link"
-          :value="shareURL(invitation.linkSecret)"
-          readonly
-          @focus="selectLink"
-        />
-        <p>
-          Code: <strong class="invite-code">{{ invitation.code.match(/.{4}/g)?.join(' ') }}</strong>
-        </p>
-        <p class="hint">
-          Share only with intended participants. This invitation stays valid until you replace it.
-        </p>
-      </template>
-      <p v-else class="hint">Retrieve the current invitation to share this room again.</p>
-      <div class="actions">
-        <button :aria-disabled="busy || undefined" @click="!busy && emit('share')">
-          Share invitation</button
-        ><button :aria-disabled="busy || undefined" @click="!busy && emit('rotate')">
-          Replace invitation
+        <button
+          v-if="host"
+          class="quiet icon-button"
+          aria-label="Room settings"
+          :disabled="busy"
+          @click="openSettings"
+        >
+          <Icon name="settings" />
+        </button>
+        <button class="quiet leave-button" :disabled="busy" @click="emit('leave')">
+          <Icon name="leave" /><span class="toolbar-label">Leave</span>
         </button>
       </div>
-      <p class="hint">Replacement invalidates previous links and codes.</p>
-      <form @submit.prevent="!busy && emit('settings', settings)">
-        <SettingsForm v-model="settings" :disabled="busy" /><button
-          :aria-disabled="busy || undefined"
-        >
-          Save preferences
-        </button>
-      </form>
-      <button
-        v-if="!closeConfirmation"
-        ref="closeButton"
-        class="danger"
-        :aria-disabled="busy || undefined"
-        @click="confirmClose(true)"
-      >
-        Close room
-      </button>
-      <div v-else class="notice" role="group" aria-label="Confirm room closure">
-        <p>Close this room for all participants? This action cannot be undone.</p>
-        <div class="actions">
-          <button class="danger" :aria-disabled="busy || undefined" @click="!busy && emit('close')">
-            Confirm close room</button
-          ><button ref="cancelButton" class="quiet" @click="confirmClose(false)">Cancel</button>
+    </div>
+    <div class="room-layout" :class="{ 'with-members': membersOpen && !narrow }">
+      <div class="viewing-column"><slot /></div>
+      <aside v-if="membersOpen && !narrow" class="member-panel">
+        <MembersPanel :room="room" :host="host" :busy="busy" @remove="(id) => emit('remove', id)" />
+        <div class="panel-policy">
+          <Icon name="shield" :size="16" /><span>{{ settingsSummary(room.settings) }}</span>
         </div>
-      </div>
-    </template>
-    <button v-else class="quiet" :aria-disabled="busy || undefined" @click="!busy && emit('leave')">
-      Leave room
-    </button>
+      </aside>
+    </div>
+    <Modal v-if="membersOpen && narrow" title="Room members" @close="membersOpen = false"
+      ><MembersPanel :room="room" :host="host" :busy="busy" @remove="(id) => emit('remove', id)"
+    /></Modal>
+    <Modal v-if="inviteOpen" title="A little better together" @close="inviteOpen = false"
+      ><p>
+        Invite your people to <strong>{{ room.title }}</strong
+        >.
+      </p>
+      <template v-if="invitation"
+        ><label for="invite-link">Invitation link</label>
+        <div class="input-action">
+          <input id="invite-link" :value="shareURL" readonly @focus="selectLink" /><button
+            class="quiet icon-button"
+            aria-label="Copy invitation link"
+            @click="copy(shareURL, 'invite-link')"
+          >
+            <Icon name="copy" />
+          </button>
+        </div>
+        <label for="invite-code">Invitation code</label>
+        <div class="input-action">
+          <input
+            id="invite-code"
+            class="invite-code"
+            :value="invitation.code.match(/.{4}/g)?.join(' ')"
+            readonly
+            @focus="selectLink"
+          /><button
+            class="quiet icon-button"
+            aria-label="Copy invitation code"
+            @click="copy(invitation.code, 'invite-code')"
+          >
+            <Icon name="copy" />
+          </button>
+        </div>
+        <p role="status" class="hint">{{ copied }}</p></template
+      >
+      <p v-else class="hint">Retrieving your invitation…</p>
+      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+      <p class="hint">
+        Only invited people can enter. This invitation works until replaced or the room closes.
+      </p>
+      <button class="quiet" :disabled="busy" @click="emit('rotate')">
+        Replace invitation
+      </button></Modal
+    >
+    <Modal v-if="settingsOpen" title="Room settings" @close="settingsOpen = false"
+      ><form
+        @submit.prevent="
+          saving = true;
+          emit('settings', settings);
+        "
+      >
+        <SettingsForm v-model="settings" :disabled="busy" />
+        <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+        <button :disabled="busy">Save preferences</button>
+      </form>
+      <div class="settings-danger">
+        <p class="hint">Close this room and end the session for everyone.</p>
+        <button
+          type="button"
+          class="danger quiet"
+          :disabled="busy"
+          @click="
+            settingsOpen = false;
+            closeConfirmation = true;
+          "
+        >
+          Close room for everyone
+        </button>
+      </div></Modal
+    >
+    <Modal
+      v-if="closeConfirmation"
+      title="Close room for everyone?"
+      @close="closeConfirmation = false"
+      ><p>Everyone will leave and this invitation will stop working. This cannot be undone.</p>
+      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+      <div class="actions">
+        <button class="quiet" autofocus @click="closeConfirmation = false">Cancel</button
+        ><button class="danger" :disabled="busy" @click="emit('close')">Confirm close room</button>
+      </div></Modal
+    >
   </section>
 </template>

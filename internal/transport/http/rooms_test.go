@@ -34,7 +34,7 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 	host, guest, third := bootstrapPeer(t, a), bootstrapPeer(t, a), bootstrapPeer(t, a)
 	newKey := func() string { k, _ := contracts.RandomID(rand.Reader); return k }
 	// Use explicit requests for create/redeem headers while keeping the common transport helper.
-	createBody, _ := json.Marshal(map[string]any{"title": "Room", "settings": contracts.DefaultSettings()})
+	createBody, _ := json.Marshal(map[string]any{"title": "Room", "settings": contracts.DefaultSettings(), "media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 100000}})
 	keyed := func(p apiPeer, path, body, key string) []byte {
 		t.Helper()
 		r := newRequest(p, path, body, key)
@@ -45,11 +45,24 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 		}
 		return w.Body.Bytes()
 	}
+	invalid, _ := json.Marshal(map[string]any{"title": "Missing media", "settings": contracts.DefaultSettings()})
+	bad := httptest.NewRecorder()
+	a.ServeHTTP(bad, newRequest(host, "/api/v2/rooms", string(invalid), newKey()))
+	if bad.Code != 400 {
+		t.Fatal("room creation accepted missing initial media")
+	}
 	var created rooms.Result
 	if err := json.Unmarshal(keyed(host, "/api/v2/rooms", string(createBody), newKey()), &created); err != nil {
 		t.Fatal(err)
 	}
 	id := created.Snapshot.RoomID
+	if created.Snapshot.Media == nil || created.Snapshot.Playback.Phase != "paused" {
+		t.Fatal("creation did not include paused initial media")
+	}
+	durable, err := store.LoadRooms(context.Background())
+	if err != nil || len(durable) != 1 || durable[0].Media == nil {
+		t.Fatal("initial selection was not durable", err)
+	}
 	if w := call(t, a, third, "GET", "/api/v2/rooms/"+id, ""); w.Code != 404 {
 		t.Fatal("third profile read room")
 	}

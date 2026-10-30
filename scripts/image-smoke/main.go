@@ -213,7 +213,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if _, err := previous.host.Call(ctx, "PATCH", "/me", map[string]any{"displayName": hostName}); err != nil {
 			return previous, err
 		}
-		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
+		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "1", "part": 1, "durationMs": 100000}})
 		if err != nil {
 			return previous, err
 		}

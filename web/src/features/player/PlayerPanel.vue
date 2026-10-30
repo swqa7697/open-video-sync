@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
 import type { Readiness, ReadinessStatus } from '../../transport/protocol-values';
@@ -11,14 +11,21 @@ import {
 } from '../../transport/room-socket';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
 import { HelperError } from '../../player/bilibili/bridge';
-import { parseSelection } from '../../player/bilibili/media';
+import type { MediaInfo } from '../../player/bilibili/media';
+import Icon from '../../components/Icon.vue';
+import Modal from '../../components/Modal.vue';
+import MediaPicker from '../media/MediaPicker.vue';
 import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
 import { reportedReadiness, SyncController } from '../../sync/controller';
 import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
-import { memberState, phaseText, readinessText } from '../status-text';
+import { phaseText, readinessText } from '../status-text';
 
-const props = defineProps<{ room: Snapshot }>();
+const props = defineProps<{
+  room: Snapshot;
+  initialFile?: File | undefined;
+  helperGeneration?: number;
+}>();
 const emit = defineEmits<{
   snapshot: [snapshot: Snapshot];
   connection: [connected: boolean];
@@ -27,9 +34,7 @@ const emit = defineEmits<{
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
-const bilibiliURL = ref(''),
-  part = ref(1),
-  danmakuStatus = ref(''),
+const danmakuStatus = ref(''),
   showDanmaku = ref(true),
   density = ref(20),
   danmakuSize = ref(20);
@@ -39,7 +44,8 @@ const video = ref<HTMLVideoElement>(),
   status = ref('Connecting…'),
   error = ref(''),
   errorReload = ref(false),
-  invalidBilibili = ref(false),
+  roomError = ref(''),
+  roomErrorReload = ref(false),
   mediaStatus = ref<ReadinessStatus>('no_media'),
   calibration = ref('Calibrating clocks…');
 // Sampled every 250 ms; only a changed label re-renders the panel.
@@ -53,10 +59,57 @@ const active = ref(false),
   connected = ref(false),
   loading = ref(false),
   uncertain = ref<Command>(),
-  label = ref(''),
   seekSeconds = ref(0),
   muted = ref(true),
   volume = ref(1);
+const position = ref(0),
+  buffered = ref(0),
+  dragging = ref(false),
+  playerMenu = ref(false),
+  replaceOpen = ref(false),
+  hoveredTime = ref<number>(),
+  idle = ref(false),
+  controlsHovered = ref(false);
+const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
+const streamInfo = shallowRef<MediaInfo>();
+const videoTitle = ref('');
+const totalSeconds = computed(() => (current.value.media?.durationMs ?? 0) / 1000);
+const isPlaying = computed(() => current.value.playback.phase === 'playing');
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+function wake(): void {
+  idle.value = false;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (
+      !controlsHovered.value &&
+      isPlaying.value &&
+      !playerMenu.value &&
+      !stage.value?.contains(document.activeElement)
+    )
+      idle.value = true;
+  }, 2500);
+}
+const formatTime = (seconds: number): string => {
+  const n = Math.max(0, Math.floor(seconds));
+  return n >= 3600
+    ? `${Math.floor(n / 3600)}:${String(Math.floor(n / 60) % 60).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`
+    : `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+};
+const qualityName = (value: number): string =>
+  ({
+    6: '240p',
+    16: '360p',
+    32: '480p',
+    64: '720p',
+    74: '720p 60',
+    80: '1080p',
+    112: '1080p+',
+    116: '1080p 60',
+    120: '4K',
+    125: 'HDR',
+    126: 'Dolby Vision',
+    127: '8K',
+  })[value] ?? `Quality ${value}`;
 const waitTimedOut = ref(false),
   replaced = ref(false);
 const current = ref(props.room);
@@ -124,6 +177,8 @@ const waitingText = computed(() => {
   return `Waiting at ${at} for ${list}.`;
 });
 let adapter: PlayerAdapter | undefined;
+let autoAttempt = '';
+let handoff = props.initialFile;
 let lastConnected: boolean | undefined;
 let selection = new AbortController(),
   selectionGeneration = 0;
@@ -177,8 +232,18 @@ const transport = new RoomSocket(
           clearMedia();
         publishing = false;
       }
+      if (snapshot.settings.controllers === 'host') hostNotice.value = false;
+      const previousHost = current.value.members.find((m) => m.role === 'host');
+      if (
+        current.value.settings.controllers === 'host' &&
+        snapshot.settings.controllers === 'everyone' &&
+        previousHost &&
+        snapshot.members.find((m) => m.memberId === previousHost.memberId)?.presence !== 'connected'
+      )
+        hostNotice.value = true;
       current.value = snapshot;
       emit('snapshot', snapshot);
+      void autoLoad();
       void sample();
     },
     status(value) {
@@ -188,6 +253,7 @@ const transport = new RoomSocket(
         sync.invalidate();
         void adapter?.pause();
       }
+      if (transport.connected) void autoLoad();
       if (lastConnected !== transport.connected) {
         lastConnected = transport.connected;
         emit('connection', transport.connected);
@@ -198,8 +264,8 @@ const transport = new RoomSocket(
       if (!value) clearMedia();
     },
     error(value, options) {
-      error.value = value;
-      errorReload.value = !!options?.reload;
+      roomError.value = value;
+      roomErrorReload.value = !!options?.reload;
       if (options?.recheck) emit('recheck');
     },
     uncertain(value) {
@@ -228,6 +294,7 @@ function clearMedia(): void {
   loading.value = false;
   danmakuStatus.value = '';
   publishing = false;
+  streamInfo.value = undefined;
 }
 function mediaMatches(
   selected: MediaDescriptor | null,
@@ -253,7 +320,8 @@ function danmakuPreferences(): void {
 }
 async function fullscreen(): Promise<void> {
   try {
-    await stage.value?.requestFullscreen();
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await stage.value?.requestFullscreen();
   } catch {
     error.value = 'Fullscreen is unavailable in this browser.';
   }
@@ -265,7 +333,11 @@ function showError(value: string, reload = false): void {
   error.value = value;
   errorReload.value = reload;
 }
-async function chooseBilibili(): Promise<void> {
+async function chooseBilibili(
+  selected: Extract<MediaDescriptor, { kind: 'bilibili' }>,
+  publishMedia = false,
+  quality?: number,
+): Promise<void> {
   if (
     !video.value ||
     !overlay.value ||
@@ -275,21 +347,6 @@ async function chooseBilibili(): Promise<void> {
     uncertain.value
   )
     return;
-  let selected: { bvid: string; part: number };
-  try {
-    const room = current.value.media;
-    selected =
-      !host.value && room?.kind === 'bilibili'
-        ? { bvid: room.bvid, part: room.part }
-        : parseSelection(bilibiliURL.value, part.value);
-  } catch (reason) {
-    showError(reason instanceof Error ? reason.message : 'Invalid Bilibili selection.');
-    invalidBilibili.value = true;
-    await nextTick();
-    document.getElementById('bilibili-url')?.focus();
-    return;
-  }
-  invalidBilibili.value = false;
   clearMedia();
   const generation = selectionGeneration,
     signal = selection.signal;
@@ -310,13 +367,15 @@ async function chooseBilibili(): Promise<void> {
   danmakuPreferences();
   void sample();
   try {
-    const media = await local.load(selected.bvid, selected.part, signal);
+    const media = await local.load(selected.bvid, selected.part, signal, quality);
+    streamInfo.value = local.mediaInfo;
+    videoTitle.value = local.mediaInfo?.title ?? selected.bvid;
     if (signal.aborted || generation !== selectionGeneration) return;
     descriptor.value = media;
     subscription = local.subscribe(() => {
       void sample();
     });
-    if (host.value) {
+    if (publishMedia && host.value) {
       publishing = true;
       transport.command({ media });
     }
@@ -334,11 +393,21 @@ async function chooseBilibili(): Promise<void> {
     if (generation === selectionGeneration) loading.value = false;
   }
 }
+function chooseFile(): void {
+  document.getElementById('local-video')?.click();
+}
 async function choose(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement,
     file = input.files?.[0];
   input.value = '';
-  if (!file || !video.value || uncertain.value || !connected.value) return;
+  if (file) await loadLocal(file);
+}
+async function loadLocal(
+  file: File,
+  prepared?: MediaDescriptor,
+  publishMedia = false,
+): Promise<void> {
+  if (!video.value || uncertain.value || !connected.value) return;
   clearMedia();
   const generation = selectionGeneration,
     signal = selection.signal;
@@ -350,7 +419,9 @@ async function choose(event: Event): Promise<void> {
   void sample();
   try {
     const [digest] = await Promise.all([
-      localFingerprint(file, props.room.roomId, signal),
+      prepared?.kind === 'local'
+        ? Promise.resolve(prepared.digest)
+        : localFingerprint(file, props.room.roomId, signal),
       local.load(file, signal),
     ]);
     if (signal.aborted || generation !== selectionGeneration) return;
@@ -365,8 +436,8 @@ async function choose(event: Event): Promise<void> {
       void sample();
     });
     sync.invalidate();
-    if (host.value) {
-      const media = { ...descriptor.value, ...(label.value ? { label: label.value } : {}) };
+    if (publishMedia && host.value) {
+      const media = descriptor.value;
       publishing = true;
       transport.command({ media });
     }
@@ -383,6 +454,101 @@ async function choose(event: Event): Promise<void> {
     if (generation === selectionGeneration) loading.value = false;
   }
 }
+const hostNotice = ref(false);
+async function autoLoad(): Promise<void> {
+  if (
+    disposed ||
+    !active.value ||
+    !transport.connected ||
+    !video.value ||
+    !overlay.value ||
+    loading.value ||
+    descriptor.value
+  )
+    return;
+  const selected = current.value.media;
+  if (!selected) return;
+  const key = `${current.value.epoch}:${current.value.mediaGeneration}:${props.helperGeneration ?? 0}`;
+  if (autoAttempt === key) return;
+  autoAttempt = key;
+  if (selected.kind === 'bilibili') await chooseBilibili(selected);
+  else if (handoff) {
+    const file = handoff;
+    handoff = undefined;
+    await loadLocal(file, selected);
+  }
+}
+watch(
+  () => props.helperGeneration,
+  () => {
+    if (current.value.media?.kind === 'bilibili' && !matched.value) {
+      autoAttempt = '';
+      void autoLoad();
+    }
+  },
+);
+async function retryMedia(): Promise<void> {
+  autoAttempt = '';
+  clearMedia();
+  await autoLoad();
+}
+async function replaceMedia(): Promise<void> {
+  const selected = await mediaPicker.value?.prepare();
+  if (!selected) return;
+  replaceOpen.value = false;
+  if (selected.media.kind === 'local' && selected.file)
+    await loadLocal(selected.file, selected.media, true);
+  else if (selected.media.kind === 'bilibili') await chooseBilibili(selected.media, true);
+}
+async function changeQuality(event: Event): Promise<void> {
+  const selected = current.value.media;
+  const quality = Number((event.target as HTMLSelectElement).value);
+  if (
+    selected?.kind !== 'bilibili' ||
+    !streamInfo.value?.qualities.includes(quality) ||
+    loading.value
+  )
+    return;
+  await chooseBilibili(selected, false, quality);
+}
+function hoverSeek(event: PointerEvent): void {
+  const box = event.currentTarget as HTMLElement;
+  hoveredTime.value = Math.max(
+    0,
+    Math.min(
+      totalSeconds.value,
+      ((event.clientX - box.getBoundingClientRect().left) / box.clientWidth) * totalSeconds.value,
+    ),
+  );
+}
+function dragSeek(event: Event): void {
+  dragging.value = true;
+  seekSeconds.value = Number((event.target as HTMLInputElement).value);
+}
+function seek(event: Event): void {
+  seekSeconds.value = Number((event.target as HTMLInputElement).value);
+  dragging.value = false;
+  command('seek');
+}
+function keyboard(event: KeyboardEvent): void {
+  if (event.target !== stage.value || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === ' ' || event.key === 'k') {
+    event.preventDefault();
+    command(isPlaying.value ? 'pause' : 'play');
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    seekSeconds.value = Math.min(
+      totalSeconds.value,
+      Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5)),
+    );
+    command('seek');
+  } else if (event.key === 'm') muted.value = !muted.value;
+  else if (event.key === 'f') {
+    event.preventDefault();
+    void fullscreen();
+  }
+  wake();
+}
 async function sample(): Promise<void> {
   if (disposed) return;
   connected.value = transport.connected;
@@ -392,6 +558,11 @@ async function sample(): Promise<void> {
   calibration.value = qualityText[quality.quality];
   const local = adapter,
     snapshot = current.value;
+  if (video.value && local) {
+    position.value = video.value.currentTime;
+    const ranges = video.value.buffered;
+    buffered.value = ranges.length ? ranges.end(ranges.length - 1) : 0;
+  }
   if (!local) {
     if (loading.value) mediaStatus.value = 'loading';
     else if (!['unsupported', 'error', 'access_denied'].includes(mediaStatus.value))
@@ -503,6 +674,7 @@ function publish(report: Readiness, now: number): void {
 function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
   if (!(action === 'play' ? canPlay.value : canControl.value)) return;
   showError('');
+  roomError.value = '';
   waitTimedOut.value = false;
   sync.invalidate();
   transport.command(
@@ -556,6 +728,8 @@ onMounted(() => {
 onUnmounted(() => {
   disposed = true;
   clearInterval(timer);
+  clearTimeout(idleTimer);
+  handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
   transport.dispose();
   clearMedia();
@@ -564,76 +738,19 @@ onUnmounted(() => {
 
 <template>
   <section class="player-panel" aria-labelledby="player-title">
-    <h3 id="player-title" ref="heading" tabindex="-1">Watch together</h3>
-    <p role="status">{{ status }} · {{ calibration }}</p>
-    <div v-if="error" role="alert" class="notice error">
-      <p><strong>Error:</strong> {{ error }}</p>
-      <button v-if="errorReload" type="button" @click="reload">Reload page</button>
-    </div>
-    <div class="player-notices" role="status">
-      <p v-if="replaced" class="notice">
-        This room is open elsewhere. Playback continues in the newer page. Reload this page to use
-        it here instead.
-      </p>
-      <div v-if="uncertain" class="notice">
-        <p>Checking the command result.</p>
-        <button
-          type="button"
-          :aria-disabled="!connected || undefined"
-          @click="connected && transport.resolveUncertain()"
-        >
-          Check original command
-        </button>
-      </div>
-      <div v-if="mediaStatus === 'gesture_required'" class="notice">
-        <p>This browser needs your permission before it plays the room video.</p>
-        <button type="button" @click="enable">Enable playback</button>
-      </div>
-      <p v-if="mediaStatus === 'mismatch'" class="notice">
-        This video does not match the room. Select the same file or Bilibili part as the host.
-      </p>
-      <p v-if="current.barrier" class="notice">
-        {{ waitingText }}
-        {{
-          current.barrier.reason === 'buffering'
-            ? 'Playback resumes after everyone stays ready for one second.'
-            : 'Each participant selects matching media and enables playback when asked.'
-        }}
-      </p>
-      <p v-if="waitTimedOut" class="notice">
-        Waiting timed out. The room stays paused.
-        {{
-          permitted
-            ? 'Select Play together to try again.'
-            : 'The host can select Play together to try again.'
-        }}
-      </p>
-    </div>
-    <ul v-if="blockers.length" class="waiting-list" aria-label="Waiting for">
-      <li v-for="member in blockers" :key="member.memberId">
-        {{ member.memberId === current.selfMemberId ? 'You' : member.displayName }}:
-        {{ memberState(member, current.mediaGeneration) }}
-      </li>
-    </ul>
-    <p>
-      Media:
-      {{
-        current.media?.kind === 'local'
-          ? current.media.label || 'Local video'
-          : current.media?.kind === 'bilibili'
-            ? `${current.media.bvid} · part ${current.media.part}`
-            : 'None selected'
-      }}
-      · Yours:
-      <span data-testid="media-status" :data-state="shownStatus">{{
-        readinessText[shownStatus]
-      }}</span>
-      · Room:
-      <span data-testid="playback-phase" :data-state="current.playback.phase">{{
-        phaseText[current.playback.phase]
-      }}</span>
-    </p>
-    <div ref="stage" class="video-stage">
+    <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">Watch together</h3>
+    <div
+      ref="stage"
+      class="video-stage"
+      :class="{ 'controls-idle': idle && isPlaying && !playerMenu }"
+      tabindex="0"
+      aria-label="Video player. Space to play or pause, arrows to seek, M to mute, F for fullscreen."
+      @keydown="keyboard"
+      @pointermove="wake"
+      @pointerdown="wake"
+      @focusin="wake"
+      @pointerleave="wake"
+    >
       <video
         ref="video"
         preload="auto"
@@ -643,159 +760,334 @@ onUnmounted(() => {
         aria-label="Room video"
       />
       <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
-    </div>
-    <div v-if="descriptor?.kind === 'bilibili'" class="danmaku-controls">
-      <p role="status">{{ showDanmaku ? danmakuStatus : `Danmaku hidden · ${danmakuStatus}` }}</p>
-      <label class="checkbox"
-        ><input v-model="showDanmaku" type="checkbox" @change="danmakuPreferences" /> Show danmaku
-        locally</label
+      <div v-if="replaced" class="player-state">
+        <Icon name="screen" :size="36" />
+        <h3>Playback moved to another page</h3>
+        <p>This room is open elsewhere. Playback continues in the newer page.</p>
+        <button @click="reload">Use this page</button>
+      </div>
+      <div v-else-if="error && !loading" class="player-state" role="alert">
+        <Icon name="screen" :size="32" />
+        <p>{{ error }}</p>
+        <button v-if="errorReload" @click="reload">Reload page</button
+        ><button v-else-if="current.media?.kind === 'bilibili'" @click="retryMedia">
+          Retry video</button
+        ><button v-else type="button" class="file-button" @click="chooseFile">
+          Choose another file
+        </button>
+      </div>
+      <div v-else-if="mediaStatus === 'gesture_required'" class="player-state">
+        <Icon name="play" :size="36" />
+        <h3>Join the moment</h3>
+        <p>Your browser needs permission to play this video.</p>
+        <button @click="enable">Enable playback</button>
+      </div>
+      <div
+        v-else-if="!descriptor && !loading && current.media?.kind === 'local'"
+        class="player-state"
       >
-      <label for="danmaku-density">Danmaku density</label
-      ><input
-        id="danmaku-density"
-        v-model.number="density"
-        type="range"
-        min="1"
-        max="40"
-        :aria-valuetext="`${density} comments`"
-        @input="danmakuPreferences"
+        <span class="state-symbol"><Icon name="file" :size="34" /></span>
+        <h3>Your seat is ready</h3>
+        <p>Select your copy of the room’s video to watch together.</p>
+        <label class="file-button" for="local-video"
+          ><Icon name="plus" />Choose matching video</label
+        ><small>Your file stays on your device.</small>
+      </div>
+      <div v-else-if="mediaStatus === 'mismatch'" class="player-state">
+        <h3>A different video</h3>
+        <p>This video does not match the room. Choose the same file as the host.</p>
+        <button type="button" class="file-button" @click="chooseFile">Choose matching video</button>
+      </div>
+      <div
+        v-else-if="loading || (!descriptor && current.media?.kind === 'bilibili')"
+        class="player-state"
+      >
+        <Icon name="screen" :size="36" />
+        <h3>{{ loading ? 'Preparing your video…' : 'Connect your playback helper' }}</h3>
+        <p>
+          {{
+            loading
+              ? 'Getting everything ready for you.'
+              : 'Set up the OVS helper to load this video automatically.'
+          }}
+        </p>
+        <button v-if="!loading" class="quiet" @click="retryMedia">Retry video</button>
+      </div>
+      <div v-else-if="current.playback.phase === 'ended'" class="player-state">
+        <h3>One more time?</h3>
+        <button :disabled="!canControl" @click="command('replay')">
+          <Icon name="replay" />Replay
+        </button>
+      </div>
+      <div
+        v-if="current.barrier && descriptor && mediaStatus !== 'gesture_required'"
+        class="waiting-overlay"
+        role="status"
+      >
+        {{ waitingText }}
+      </div>
+      <input
+        id="local-video"
+        tabindex="-1"
+        class="visually-hidden"
+        type="file"
+        accept="video/*,.mkv"
+        :disabled="!active || !connected || !!uncertain"
+        aria-label="Select matching local video"
+        @change="choose"
       />
-      <label for="danmaku-size">Danmaku text size</label
-      ><input
-        id="danmaku-size"
-        v-model.number="danmakuSize"
-        type="range"
-        min="16"
-        max="32"
-        :aria-valuetext="`${danmakuSize} pixels`"
-        @input="danmakuPreferences"
-      />
-      <button type="button" @click="reloadDanmaku">Reload danmaku</button>
-    </div>
-    <p v-if="controlNote" id="control-note" class="hint">{{ controlNote }}</p>
-    <div class="actions">
-      <button
-        type="button"
-        :aria-disabled="!canPlay || undefined"
-        :aria-describedby="controlNote ? 'control-note' : undefined"
-        @click="command('play')"
+      <div
+        class="player-controls"
+        @pointerdown="wake"
+        @pointerenter="
+          controlsHovered = true;
+          wake();
+        "
+        @pointerleave="
+          controlsHovered = false;
+          wake();
+        "
       >
-        Play together
-      </button>
-      <button
-        type="button"
-        :aria-disabled="!canControl || undefined"
-        :aria-describedby="controlNote ? 'control-note' : undefined"
-        @click="command('pause')"
-      >
-        Pause together
-      </button>
-      <button
-        type="button"
-        :aria-disabled="!canControl || undefined"
-        :aria-describedby="controlNote ? 'control-note' : undefined"
-        @click="command('replay')"
-      >
-        Replay
-      </button>
-    </div>
-    <form class="form-row" @submit.prevent="command('seek')">
-      <label for="seek-seconds">Seek to seconds</label
-      ><input
-        id="seek-seconds"
-        v-model.number="seekSeconds"
-        type="number"
-        min="0"
-        :max="Math.floor((current.media?.durationMs ?? 0) / 1000)"
-        step="0.1"
-        required
-        :readonly="!canControl"
-      /><button
-        :aria-disabled="!canControl || undefined"
-        :aria-describedby="controlNote ? 'control-note' : undefined"
-      >
-        Seek together
-      </button>
-    </form>
-    <div class="form-row">
-      <button type="button" @click="fullscreen">Fullscreen locally</button>
-      <label class="checkbox"
-        ><input id="local-mute" v-model="muted" type="checkbox" /> Mute locally</label
-      ><label for="local-volume">Local volume</label
-      ><input
-        id="local-volume"
-        v-model.number="volume"
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        :aria-valuetext="`${Math.round(volume * 100)}%${muted ? ' (muted)' : ''}`"
-      />
-    </div>
-    <h4 class="media-choice">Choose media</h4>
-    <template v-if="host"
-      ><label for="media-label">Shared media label (optional)</label
-      ><input id="media-label" v-model="label" maxlength="120" :readonly="loading"
-    /></template>
-    <form class="bilibili-selection" @submit.prevent="chooseBilibili">
-      <template v-if="host">
-        <label for="bilibili-url">Bilibili video URL or BV identifier</label>
-        <input
-          id="bilibili-url"
-          v-model="bilibiliURL"
-          maxlength="2048"
-          placeholder="https://www.bilibili.com/video/BV…"
-          :readonly="!active || !connected || loading || !!uncertain"
-          :aria-invalid="invalidBilibili || undefined"
-          @input="invalidBilibili = false"
+        <div class="seek-track" @pointermove="hoverSeek" @pointerleave="hoveredTime = undefined">
+          <div
+            class="buffered-track"
+            :style="{ width: `${totalSeconds ? (buffered / totalSeconds) * 100 : 0}%` }"
+          />
+          <div
+            class="played-track"
+            :style="{
+              width: `${totalSeconds ? ((dragging ? seekSeconds : position) / totalSeconds) * 100 : 0}%`,
+            }"
+          />
+          <input
+            id="seek-seconds"
+            :value="dragging ? seekSeconds : position"
+            type="range"
+            min="0"
+            :max="totalSeconds || 1"
+            step="0.1"
+            aria-label="Seek"
+            :aria-valuetext="`${formatTime(dragging ? seekSeconds : position)} of ${formatTime(totalSeconds)}`"
+            :disabled="!canControl"
+            @input="dragSeek"
+            @change="seek"
+          />
+          <span v-if="hoveredTime !== undefined" class="seek-preview">{{
+            formatTime(hoveredTime)
+          }}</span>
+        </div>
+        <div class="control-bar">
+          <div class="control-start">
+            <button
+              class="icon-button"
+              :aria-label="
+                isPlaying
+                  ? 'Pause together'
+                  : current.playback.phase === 'ended'
+                    ? 'Replay'
+                    : 'Play together'
+              "
+              :title="controlNote || (isPlaying ? 'Pause (Space)' : 'Play (Space)')"
+              :disabled="isPlaying ? !canControl : !canPlay"
+              :aria-describedby="controlNote ? 'control-note' : undefined"
+              @click="
+                command(
+                  isPlaying ? 'pause' : current.playback.phase === 'ended' ? 'replay' : 'play',
+                )
+              "
+            >
+              <Icon
+                :name="isPlaying ? 'pause' : current.playback.phase === 'ended' ? 'replay' : 'play'"
+                :size="22"
+              />
+            </button>
+            <button
+              class="icon-button"
+              :aria-label="muted ? 'Unmute locally' : 'Mute locally'"
+              :aria-pressed="muted"
+              @click="muted = !muted"
+            >
+              <Icon :name="muted || !volume ? 'mute' : 'volume'" />
+            </button>
+            <input
+              id="local-volume"
+              v-model.number="volume"
+              class="volume-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              aria-label="Local volume"
+              :aria-valuetext="`${Math.round(volume * 100)}%${muted ? ' (muted)' : ''}`"
+            />
+            <span class="player-time"
+              >{{ formatTime(dragging ? seekSeconds : position)
+              }}<span>/ {{ formatTime(totalSeconds) }}</span></span
+            >
+          </div>
+          <div class="control-end">
+            <button
+              v-if="current.media?.kind === 'bilibili'"
+              class="icon-button danmaku-toggle"
+              aria-label="Show danmaku locally"
+              :aria-pressed="showDanmaku"
+              @click="
+                showDanmaku = !showDanmaku;
+                danmakuPreferences();
+              "
+            >
+              <Icon name="chat" />
+            </button>
+            <button
+              v-if="current.media?.kind === 'bilibili'"
+              class="quality-trigger quiet"
+              :aria-expanded="playerMenu"
+              @click="playerMenu = !playerMenu"
+            >
+              {{ streamInfo ? qualityName(streamInfo.quality) : 'Quality'
+              }}<Icon name="chevron" :size="14" />
+            </button>
+            <button
+              class="icon-button"
+              aria-label="Player settings"
+              :aria-expanded="playerMenu"
+              @click="playerMenu = !playerMenu"
+            >
+              <Icon name="settings" />
+            </button>
+            <button class="icon-button" aria-label="Fullscreen locally" @click="fullscreen">
+              <Icon name="fullscreen" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-if="playerMenu" class="player-menu" @keydown.esc.stop="playerMenu = false">
+        <div class="menu-heading">
+          <strong>Playback preferences</strong
+          ><button
+            class="icon-button quiet"
+            aria-label="Close player settings"
+            @click="playerMenu = false"
+          >
+            <Icon name="close" :size="16" />
+          </button>
+        </div>
+        <label for="menu-volume">Volume</label
+        ><input
+          id="menu-volume"
+          v-model.number="volume"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          :aria-valuetext="`${Math.round(volume * 100)}%`"
         />
-        <label for="bilibili-part">Bilibili part</label>
-        <input
-          id="bilibili-part"
-          v-model.number="part"
-          type="number"
-          min="1"
-          max="10000"
-          required
-          :readonly="!active || !connected || loading || !!uncertain"
-        />
-      </template>
+        <template v-if="current.media?.kind === 'bilibili'">
+          <label for="video-quality">Video quality</label
+          ><select
+            v-if="streamInfo"
+            id="video-quality"
+            :value="streamInfo.quality"
+            :disabled="loading"
+            @change="changeQuality"
+          >
+            <option v-for="q in streamInfo.qualities" :key="q" :value="q">
+              {{ qualityName(q) }}
+            </option>
+          </select>
+          <p v-else class="hint">Quality is available after the video loads.</p>
+          <label for="danmaku-density">Danmaku density</label
+          ><input
+            id="danmaku-density"
+            v-model.number="density"
+            type="range"
+            min="1"
+            max="40"
+            :aria-valuetext="`${density} comments`"
+            @input="danmakuPreferences"
+          />
+          <label for="danmaku-size">Danmaku text size</label
+          ><input
+            id="danmaku-size"
+            v-model.number="danmakuSize"
+            type="range"
+            min="16"
+            max="32"
+            :aria-valuetext="`${danmakuSize} pixels`"
+            @input="danmakuPreferences"
+          />
+          <p class="hint" role="status">
+            {{ showDanmaku ? danmakuStatus : `Hidden by you · ${danmakuStatus}` }}
+          </p>
+          <button class="quiet" @click="reloadDanmaku">Reload danmaku</button>
+        </template>
+      </div>
+    </div>
+    <div class="video-information">
+      <div class="video-description">
+        <span class="source-label">{{
+          current.media?.kind === 'local' ? 'LOCAL FILE' : 'BILIBILI'
+        }}</span>
+        <h3
+          :title="
+            videoTitle ||
+            (current.media?.kind === 'local'
+              ? current.media.label || 'Watching together'
+              : current.media?.bvid)
+          "
+        >
+          {{
+            videoTitle ||
+            (current.media?.kind === 'local'
+              ? current.media.label || 'Watching together'
+              : current.media?.bvid)
+          }}<span v-if="current.media?.kind === 'bilibili'" class="hint">
+            · Part {{ current.media.part }}</span
+          >
+        </h3>
+        <p v-if="controlNote" id="control-note" class="hint">{{ controlNote }}</p>
+      </div>
       <button
-        v-if="host || current.media?.kind === 'bilibili'"
-        :aria-disabled="!active || !connected || loading || !!uncertain || undefined"
+        v-if="host"
+        class="quiet change-media"
+        :disabled="loading || !connected || !active || !!uncertain"
+        @click="replaceOpen = true"
       >
-        {{ host ? 'Select Bilibili video' : 'Load room Bilibili video' }}
+        <Icon name="plus" :size="16" />Change video
       </button>
-    </form>
-    <p class="hint">
-      Bilibili needs the
-      <a href="/userscripts/ovs-bilibili.user.js" target="_blank" rel="noopener noreferrer"
-        >OVS Bilibili helper 1.0.0</a
-      >
-      in Tampermonkey. Install or update from this instance, then reload. Each browser uses its own
-      Bilibili access. Local files work without the helper.
+    </div>
+    <div class="playback-status">
+      <div role="status">
+        <span class="status-dot" />{{ status }}<span class="separator">·</span>{{ calibration }}
+      </div>
+      <span class="media-status" data-testid="media-status" :data-state="shownStatus">{{
+        readinessText[shownStatus]
+      }}</span
+      ><span data-testid="playback-phase" :data-state="current.playback.phase">{{
+        phaseText[current.playback.phase]
+      }}</span>
+    </div>
+    <div v-if="roomError" class="notice error" role="alert">
+      <span>{{ roomError }}</span
+      ><button v-if="roomErrorReload" class="quiet" @click="reload">Reload page</button>
+    </div>
+    <p v-if="hostNotice" class="notice" role="status">
+      The host left. Everyone can now control playback.
     </p>
-    <label for="local-video">{{
-      host ? 'Select local video for the room' : 'Select matching local video'
-    }}</label>
-    <input
-      id="local-video"
-      type="file"
-      accept="video/*,.mkv"
-      :disabled="!active"
-      :aria-disabled="!connected || !!uncertain || undefined"
-      :aria-describedby="controlNote ? 'control-note' : undefined"
-      @click="(event) => (!connected || uncertain) && event.preventDefault()"
-      @change="choose"
-    />
-    <p class="hint">
-      Each participant selects their own file. Only matching metadata is shared. File names and
-      video bytes stay in your browser.
+    <div v-if="uncertain" class="notice" role="status">
+      <span>Checking the command result.</span
+      ><button :disabled="!connected" @click="transport.resolveUncertain()">
+        Check original command
+      </button>
+    </div>
+    <p v-if="waitTimedOut" class="notice" role="status">
+      Waiting timed out. The room stays paused.
+      {{ permitted ? 'Select Play to try again.' : 'The host can retry playback.' }}
     </p>
-    <p class="hint">
-      After reloading, select your file or load the room’s Bilibili video again. Sampled file
-      matching detects accidental differences. Browser and codec support varies. Controller
-      permission still applies while the host is disconnected.
-    </p>
+    <Modal v-if="replaceOpen" title="Change the video" @close="replaceOpen = false"
+      ><MediaPicker ref="mediaPicker" :room-id="current.roomId" :disabled="loading" />
+      <p class="hint">Everyone will pause at the start of the new video.</p>
+      <button :disabled="loading" @click="replaceMedia">Use this video</button></Modal
+    >
   </section>
 </template>

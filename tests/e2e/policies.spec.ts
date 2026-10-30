@@ -1,3 +1,4 @@
+import { createLocalRoom, invitationLink, dismissHelper, settings, seekTo } from './flows';
 import { expect, test } from '../../web/playwright-fixtures';
 import { generatedVideo } from './media';
 
@@ -11,23 +12,24 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
   const file = { name: 'policy-fixture.webm', mimeType: 'video/webm', buffer: fixture };
   try {
     await page.goto('/');
-    await page.getByLabel('Room title', { exact: true }).fill('Policies and recovery');
-    await page.getByRole('button', { name: 'Create room', exact: true }).click();
+    await createLocalRoom(
+      page,
+      { name: 'synthetic.webm', mimeType: 'video/webm', buffer: fixture },
+      'Policies and recovery',
+    );
     await expect(page.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-    await page.getByLabel('Playback controls').selectOption('everyone');
-    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+    await settings(page, 'everyone');
     const roomURL = page.url(),
-      invitation = await page.getByLabel('Invitation link').inputValue();
+      invitation = await invitationLink(page);
     const other = await guest.newPage();
     await other.goto(invitation);
-    await other.getByRole('button', { name: 'Join room', exact: true }).click();
+    await dismissHelper(other);
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await page.getByRole('button', { name: 'Play together', exact: true }).click();
     await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'waiting');
-    await page.getByLabel('Seek to seconds').fill('5');
-    await page.getByRole('button', { name: 'Seek together', exact: true }).click();
+    await seekTo(page, Number('5'));
     await expect(
       page
         .getByRole('status')
@@ -55,6 +57,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
     await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     const late = await guest.newPage();
     await late.goto(roomURL);
+    await dismissHelper(late);
     await expect(late.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await late.locator('#local-video').setInputFiles(file);
     await expect(late.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
@@ -68,11 +71,28 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
     await expect(late.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     const returned = await page.context().newPage();
     await returned.goto(roomURL);
+    await dismissHelper(returned);
     await returned.locator('#local-video').setInputFiles(file);
     await expect(returned.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
-    await returned.getByRole('button', { name: 'Play together', exact: true }).click();
     await expect(late.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     await returned.screenshot({ path: testInfo.outputPath('policies.png'), fullPage: true });
+    // Explicit host departure changes server permission while preserving actual playback.
+    await settings(returned, 'host');
+    await returned.getByRole('button', { name: 'Leave', exact: true }).click();
+    await expect(
+      late
+        .getByRole('status')
+        .filter({ hasText: 'The host left. Everyone can now control playback.' }),
+    ).toBeVisible();
+    await late.getByRole('button', { name: 'Pause together', exact: true }).click();
+    await expect
+      .poll(() => late.locator('video').evaluate((video: HTMLVideoElement) => video.paused))
+      .toBe(true);
+    await late.getByRole('button', { name: 'Leave', exact: true }).click();
+    await expect(
+      late.getByRole('heading', { name: 'Start a watch party', exact: true }),
+    ).toBeVisible();
+    expect((await late.request.get(`/api/v2${new URL(roomURL).pathname}`)).status()).toBe(404);
     await returned.close();
   } finally {
     await guest.close();

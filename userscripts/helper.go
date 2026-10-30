@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-//go:embed helper.user.js bridge-json.js
+//go:embed helper.user.js bridge-json.js release.json
 var source embed.FS
 
 // Handler generates installable code using only the validated deployment origin.
@@ -33,8 +33,29 @@ func Handler(origin string) (http.Handler, error) {
 		host = "[" + host + "]"
 	}
 	encoded, _ := json.Marshal(origin)
-	body := strings.NewReplacer("/* OVS_BRIDGE_JSON */", strings.TrimPrefix(string(parser), "export "), "'{{ORIGIN}}'", string(encoded), "{{ORIGIN}}", origin, "{{MATCH}}", u.Scheme+"://"+host+"/*").Replace(string(code))
+	release, err := source.ReadFile("release.json")
+	if err != nil {
+		return nil, err
+	}
+	var metadata struct {
+		Version  string `json:"version"`
+		Protocol int    `json:"protocol"`
+	}
+	if err := json.Unmarshal(release, &metadata); err != nil {
+		return nil, err
+	}
+	body := strings.NewReplacer("{{HELPER_VERSION}}", metadata.Version, "/* OVS_BRIDGE_JSON */", strings.TrimPrefix(string(parser), "export "), "'{{ORIGIN}}'", string(encoded), "{{ORIGIN}}", origin, "{{MATCH}}", u.Scheme+"://"+host+"/*").Replace(string(code))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/userscripts/ovs-bilibili.version.json" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(release)
+			} else if r.Method != http.MethodHead {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

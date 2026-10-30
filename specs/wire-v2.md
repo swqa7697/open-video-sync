@@ -37,13 +37,14 @@ Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate
 | `PATCH /me` | `{displayName}` | Same profile/session shape |
 | `DELETE /session` | `{}` | `{forgotten:true}` after persistent revocation and socket closure |
 | `GET /rooms` | Optional existing `cursor` and `limit` | `{rooms:[{roomId,title,role}],nextCursor}` from memory |
-| `POST /rooms` | `{title,settings}` | `{snapshot,invitation,replayed}` |
+| `POST /rooms` | `{title,settings,media}` | `{snapshot,invitation,replayed}` |
 | `POST /invitations/redeem` | Exactly `{linkSecret}` or `{code}` | `{snapshot,replayed}` |
 | `GET /rooms/{roomId}` | None | Authorized snapshot from memory |
 | `PATCH /rooms/{roomId}/settings` | `{epoch,expectedRevision,settings}` | `{snapshot}` |
 | `GET /rooms/{roomId}/invitations` | None | `{invitation}`; host only |
 | `POST /rooms/{roomId}/invitations` | `{epoch,expectedRevision}` | `{snapshot,invitation}`; host-only reset |
 | `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}` | `{roomId,revision,removedMemberId}` |
+| `POST /rooms/{roomId}/leave` | `{epoch,expectedRevision}` | Committed departure receipt; host membership retained for return |
 | `DELETE /rooms/{roomId}` | `{epoch,expectedRevision}` | `{roomId,revision,closed:true}` |
 
 `Invitation` is `{linkSecret,code}`. It has no expiry. GET reuses the current invitation without rotating it.
@@ -60,7 +61,8 @@ Retain request digests and resource IDs, not copies of secret-bearing requests. 
 A create replay returns the current authorized snapshot and host invitation; a redeem replay requires current membership.
 Receipt eviction or process restart removes the recovery guarantee. A create retry sends `Idempotency-Replay-Only: true`;
 the server returns a retained result or `request_outcome_unknown` without creating another room.
-After an uncertain expired create request, refresh the room list and require explicit user action.
+The cryptographically random creation key is also the room ID. Compute the existing room-specific fingerprint before creation. Persist the initial media in the creation transaction.
+After an uncertain expired create request, GET that known room ID to recover an authorized result. If unavailable, require explicit new intent; never depend on a room list.
 Do not automatically create a second room to resolve an unknown outcome. Redemption of an existing membership remains naturally idempotent.
 
 ## Room snapshots

@@ -47,7 +47,12 @@ export class BilibiliAdapter implements PlayerAdapter {
       { signal: this.lifetime.signal },
     );
   }
-  async load(bvid: string, part: number, signal: AbortSignal): Promise<MediaDescriptor> {
+  async load(
+    bvid: string,
+    part: number,
+    signal: AbortSignal,
+    quality?: number,
+  ): Promise<MediaDescriptor> {
     const abort = () => this.dispose();
     signal.addEventListener('abort', abort, { once: true });
     this.lifetime.signal.addEventListener(
@@ -60,7 +65,12 @@ export class BilibiliAdapter implements PlayerAdapter {
       await this.bridge.hello();
       this.assertOwned();
       this.info = decodeInfo(
-        await this.bridge.call('open', { bvid, part, generation: this.generation }),
+        await this.bridge.call('open', {
+          bvid,
+          part,
+          generation: this.generation,
+          ...(quality ? { quality } : {}),
+        }),
         bvid,
         part,
       );
@@ -117,6 +127,9 @@ export class BilibiliAdapter implements PlayerAdapter {
         ? error
         : new HelperError('invalid-media');
     }
+  }
+  get mediaInfo(): MediaInfo | undefined {
+    return this.info;
   }
   private assertOwned(): void {
     if (this.disposed) throw new DOMException('Cancelled', 'AbortError');

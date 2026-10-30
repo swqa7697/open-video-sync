@@ -6,12 +6,11 @@ defineProps<{ disabled: boolean }>();
 <template>
   <fieldset :disabled="disabled">
     <legend>Room preferences</legend>
-    <label
-      >Playback controls<select v-model="settings.controllers">
-        <option value="host">Host only</option>
-        <option value="everyone">Everyone</option>
-      </select></label
-    >
+    <label for="playback-controls">Playback controls</label>
+    <select id="playback-controls" v-model="settings.controllers">
+      <option value="host">Host only</option>
+      <option value="everyone">Everyone</option>
+    </select>
     <label class="checkbox"
       ><input v-model="settings.waitForAll" type="checkbox" />Wait for everyone</label
     >

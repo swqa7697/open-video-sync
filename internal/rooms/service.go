@@ -146,14 +146,28 @@ func (s *Service) saveReceipt(k, owner string, o Outcome) {
 
 // Create commits the room and host membership before publishing memory state.
 func (s *Service) Create(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings) (Result, error) {
-	return s.create(ctx, p, key, title, settings, false)
+	return s.create(ctx, p, key, title, settings, nil, false)
 }
 
 // RecoverCreate checks a retained result without ever creating another room.
 func (s *Service) RecoverCreate(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings) (Result, error) {
-	return s.create(ctx, p, key, title, settings, true)
+	return s.create(ctx, p, key, title, settings, nil, true)
 }
-func (s *Service) create(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings, recoveryOnly bool) (Result, error) {
+
+// CreateSelected atomically creates a room and its initial descriptor. The random request
+// key is also the room ID, allowing room-specific local matching before creation.
+func (s *Service) CreateSelected(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings, media contracts.MediaDescriptor, recoveryOnly bool) (Result, error) {
+	b, err := json.Marshal(media)
+	if err != nil {
+		return Result{}, contracts.Failure("invalid_input")
+	}
+	validated, err := contracts.DecodeMedia(b)
+	if err != nil {
+		return Result{}, contracts.Failure("invalid_input")
+	}
+	return s.create(ctx, p, key, title, settings, &validated, recoveryOnly)
+}
+func (s *Service) create(ctx context.Context, p identity.Session, key, title string, settings contracts.RoomSettings, initial *contracts.MediaDescriptor, recoveryOnly bool) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if !contracts.ValidID(key) || !contracts.ValidTitle(title) || validateSettings(settings) != nil {
@@ -168,7 +182,7 @@ func (s *Service) create(ctx context.Context, p identity.Session, key, title str
 		return Result{}, err
 	}
 	defer release()
-	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "rooms.create", title, contracts.SettingsArray(settings)})
+	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "rooms.create", title, contracts.SettingsArray(settings), initial})
 	if o, ok := s.receipt(k); ok {
 		snap, err := s.Snapshot(ctx, p, o.RoomID)
 		if err != nil {
@@ -189,6 +203,9 @@ func (s *Service) create(ctx context.Context, p identity.Session, key, title str
 	id, err := contracts.RandomID(s.Random)
 	if err != nil {
 		return Result{}, err
+	}
+	if initial != nil {
+		id = key
 	}
 	mid, err := contracts.RandomID(s.Random)
 	if err != nil {
@@ -214,12 +231,28 @@ func (s *Service) create(ctx context.Context, p identity.Session, key, title str
 		s.mu.Unlock()
 		return Result{}, contracts.Failure("capacity_reached")
 	}
+	if _, exists := s.records[id]; exists {
+		s.mu.Unlock()
+		return Result{}, contracts.Failure("request_outcome_unknown")
+	}
+	if _, exists := s.pending[id]; exists {
+		s.mu.Unlock()
+		return Result{}, contracts.Failure("busy")
+	}
 	s.pending[id] = p.IdentityID
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
 	now := s.Now().UnixMilli()
-	r := Room{ID: id, Title: title, HostIdentityID: p.IdentityID, Revision: 1, CreatedAtMs: now, Settings: settings, Members: []Member{{mid, p.IdentityID, p.DisplayName, now}}, Invite: record}
-	if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.InsertRoom(r) }); err != nil {
+	r := Room{ID: id, Title: title, HostIdentityID: p.IdentityID, Revision: 1, CreatedAtMs: now, Settings: settings, Members: []Member{{mid, p.IdentityID, p.DisplayName, now}}, Invite: record, Media: initial}
+	if err := s.Repository.Transact(ctx, func(tx Tx) error {
+		if err := tx.InsertRoom(r); err != nil {
+			return err
+		}
+		if initial != nil {
+			return tx.SelectMedia(id, *initial)
+		}
+		return nil
+	}); err != nil {
 		return Result{}, err
 	}
 	s.install(r)
@@ -386,8 +419,23 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 		}
 		c := s.coordinator(id)
 		r := cloneRoom(c.room)
-		if err := authorize(r, p, m.Operation != "remove"); err != nil {
+		if err := authorize(r, p, m.Operation != "remove" && m.Operation != "leave"); err != nil {
 			return err
+		}
+		if m.Operation == "leave" {
+			if epoch != m.Epoch || r.Revision != m.ExpectedRevision {
+				return contracts.Failure("stale_state")
+			}
+			self, _ := member(r, p.IdentityID)
+			if s.finalDeparture(c, self.ID) {
+				m.Operation = "close"
+			} else if p.IdentityID == r.HostIdentityID {
+				m.Operation = "host_leave"
+				m.MemberID = self.ID
+			} else {
+				m.Operation = "remove"
+				m.MemberID = self.ID
+			}
 		}
 		removed := ""
 		if m.Operation == "remove" {
@@ -413,6 +461,9 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 		}
 		oldSettings := r.Settings
 		switch m.Operation {
+		case "host_leave":
+			r.Settings.Controllers = "everyone"
+			removed = m.MemberID
 		case "settings":
 			r.Settings = m.Settings
 		case "rotate", "remove":
@@ -433,7 +484,7 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 		}
 		if err := s.Repository.Transact(ctx, func(tx Tx) error {
 			switch m.Operation {
-			case "settings":
+			case "host_leave", "settings":
 				return tx.UpdateSettings(id, r.Settings)
 			case "rotate":
 				return tx.ResetInvitation(id, r.Invite)
@@ -456,6 +507,7 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 			delete(s.records, id)
 			delete(s.links, r.Invite.LinkHash)
 			delete(s.codes, r.Invite.CodeHash)
+			delete(s.restored, id)
 			s.mu.Unlock()
 		} else {
 			s.install(r)
@@ -474,6 +526,12 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 		}
 		receipt = Receipt{RoomID: id, Revision: r.Revision, RemovedMemberID: removed, Closed: m.Operation == "close"}
 		s.managementCommitted(id, epoch, m.Operation, removed, r.Revision)
+		if m.Operation == "host_leave" {
+			c.hostDeadline = 0
+		}
+		if m.Operation == "remove" && len(s.live(r, c).connections) == 0 && c.emptyDeadline == 0 {
+			c.emptyDeadline = s.monotonicMs() + departureGraceMs
+		}
 		if removed != "" && s.OnRemoved != nil {
 			s.OnRemoved(id, removed)
 		}

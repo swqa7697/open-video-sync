@@ -4,7 +4,7 @@
 
 Open Video Sync (OVS) is a private, self-hosted web tool that lets users watch videos together with synchronized playback.
 
-Keep the product small: create a room, share an invitation, select a video, and watch together. Use sensible defaults instead of technical settings or operator workflows.
+Keep the product small: select a video, create a room, share an invitation, and watch together. Use sensible defaults instead of technical settings or operator workflows.
 
 ## Requirements
 
@@ -45,7 +45,9 @@ Keep the product small: create a room, share an invitation, select a video, and 
 ## Simplicity boundaries
 
 - Keep invitations reusable until the host resets them or closes the room. Sharing again does not replace the invitation. Removing a member also resets the invitation.
-- Do not automatically expire rooms or expose retention settings. Keep normal session expiry and explicit room/member management.
+- Close rooms after everyone leaves. Explicit final departure closes immediately; disconnected pages have 30 seconds to return. Restored rooms have a 60-second startup reconnection window.
+- After host departure, persist Everyone playback control without transferring host management. A returning host can explicitly change that setting.
+- Create rooms with initial media directly on the home page. Invitation links enter automatically. Keep management in dialogs and playback controls inside the player, with local quality and danmaku controls but no speed menu.
 - Late joiners catch up when ready. A new page takes over playback from the same identity's previous page in that room.
 - Do not add backup/restore commands, restored-credential invalidation, automatic database recovery, metrics services, or playback diagnostic telemetry.
 - Do not expose drift thresholds, correction modes, waiting timeouts, late-join modes, or per-member waiting exclusions.

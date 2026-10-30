@@ -12,7 +12,7 @@ The retained stage tracker records validation. Earlier stage evidence describes 
 
 ### 1.1 Core product
 
-OVS is a private, self-hosted tool for watching together. A participant creates a room, shares an invitation, selects media, and plays with others.
+OVS is a private, self-hosted tool for watching together. A participant selects media, creates a room, shares an invitation, and plays with others.
 Keep anonymous persistent identities, multiple private rooms, host permissions, basic waiting, local files, and Bilibili with danmaku.
 Each participant obtains media independently. OVS carries control messages and bounded matching metadata only.
 
@@ -25,7 +25,7 @@ Desktop Chromium and Firefox are required. Safari is outside the roadmap; mobile
 Do not add playlists, chat, public discovery, registered accounts, account recovery, federation, horizontal replicas, or media transfer.
 Do not add backup/restore commands, post-restore invalidation, online backup, automatic database repair/recovery, operational metric services, or diagnostic playback telemetry.
 Do not expose synchronization thresholds, late-join modes, per-member waiting exclusions, or retention tuning.
-Room expiry, invitation expiry, periodic playback checkpoints, and durable playback-command receipts are outside the target design.
+Invitation expiry, periodic playback checkpoints, and durable playback-command receipts are outside the target design.
 YouTube and alternative transports are outside first-release work. Keep WebSocket without a separate transport research gate.
 
 ## 2. Architecture and ownership
@@ -109,9 +109,11 @@ Revocation immediately invalidates in-memory authorization and closes its socket
 A persistent room contains its ID, title, host, two settings, membership, invitation, and optional selected media.
 Rooms are private, with no public directory. Knowing a room ID does not authorize access.
 The host selects media, changes settings, removes members, resets invitations, and closes the room. A non-host can leave.
-Membership survives disconnect and restart. The host leaves by disconnecting or closing the room.
+Membership survives short disconnects and restart. Explicit final departure closes immediately; final connection loss starts a 30-second grace. Returning connections cancel closure. Restored empty rooms have 60 seconds to reconnect after startup. Visibility changes and atomic tab replacement are not departures.
 
-Do not automatically delete idle rooms. Closing a room explicitly deletes its persistent records and closes its runtime resources.
+A host may leave without closing for others. Persist Everyone controls before acknowledging host departure. Keep host membership for authorized return; do not elect a host or grant management rights. Keep Everyone on return until the host deliberately changes it. A disconnected host receives the same 30-second departure grace.
+
+Automatic or explicit closure deletes persistent records before disposing runtime resources. Failed lifecycle writes leave memory unchanged, publish a safe error to remaining connections, and disable further automatic lifecycle writes until restart. Existing playback continues.
 Bound stored rooms and membership with existing internal resource limits. Do not turn those limits into capacity promises or a retention feature.
 
 ### 4.3 Invitations
@@ -136,8 +138,7 @@ Reloading that page can take ownership again. Do not add a lease-management cont
 Server-side connection identity still rejects messages from replaced sockets. Different rooms remain independent.
 
 A disconnected member has a fixed 15-second grace in an existing wait. Remove the member from that wait after the grace.
-The host follows the same connection rule. Do not add a second permission lock after host loss; `controllers` remains authoritative.
-In host-only mode, only the host can issue new controls. With everyone controls, remaining participants can continue.
+Host departure after its separate 30-second grace changes persisted `controllers` to Everyone, preserving playback. The 15-second waiting grace remains independent.
 Never elect or transfer a host automatically.
 
 ## 5. Room state and policies
@@ -294,6 +295,11 @@ Render bounded scrolling, top, and bottom text comments against observed video t
 Visibility, density, and text size remain local. Ignore executable/advanced-script comments. No submission, server persistence, or relay.
 Comment failure is distinct from playback failure and from hiding comments.
 
+The helper returns actual AVC quality IDs from the participant's DASH response and accepts a requested ID on `open`.
+Only returned tracks are offered. Quality switching opens a new local adapter, retains room playback intent, reports readiness, and converges to the current timeline.
+Never claim a pending/failed quality is active. No adaptive Auto mode is implemented. Live quality switching requires evidence beyond the fixed-quality B0 baseline.
+`userscripts/release.json` is the single helper release source; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.
+
 ## 9. HTTP and WebSocket contracts
 
 [Version 2](wire-v2.md) defines the implemented application contract. Helper protocol and local fingerprints retain version 1.
@@ -306,7 +312,7 @@ Real-time socket messages cover controls, media selection, readiness, snapshots,
 Remove `member.observation`, `member.activate`, and `waiting.exclude`. Keep bounded strict decoding, safe errors, and connection sequence checks.
 
 Keep short-lived HTTP retry results in bounded application memory. No HTTP idempotency table is required.
-Existing-member redemption is naturally idempotent. On restart or an expired create receipt, reconcile the room list and require fresh intent instead of retrying blindly.
+Existing-member redemption is naturally idempotent. On restart or an expired create receipt, GET the known random creation ID and require fresh intent if unavailable. Never retry creation blindly or rely on the removed personal list.
 A reused in-memory request ID with changed input is rejected. Never promise recovery of a command outcome across restart.
 
 ## 10. SQLite persistence
@@ -327,7 +333,7 @@ SQLite is not a runtime state store, queue, authorization polling mechanism, or 
 Do not persist playback checkpoints, command results, HTTP retry receipts, storage probes, connection state, runtime revisions, or media generations.
 Do not write activity timestamps merely because someone watches, sends a heartbeat, or requests a snapshot.
 Session expiry remains enforced; expired sessions may be removed on startup and low-frequency credential maintenance.
-Do not add automatic room/invitation/identity retention policies.
+Only empty-room departure cleanup is automatic; do not add invitation/identity retention policies.
 
 ### 10.2 Reads, writes, and failure
 
@@ -371,7 +377,9 @@ No administrator-facing tuning dashboard or metrics endpoint is required.
 
 ## 12. User experience, packaging, and operations
 
-The main journey is create/join, share, select media, and watch. Show names, connection state, readiness, and available controls.
+The main journey is select media on home, create or automatically redeem an invitation, share, and watch.
+Home has inline Bilibili/local selection and invitation input, with no room directory. Room management uses accessible dialogs. The dark player integrates seeking, replay, volume, mute, fullscreen, danmaku, and real playable quality selection. Do not expose playback speed.
+Retain the creator's browser-local file through the in-app transition. Automatically load Bilibili on entry and media changes; local participants choose their own matching file. Helper onboarding uses a non-owning probe, a banner, and a dismissible entry dialog. Use the instance-bundled helper release metadata as the version source. Detect a changed deployed helper requirement before recommending installation. Show names, connection state, readiness, and available controls.
 The host sees the two settings, sharing/reset, remove-member, and close-room actions. Keep engineering parameters out of the UI.
 Show actionable errors such as Choose the same file, Enable playback, Waiting for a participant, and Platform access unavailable.
 Keep keyboard operation, visible focus, text labels, responsive layouts, and reduced-motion support.

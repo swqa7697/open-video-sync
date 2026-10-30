@@ -298,7 +298,7 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	}
 }
 
-func TestEmptyCoordinatorEvictionReactivatesAtZeroWithoutStorage(t *testing.T) {
+func TestDisconnectedCoordinatorPreservesRuntimeDuringDepartureGrace(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(ctx, t.TempDir())
 	if err != nil {
@@ -352,12 +352,216 @@ func TestEmptyCoordinatorEvictionReactivatesAtZeroWithoutStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Epoch == snap.Epoch || restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 0 || restored.Revision != 1 || restored.Barrier != nil {
-		t.Fatal("reactivation reused stale runtime state", restored)
+	if restored.Epoch != snap.Epoch || restored.MediaGeneration != snap.MediaGeneration {
+		t.Fatal("short reconnect lost runtime ownership", restored)
 	}
 	for _, m := range restored.Members {
 		if m.Presence != "offline" || m.Readiness != nil {
 			t.Fatal("ephemeral playback state survived eviction")
 		}
+	}
+	clock.Store(35001)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err := service.Snapshot(ctx, host, snap.RoomID)
+		if err == contracts.Failure("not_found") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("final disconnect did not close after grace", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+}
+
+// Departure contracts have no existing owner: these cases distinguish explicit leave,
+// disconnected ownership, failed writes, and restart cleanup using real SQLite.
+func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
+	for _, mode := range []string{"explicit", "disconnect", "failed-write"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			store, err := storage.Open(ctx, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			repository := &rollbackRepository{Repository: store}
+			service, err := rooms.NewService(repository, time.Now, rand.Reader, rooms.DefaultLimits())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer service.Close()
+			var clock atomic.Int64
+			service.Monotonic = clock.Load
+			host, guest := participant(t, store, time.Now), participant(t, store, time.Now)
+			selected := contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 60000}
+			settings := contracts.DefaultSettings()
+			settings.WaitForAll = false
+			createKey := key(t)
+			created, err := service.CreateSelected(ctx, host, createKey, "Departure", settings, selected, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := created.Snapshot.RoomID
+			if id != createKey || created.Snapshot.Media == nil || *created.Snapshot.Media != selected || created.Snapshot.Playback.Phase != "paused" {
+				t.Fatal("creation did not install initial media atomically")
+			}
+			_, err = service.Redeem(ctx, guest, key(t), "code", created.Invitation.Code)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hostConn, err := service.Connect(ctx, host, id, &sink{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			guestSink := &sink{}
+			guestConn, err := service.Connect(ctx, guest, id, guestSink)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snap, err := service.Snapshot(ctx, host, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			play := contracts.ClientFrame{Type: "playback.command", Action: "play", CommandID: key(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, MediaGeneration: snap.MediaGeneration}
+			if err := service.Handle(ctx, hostConn, play); err != nil {
+				t.Fatal(err)
+			}
+			snap, _ = service.Snapshot(ctx, host, id)
+			if mode == "explicit" {
+				_, _, err = service.Mutate(ctx, host, id, mutation(snap, "leave"))
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				service.Disconnect(hostConn)
+				clock.Store(29000)
+				// Replacing/reconnecting the host before grace must preserve host controls.
+				returned, err := service.Connect(ctx, host, id, &sink{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				service.Disconnect(hostConn) // An old owner's eventual close cannot drop the replacement.
+				before, _ := service.Snapshot(ctx, guest, id)
+				if before.Settings.Controllers != "host" || before.Epoch != snap.Epoch {
+					t.Fatal("reconnect prematurely changed ownership")
+				}
+				service.Disconnect(returned)
+				if mode == "failed-write" {
+					repository.reject.Store(true)
+				}
+				clock.Store(59001)
+			}
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				snap, err = service.Snapshot(ctx, guest, id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "failed-write" {
+					guestSink.mu.Lock()
+					notices := len(guestSink.frames["error"])
+					guestSink.mu.Unlock()
+					if notices > 0 {
+						break
+					}
+				} else if snap.Settings.Controllers == "everyone" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("departure transition did not settle")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			if snap.Playback.Phase != "playing" {
+				t.Fatal("host departure interrupted playback")
+			}
+			if mode == "failed-write" {
+				if snap.Settings.Controllers != "host" {
+					t.Fatal("failed write granted playback permission")
+				}
+				writes := repository.rejections.Load()
+				clock.Store(90000)
+				time.Sleep(300 * time.Millisecond)
+				if repository.rejections.Load() != writes {
+					t.Fatal("lifecycle write was retried automatically")
+				}
+				return
+			}
+			control := contracts.ClientFrame{Type: "playback.command", Action: "pause", CommandID: key(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, MediaGeneration: snap.MediaGeneration}
+			if err := service.Handle(ctx, guestConn, control); err != nil {
+				t.Fatal("remaining member cannot control", err)
+			}
+			// Host-only management is retained even after the playback fallback.
+			latest, _ := service.Snapshot(ctx, guest, id)
+			_, _, err = service.Mutate(ctx, guest, id, mutation(latest, "rotate"))
+			expectCode(t, err, "forbidden")
+			if _, err := service.Connect(ctx, host, id, &sink{}); err != nil {
+				t.Fatal(err)
+			}
+			latest, _ = service.Snapshot(ctx, host, id)
+			if latest.Settings.Controllers != "everyone" {
+				t.Fatal("host return revoked participant controls")
+			}
+			_, _, err = service.Mutate(ctx, host, id, mutation(latest, "leave"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			latest, _ = service.Snapshot(ctx, guest, id)
+			_, receipt, err := service.Mutate(ctx, guest, id, mutation(latest, "leave"))
+			if err != nil || !receipt.Closed {
+				t.Fatal("final explicit departure did not close atomically", err)
+			}
+			_, err = service.Redeem(ctx, host, key(t), "code", created.Invitation.Code)
+			expectCode(t, err, "invalid_invitation")
+			persisted, err := store.LoadRooms(ctx)
+			if err != nil || len(persisted) != 0 {
+				t.Fatal("closed room survived in storage", err)
+			}
+		})
+	}
+}
+
+func TestRestoredEmptyRoomHasBoundedReconnectionWindow(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	host := participant(t, store, time.Now)
+	service, err := rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateSelected(ctx, host, key(t), "Restart window", contracts.DefaultSettings(), contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 10000}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.Close()
+	restored, err := rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	var clock atomic.Int64
+	restored.Monotonic = clock.Load
+	clock.Store(59000)
+	snap, err := restored.Snapshot(ctx, host, created.Snapshot.RoomID)
+	if err != nil || snap.Epoch == created.Snapshot.Epoch || snap.Playback.PositionMs != 0 || snap.Playback.Phase != "paused" {
+		t.Fatal("restart lost reconnection window", err)
+	}
+	clock.Store(60001)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err = restored.Snapshot(ctx, host, snap.RoomID)
+		if err == contracts.Failure("not_found") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("unclaimed restored room did not close", err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

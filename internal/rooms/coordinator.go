@@ -16,32 +16,35 @@ type operation struct {
 	result chan error
 }
 type coordinator struct {
-	epoch    string
-	queue    chan operation
-	done     chan struct{}
-	closed   bool
-	evicting bool
-	live     *liveRoom
-	room     Room
+	epoch                       string
+	queue                       chan operation
+	done                        chan struct{}
+	closed                      bool
+	evicting                    bool
+	live                        *liveRoom
+	room                        Room
+	emptyDeadline, hostDeadline int64
 }
 
 // Service owns the lazy coordinator registry and serializes every room operation.
 type Service struct {
-	Repository    Repository
-	Now           func() time.Time
-	Random        io.Reader
-	Limits        Limits
-	mu            sync.Mutex
-	coordinators  map[string]*coordinator
-	records       map[string]Room
-	names         map[string]string
-	links, codes  map[string]string
-	revoked       map[string]bool
-	receipts      map[string]Outcome
-	receiptOwners map[string]string
-	receiptMu     sync.Mutex
-	requests      map[string]chan struct{}
-	pending       map[string]string
+	Repository      Repository
+	Now             func() time.Time
+	Random          io.Reader
+	Limits          Limits
+	mu              sync.Mutex
+	coordinators    map[string]*coordinator
+	records         map[string]Room
+	names           map[string]string
+	links, codes    map[string]string
+	revoked         map[string]bool
+	receipts        map[string]Outcome
+	receiptOwners   map[string]string
+	receiptMu       sync.Mutex
+	requests        map[string]chan struct{}
+	pending         map[string]string
+	restored        map[string]bool
+	lifecycleFailed bool
 	// SessionValid checks the identity owner in memory when configured.
 	SessionValid func(identity.Session) error
 	stopping     bool
@@ -78,9 +81,13 @@ func NewService(repository Repository, now func() time.Time, random io.Reader, l
 	s.receipts = make(map[string]Outcome)
 	s.receiptOwners = make(map[string]string)
 	s.pending = make(map[string]string)
+	s.restored = make(map[string]bool)
 	for _, r := range records {
 		s.install(r)
+		s.restored[r.ID] = true
 	}
+	s.wg.Add(1)
+	go s.watchRestored()
 	return s, nil
 }
 
@@ -144,6 +151,11 @@ func (s *Service) dispatch(ctx context.Context, id string, run func(context.Cont
 		}
 		record.Revision = 1
 		c = &coordinator{epoch: epoch, queue: make(chan operation, 64), done: make(chan struct{}), room: cloneRoom(record)}
+		c.emptyDeadline = s.monotonicMs() + departureGraceMs
+		if s.restored[id] {
+			c.emptyDeadline = restartGraceMs
+		}
+		c.hostDeadline = c.emptyDeadline
 		s.coordinators[id] = c
 		s.wg.Add(1)
 		go s.serve(id, c)
@@ -196,9 +208,14 @@ func (s *Service) serve(id string, c *coordinator) {
 			return
 		case <-tick.C:
 			s.tickLive(id, c)
+			s.tickLifecycle(c)
+			if c.closed {
+				finish()
+				return
+			}
 		case <-timer.C:
 			s.mu.Lock()
-			if len(c.queue) == 0 && (c.live == nil || len(c.live.connections) == 0) {
+			if len(c.queue) == 0 && c.emptyDeadline == 0 && (c.live == nil || len(c.live.connections) == 0) {
 				c.evicting = true
 				s.mu.Unlock()
 				s.finishLive(id, c)

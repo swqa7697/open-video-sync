@@ -79,7 +79,7 @@ func fail(w http.ResponseWriter, err error) {
 		retry = false
 	case "invalid_invitation":
 		status = 404
-		message = "Invitation unavailable."
+		message = "This invitation is unavailable or the room has closed."
 		retry = false
 	case "upgrade_required":
 		status = 409
@@ -87,7 +87,7 @@ func fail(w http.ResponseWriter, err error) {
 		retry = false
 	case "request_outcome_unknown":
 		status = 409
-		message = "Request recovery expired. Refresh your rooms before choosing a new action."
+		message = "Request recovery expired. Check the original room link before starting a new request."
 		retry = false
 	case "invitation_reset_required":
 		status = 409

@@ -1,3 +1,4 @@
+import { createLocalRoom, invitationLink, dismissHelper, settings, seekTo } from './flows';
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../web/playwright-fixtures';
 import { decodedFrame, generatedVideo } from './media';
@@ -43,20 +44,19 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     const other = await guest.newPage();
     other.on('pageerror', (e) => failures.push(e.message));
     await page.goto('/');
-    await page.getByLabel('Room title', { exact: true }).fill('Local synchronized viewing');
-    await page.getByRole('button', { name: 'Create room', exact: true }).click();
+    await createLocalRoom(
+      page,
+      { name: 'synthetic.webm', mimeType: 'video/webm', buffer: fixture },
+      'Local synchronized viewing',
+    );
     await expect(page.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     const roomURL = page.url(),
-      invitation = await page.getByLabel('Invitation link').inputValue();
+      invitation = await invitationLink(page);
     await other.goto(invitation);
-    await other.getByRole('button', { name: 'Join room', exact: true }).click();
+    await dismissHelper(other);
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
-    await page
-      .getByRole('combobox', { name: 'Playback controls', exact: true })
-      .selectOption('everyone');
-    await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+    await settings(page, 'everyone');
     await expect(page.getByRole('status').filter({ hasText: 'Preferences saved.' })).toBeVisible();
-    await page.getByLabel('Shared media label (optional)').fill('Synthetic video');
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     const changed = Buffer.from(fixture);
@@ -99,8 +99,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             ),
         )
         .toBe(true);
-    await page.getByLabel('Seek to seconds').fill('10');
-    await page.getByRole('button', { name: 'Seek together', exact: true }).click();
+    await seekTo(page, Number('10'));
     for (const player of [page, other])
       await expect
         .poll(() => player.locator('video').evaluate((v) => (v as HTMLVideoElement).currentTime))
@@ -137,8 +136,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .poll(() => other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
       .toBe(true);
     // Both browser roles must control actual decoded playback after reconnect.
-    await other.getByLabel('Seek to seconds').fill('15');
-    await other.getByRole('button', { name: 'Seek together', exact: true }).click();
+    await seekTo(other, Number('15'));
     for (const player of [page, other])
       await expect.poll(() => decodedFrame(player)).toBeGreaterThanOrEqual(450);
     await other.getByRole('button', { name: 'Pause together', exact: true }).click();
@@ -171,6 +169,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     );
     const tab = await page.context().newPage();
     await tab.goto(roomURL);
+    await dismissHelper(tab);
     await expect(tab.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await expect(page.getByText('This room is open elsewhere.', { exact: false })).toBeVisible();
     await expect
@@ -180,8 +179,12 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
           .evaluate((v) => (v as HTMLVideoElement).paused && !v.getAttribute('src')),
       )
       .toBe(true);
-    await tab.getByRole('button', { name: 'Pause together', exact: true }).click();
+    await tab
+      .getByRole('slider', { name: 'Seek', exact: true })
+      .evaluate((input) => input.dispatchEvent(new Event('change', { bubbles: true })));
+    await other.getByRole('button', { name: 'Pause together', exact: true }).click();
     await other.reload();
+    await dismissHelper(other);
     await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'no_media');
     expect(await other.locator('video').getAttribute('src')).toBeNull();
     expect(frames.join('')).not.toContain(file.name);

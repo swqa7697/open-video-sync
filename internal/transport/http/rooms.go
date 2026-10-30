@@ -65,7 +65,9 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		title, ok := o["title"].(string)
 		settings, err := decodeSettings(o["settings"])
-		if !exact(o, "title", "settings") || !ok || !contracts.ValidTitle(title) || err != nil {
+		mediaJSON, mediaErr := json.Marshal(o["media"])
+		media, decodeErr := contracts.DecodeMedia(mediaJSON)
+		if !exact(o, "title", "settings", "media") || !ok || !contracts.ValidTitle(title) || err != nil || mediaErr != nil || decodeErr != nil {
 			fail(w, contracts.Failure("invalid_input"))
 			return
 		}
@@ -75,11 +77,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 			fail(w, contracts.Failure("invalid_input"))
 			return
 		}
-		if replayOnly == "true" {
-			result, err = service.RecoverCreate(r.Context(), p, r.Header.Get("Idempotency-Key"), title, settings)
-		} else {
-			result, err = service.Create(r.Context(), p, r.Header.Get("Idempotency-Key"), title, settings)
-		}
+		result, err = service.CreateSelected(r.Context(), p, r.Header.Get("Idempotency-Key"), title, settings, media, replayOnly == "true")
 		if err != nil {
 			fail(w, err)
 			return
@@ -147,7 +145,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, map[string]any{"invitation": inv})
 	})
-	for pattern, operation := range map[string]string{"PATCH /api/v2/rooms/{roomId}/settings": "settings", "POST /api/v2/rooms/{roomId}/invitations": "rotate", "DELETE /api/v2/rooms/{roomId}/members/{memberId}": "remove", "DELETE /api/v2/rooms/{roomId}": "close"} {
+	for pattern, operation := range map[string]string{"PATCH /api/v2/rooms/{roomId}/settings": "settings", "POST /api/v2/rooms/{roomId}/invitations": "rotate", "DELETE /api/v2/rooms/{roomId}/members/{memberId}": "remove", "DELETE /api/v2/rooms/{roomId}": "close", "POST /api/v2/rooms/{roomId}/leave": "leave"} {
 		a.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			p, err := a.roomAuth(r)
 			if err != nil {
@@ -179,7 +177,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 				return
 			}
 			switch operation {
-			case "remove", "close":
+			case "remove", "close", "leave":
 				respond(w, receipt)
 			case "rotate":
 				respond(w, map[string]any{"snapshot": result.Snapshot, "invitation": result.Invitation})

@@ -260,7 +260,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 	if !result.SecureCookie {
 		return errors.New("HTTPS origin did not set a Secure HttpOnly session cookie")
 	}
-	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
+	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "1", "part": 1, "durationMs": 100000}})
 	if err != nil {
 		return err
 	}

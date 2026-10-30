@@ -15,6 +15,8 @@ export interface MediaInfo {
   parts: number;
   handle: string;
   tracks: TrackInfo[];
+  quality: number;
+  qualities: number[];
 }
 export interface Segment {
   offset: number;
@@ -52,7 +54,18 @@ export function parseSelection(input: string, part: number): { bvid: string; par
 }
 export function decodeInfo(value: unknown, bvid: string, part: number): MediaInfo {
   const v = object(value);
-  exact(v, ['bvid', 'cid', 'part', 'duration', 'title', 'parts', 'handle', 'tracks']);
+  exact(v, [
+    'bvid',
+    'cid',
+    'part',
+    'duration',
+    'title',
+    'parts',
+    'handle',
+    'tracks',
+    'quality',
+    'qualities',
+  ]);
   if (
     v.bvid !== bvid ||
     v.part !== part ||
@@ -91,7 +104,15 @@ export function decodeInfo(value: unknown, bvid: string, part: number): MediaInf
   });
   const handle = boundedText(v.handle, 100);
   if (!/^h[0-9]+-[0-9-]+$/.test(handle)) throw new HelperError('invalid-reply');
+  const quality = integer(v.quality, 1, 127);
+  if (!Array.isArray(v.qualities) || !v.qualities.length || v.qualities.length > 32)
+    throw new HelperError('invalid-reply');
+  const qualities = v.qualities.map((q) => integer(q, 1, 127));
+  if (new Set(qualities).size !== qualities.length || !qualities.includes(quality))
+    throw new HelperError('invalid-reply');
   return {
+    quality,
+    qualities,
     bvid,
     cid: v.cid,
     part,

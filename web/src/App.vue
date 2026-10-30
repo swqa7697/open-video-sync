@@ -5,7 +5,6 @@ import { useIdentityStore } from './stores/identity';
 import {
   APIError,
   decodeInvitation,
-  decodeList,
   decodeRoomResult,
   decodeSnapshot,
   defaultSettings,
@@ -13,20 +12,30 @@ import {
   request,
   requestKey,
   type Invitation,
-  type RoomSummary,
   type Snapshot,
 } from './transport/api';
 import { decodeRoomSettings, type RoomSettings } from './transport/contracts';
 import type { EndReason } from './transport/room-socket';
-import { describeFailure, type Failure, type FailureContext } from './features/failures';
+import {
+  InputError,
+  describeFailure,
+  type Failure,
+  type FailureContext,
+} from './features/failures';
 import IdentityPanel from './features/identity/IdentityPanel.vue';
 import RoomPanel from './features/rooms/RoomPanel.vue';
 import PlayerPanel from './features/player/PlayerPanel.vue';
+import MediaPicker from './features/media/MediaPicker.vue';
+import HelperNotice from './features/media/HelperNotice.vue';
+import SettingsForm from './features/rooms/SettingsForm.vue';
+import Modal from './components/Modal.vue';
+import Icon from './components/Icon.vue';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
   identity = useIdentityStore();
 const controller = new AbortController();
+const departing = ref(false);
 const busy = ref(false),
   failure = ref<Failure>(),
   invalidField = ref<string>(),
@@ -35,8 +44,14 @@ const title = ref(''),
   code = ref('');
 const room = ref<Snapshot>(),
   invitation = ref<Invitation>();
-const recent = ref<RoomSummary[]>([]),
-  nextCursor = ref<string | null>(null);
+const creationKey = ref(requestKey());
+const picker = ref<InstanceType<typeof MediaPicker>>();
+const draftSettings = ref(defaultSettings()),
+  settingsOpen = ref(false),
+  profileOpen = ref(false);
+const helperGeneration = ref(0);
+let initialFile: File | undefined;
+const safeName = computed(() => identity.session?.identity.displayName || 'Guest');
 const host = computed(() => room.value?.selfMemberId === room.value?.hostMemberId);
 // Retain uncertain create/redeem intent and its key in memory until its outcome is known.
 const attempt = ref<{
@@ -65,7 +80,7 @@ watchEffect(() => {
         ? 'Connection problem'
         : pendingLink.value
           ? 'Join a room'
-          : 'Your rooms'
+          : 'Watch together'
   } · Open Video Sync`;
 });
 const api = (path: string, method = 'GET', payload?: unknown, key?: string, replayOnly = false) =>
@@ -117,18 +132,6 @@ async function perform(
     if (!controller.signal.aborted) busy.value = false;
   }
 }
-async function list(append = false): Promise<void> {
-  const shown = recent.value.length;
-  const value = decodeList(
-    await api(`/rooms${append && nextCursor.value ? `?cursor=${nextCursor.value}` : ''}`),
-  );
-  recent.value = append ? [...recent.value, ...value.rooms] : value.rooms;
-  nextCursor.value = value.nextCursor;
-  if (append) {
-    await nextTick();
-    document.querySelectorAll<HTMLButtonElement>('.room-list li > button')[shown]?.focus();
-  }
-}
 function show(snapshot: Snapshot, share?: Invitation): void {
   room.value = snapshot;
   invitation.value = share;
@@ -162,8 +165,17 @@ async function submitAttempt(): Promise<void> {
   if (!pending) return;
   if (performance.now() - pending.started >= 60000) {
     attempt.value = undefined;
-    await list();
-    message.value = 'Request recovery expired. Check Your rooms before choosing a new action.';
+    if (pending.path === '/rooms') {
+      try {
+        await open(pending.key, true);
+        if (room.value) return;
+      } catch {
+        /* Explicit new intent remains available. */
+      }
+    }
+    if (pending.path === '/rooms') creationKey.value = requestKey();
+    message.value =
+      'Request recovery expired. No second room was created. Check the room link or start a new request explicitly.';
     return;
   }
   try {
@@ -177,13 +189,21 @@ async function submitAttempt(): Promise<void> {
     code.value = '';
     title.value = '';
     show(value.snapshot, value.invitation ?? undefined);
+    if (pending.path !== '/rooms') initialFile = undefined;
     message.value = 'Room ready.';
     void focus('room-title');
   } catch (reason) {
     if (reason instanceof APIError && reason.code === 'request_outcome_unknown') {
       attempt.value = undefined;
-      await list();
-      message.value = reason.message;
+      try {
+        await open(pending.key, true);
+        if (room.value) return;
+      } catch {
+        /* No unauthorized state is exposed. */
+      }
+      message.value =
+        'The original room could not be recovered. No second room was created. You can start a new request.';
+      creationKey.value = requestKey();
       return;
     }
     // Uncertain outcomes keep the original request for an explicit retry.
@@ -193,19 +213,50 @@ async function submitAttempt(): Promise<void> {
   }
 }
 async function create(): Promise<void> {
+  const selection = await picker.value?.prepare();
+  if (!selection) return;
+  initialFile = selection.file;
   attempt.value = {
     path: '/rooms',
-    payload: { title: title.value, settings: defaultSettings() },
-    key: requestKey(),
+    payload: {
+      title: title.value.trim() || 'Watch party',
+      settings: { ...draftSettings.value },
+      media: selection.media,
+    },
+    key: creationKey.value,
     started: performance.now(),
     sent: false,
   };
   await submitAttempt();
 }
+function invitationInput(): { linkSecret: string } | { code: string } {
+  if (pendingLink.value) return { linkSecret: pendingLink.value };
+  const raw = code.value.trim();
+  if (/^[a-zA-Z0-9 -]{16,32}$/.test(raw)) return { code: raw };
+  try {
+    const url = new URL(raw);
+    const values = new URLSearchParams(url.hash.slice(1));
+    const secret = values.get('invite');
+    if (
+      url.origin === location.origin &&
+      url.pathname === '/join' &&
+      !url.search &&
+      !url.username &&
+      !url.password &&
+      values.size === 1 &&
+      secret &&
+      /^[A-Za-z0-9_-]{22}$/.test(secret)
+    )
+      return { linkSecret: secret };
+  } catch {
+    /* Present one safe validation message below. */
+  }
+  throw new InputError();
+}
 async function join(): Promise<void> {
   attempt.value = {
     path: '/invitations/redeem',
-    payload: pendingLink.value ? { linkSecret: pendingLink.value } : { code: code.value },
+    payload: invitationInput(),
     key: requestKey(),
     started: performance.now(),
     sent: false,
@@ -218,13 +269,14 @@ const managed: Record<'settings' | 'rotate' | 'remove', string> = {
   remove: 'Participant removed. The invitation was replaced.',
 };
 async function manage(
-  operation: 'settings' | 'rotate' | 'remove' | 'close',
+  operation: 'settings' | 'rotate' | 'remove' | 'close' | 'leave',
   settings?: RoomSettings,
   memberId?: string,
 ): Promise<void> {
   const current = room.value;
   if (!current) return;
-  const self = operation === 'close' || (operation === 'remove' && !memberId);
+  const self =
+    operation === 'close' || operation === 'leave' || (operation === 'remove' && !memberId);
   const suffix =
     operation === 'settings'
       ? '/settings'
@@ -232,14 +284,22 @@ async function manage(
         ? '/invitations'
         : operation === 'remove'
           ? `/members/${memberId ?? current.selfMemberId}`
-          : '';
-  const method = operation === 'settings' ? 'PATCH' : operation === 'rotate' ? 'POST' : 'DELETE';
+          : operation === 'leave'
+            ? '/leave'
+            : '';
+  const method =
+    operation === 'settings'
+      ? 'PATCH'
+      : operation === 'rotate' || operation === 'leave'
+        ? 'POST'
+        : 'DELETE';
   const payload = {
     epoch: current.epoch,
     expectedRevision: current.revision,
     ...(settings ? { settings: decodeRoomSettings(settings) } : {}),
   };
   let response: Record<string, unknown>;
+  if (self) departing.value = true;
   try {
     response = object(await api(`/rooms/${current.roomId}${suffix}`, method, payload));
   } catch (reason) {
@@ -253,6 +313,8 @@ async function manage(
       if (!room.value) return;
     }
     throw reason;
+  } finally {
+    departing.value = false;
   }
   if (self) {
     message.value =
@@ -280,8 +342,9 @@ async function back(): Promise<void> {
   room.value = undefined;
   invitation.value = undefined;
   history.replaceState(null, '', '/');
-  await list();
-  void focus('recent-title');
+  initialFile = undefined;
+  creationKey.value = requestKey();
+  void focus('create-title');
 }
 // A room connection ended for good. Leave the room view and say why.
 async function ended(reason: EndReason): Promise<void> {
@@ -310,24 +373,21 @@ async function ended(reason: EndReason): Promise<void> {
       : reason === 'removed'
         ? `You were removed from ${quoted}. Ask the host for a new invitation.`
         : `${quoted} is no longer available to you.`;
-  try {
-    await list();
-  } catch (error) {
-    failure.value = describeFailure(error);
-  }
-  // Keep focus where it is unless the room took it or the refreshed list removed it.
-  if (focusInside || !active?.isConnected) void focus('recent-title');
+  if (focusInside || !active?.isConnected) void focus('create-title');
 }
 async function forget(): Promise<void> {
-  await identity.forget(controller.signal);
+  departing.value = true;
+  try {
+    await identity.forget(controller.signal);
+  } finally {
+    departing.value = false;
+  }
   room.value = undefined;
   invitation.value = undefined;
-  recent.value = [];
   attempt.value = undefined;
   pendingLink.value = undefined;
   history.replaceState(null, '', '/');
   await identity.bootstrap(controller.signal);
-  await list();
   message.value = 'A new identity is active.';
   void focus('identity-title');
 }
@@ -337,23 +397,32 @@ function connectionChanged(): void {
 function visibility(): void {
   if (document.visibilityState === 'visible' && connection.status !== 'ready') recheck();
 }
+function navigate(): void {
+  void perform(async () => {
+    const destination = location.pathname;
+    if (room.value) await manage('leave');
+    const route = /^\/rooms\/([a-f0-9]{32})$/.exec(destination);
+    if (route) await open(route[1]!, true);
+  });
+}
 onMounted(() => {
   recheck();
+  window.addEventListener('popstate', navigate);
   window.addEventListener('online', recheck);
   document.addEventListener('visibilitychange', visibility);
   void perform(async () => {
     await identity.bootstrap(controller.signal);
-    await list();
     const route = /^\/rooms\/([a-f0-9]{32})$/.exec(location.pathname);
     if (route) await open(route[1]!);
-    if (pendingLink.value) {
-      message.value = 'An invitation is ready. Select Join room to continue.';
-      void focus('join-submit');
-    }
+    if (pendingLink.value) await join();
+    else if (location.pathname === '/join')
+      message.value = 'This invitation is unavailable or the room has closed.';
   });
 });
 onUnmounted(() => {
   controller.abort();
+  initialFile = undefined;
+  window.removeEventListener('popstate', navigate);
   window.removeEventListener('online', recheck);
   document.removeEventListener('visibilitychange', visibility);
   identity.session = undefined;
@@ -361,45 +430,58 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ viewing: !!room }">
     <a class="skip" href="#main" @click.prevent="focusMain">Skip to main content</a>
-    <header>
-      <p class="eyebrow">Private rooms · Your media stays with you</p>
-      <h1>Open Video Sync</h1>
-      <p role="status">{{ serverText }}</p>
+    <header class="app-header">
+      <button
+        class="brand quiet"
+        aria-label="OVS home"
+        :disabled="busy"
+        @click="room && perform(() => manage('leave'))"
+      >
+        <span class="brand-mark"><Icon name="play" :size="18" /></span><span>OVS</span
+        ><span class="brand-name">Open Video Sync</span>
+      </button>
+      <div class="header-end">
+        <p class="server-status" role="status" :data-state="connection.status">
+          <span class="status-dot" />{{ serverText }}
+        </p>
+        <button
+          v-if="identity.session"
+          :title="safeName"
+          class="profile-button quiet"
+          @click="profileOpen = true"
+        >
+          <span class="avatar">{{ Array.from(safeName)[0]?.toUpperCase() }}</span
+          ><span class="profile-name">{{ safeName }}</span
+          ><Icon name="chevron" :size="16" />
+        </button>
+      </div>
     </header>
+    <HelperNotice @ready="helperGeneration++" />
     <main id="main" tabindex="-1">
       <div v-if="failure" id="app-alert" role="alert" class="notice error">
         <p><strong>Error:</strong> {{ failure.text }}</p>
-        <button v-if="failure.reload" id="app-reload" type="button" @click="reload">
+        <button v-if="failure.reload" id="app-reload" class="quiet" @click="reload">
           Reload page
         </button>
       </div>
-      <div role="status">
+      <div class="app-message" role="status">
         <p v-if="message" class="notice">{{ message }}</p>
       </div>
-      <template v-if="!identity.session">
-        <p>{{ busy ? 'Restoring your identity…' : 'Your identity could not be restored.' }}</p>
-        <button
-          v-if="!busy"
-          @click="
-            perform(async () => {
-              await identity.bootstrap(controller.signal);
-              await list();
-            })
-          "
-        >
-          Retry connection
-        </button>
-      </template>
+      <template v-if="!identity.session"
+        ><div class="initializing">
+          <Icon name="screen" :size="32" />
+          <h2>{{ busy ? 'Getting things ready…' : 'Your identity could not be restored.' }}</h2>
+          <button v-if="!busy" @click="perform(() => identity.bootstrap(controller.signal))">
+            Retry connection
+          </button>
+        </div></template
+      >
       <template v-else>
         <div v-if="attempt" class="notice">
-          <p>The request outcome is uncertain. Retry the original request to check its result.</p>
-          <button
-            id="retry-attempt"
-            :aria-disabled="busy || undefined"
-            @click="perform(submitAttempt)"
-          >
+          <p>The request outcome is uncertain. Check the original request to recover its result.</p>
+          <button id="retry-attempt" :disabled="busy" @click="perform(submitAttempt)">
             Retry original request
           </button>
         </div>
@@ -409,118 +491,127 @@ onUnmounted(() => {
           :host="host"
           :invitation="invitation"
           :busy="busy"
+          :error="failure?.text"
           @refresh="
             perform(async () => {
               if (room) await open(room.roomId);
             })
           "
-          @back="perform(back)"
           @settings="(value) => perform(() => manage('settings', value))"
           @share="perform(share)"
           @rotate="perform(() => manage('rotate'))"
-          @remove="(memberId) => perform(() => manage('remove', undefined, memberId))"
-          @leave="perform(() => manage('remove'))"
+          @remove="(id) => perform(() => manage('remove', undefined, id))"
+          @leave="perform(() => manage('leave'))"
           @close="perform(() => manage('close'))"
         >
           <PlayerPanel
             :key="room.roomId"
             :room="room"
+            :initial-file="initialFile"
+            :helper-generation="helperGeneration"
             @snapshot="(value) => (room = value)"
             @connection="connectionChanged"
             @recheck="recheck"
-            @ended="(reason) => void ended(reason)"
+            @ended="
+              (reason) => {
+                if (!departing && room) void ended(reason);
+              }
+            "
           />
         </RoomPanel>
-        <IdentityPanel
-          :busy="busy || !!attempt"
-          :invalid="invalidField === 'display-name'"
-          @edit="invalidField = undefined"
-          @rename="
-            (name) =>
-              perform(async () => {
-                await identity.rename(name, controller.signal);
-                message = 'Name saved.';
-              }, 'rename')
-          "
-          @forget="perform(forget)"
-        />
-        <template v-if="!room">
-          <div class="rooms-grid">
-            <section aria-labelledby="create-title">
-              <h2 id="create-title">Create a room</h2>
-              <form @submit.prevent="!attempt && perform(create, 'create')">
-                <label for="room-name">Room title</label
+        <div v-else class="home">
+          <div class="home-heading">
+            <p class="eyebrow"><span class="status-dot" />A private place to press play</p>
+            <h1>Good company.<br /><span>Perfectly in sync.</span></h1>
+            <p>Pick a video. Invite your people. Watch together.</p>
+          </div>
+          <section class="create-card" aria-labelledby="create-title">
+            <div class="card-heading">
+              <h2 id="create-title" tabindex="-1">Start a watch party</h2>
+              <span class="private-badge"><Icon name="shield" :size="14" />Private room</span>
+            </div>
+            <form @submit.prevent="!attempt && perform(create, 'create')">
+              <MediaPicker ref="picker" :room-id="creationKey" :disabled="busy || !!attempt" />
+              <div class="room-draft">
+                <label for="room-name">Room name <span class="hint">optional</span></label
                 ><input
                   id="room-name"
                   v-model="title"
                   :readonly="busy || !!attempt"
-                  maxlength="240"
-                  required
+                  maxlength="120"
+                  placeholder="e.g. Friday movie night"
                   :aria-invalid="invalidField === 'room-name' || undefined"
-                  :aria-describedby="invalidField === 'room-name' ? 'app-alert' : undefined"
                   @input="invalidField = undefined"
-                /><button :aria-disabled="busy || !!attempt || undefined">Create room</button>
-              </form>
-            </section>
-            <section aria-labelledby="join-title">
-              <h2 id="join-title">Join a room</h2>
-              <form @submit.prevent="!attempt && perform(join, 'join')">
-                <p v-if="pendingLink">An invitation link is ready.</p>
-                <template v-else
-                  ><label for="join-code">Invitation code</label
-                  ><input
-                    id="join-code"
-                    v-model="code"
-                    :readonly="busy || !!attempt"
-                    maxlength="32"
-                    required
-                    autocomplete="off"
-                    spellcheck="false"
-                    :aria-invalid="invalidField === 'join-code' || undefined"
-                    :aria-describedby="invalidField === 'join-code' ? 'app-alert' : undefined"
-                    @input="invalidField = undefined" /></template
-                ><button id="join-submit" :aria-disabled="busy || !!attempt || undefined">
-                  Join room
-                </button>
-              </form>
-            </section>
-          </div>
-          <section aria-labelledby="recent-title">
-            <div class="form-row">
-              <h2 id="recent-title" tabindex="-1">Your rooms</h2>
-              <button
-                class="quiet"
-                :aria-disabled="busy || undefined"
-                @click="perform(() => list())"
-              >
-                Refresh list
-              </button>
-            </div>
-            <p v-if="!recent.length">Create a room or join with a private invitation.</p>
-            <ul class="room-list">
-              <li v-for="item in recent" :key="item.roomId">
-                <button
-                  class="quiet"
-                  :aria-disabled="busy || undefined"
-                  @click="perform(() => open(item.roomId, true))"
+                />
+              </div>
+              <div class="draft-settings">
+                <span
+                  ><Icon name="users" :size="16" />{{
+                    draftSettings.controllers === 'host' ? 'Host controls' : 'Everyone controls'
+                  }}<span class="separator">·</span
+                  >{{ draftSettings.waitForAll ? 'Wait for everyone' : 'Join when ready' }}</span
+                ><button
+                  type="button"
+                  class="quiet icon-button"
+                  aria-label="Room settings"
+                  :disabled="busy || !!attempt"
+                  @click="settingsOpen = true"
                 >
-                  {{ item.title }}</button
-                ><small>{{ item.role === 'host' ? 'You host this room' : 'Participant' }}</small>
-              </li>
-            </ul>
-            <button
-              v-if="nextCursor"
-              :aria-disabled="busy || undefined"
-              @click="perform(() => list(true))"
-            >
-              More rooms
-            </button>
+                  <Icon name="settings" />
+                </button>
+              </div>
+              <button class="create-submit" :disabled="busy || !!attempt">
+                {{ busy ? 'Preparing room…' : 'Create room' }}<Icon name="arrow" />
+              </button>
+            </form>
           </section>
-        </template>
+          <section class="join-section" aria-labelledby="join-title">
+            <h2 id="join-title">Already have an invitation?</h2>
+            <form class="input-action" @submit.prevent="!attempt && perform(join, 'join')">
+              <input
+                id="join-code"
+                v-model="code"
+                aria-label="Invitation link or code"
+                :readonly="busy || !!attempt"
+                maxlength="2048"
+                placeholder="Paste an invitation link or code"
+                autocomplete="off"
+                spellcheck="false"
+                :aria-invalid="invalidField === 'join-code' || undefined"
+                @input="invalidField = undefined"
+              /><button id="join-submit" class="quiet" :disabled="busy || !!attempt">
+                Join<Icon name="arrow" :size="16" />
+              </button>
+            </form>
+          </section>
+          <p class="privacy-note">
+            <Icon name="shield" :size="15" />Your media stays yours. Only playback stays in sync.
+          </p>
+        </div>
       </template>
     </main>
     <footer>
-      Video and danmaku stay in each participant’s browser. OVS shares playback state only.
+      <span>OVS<span class="separator">/</span>Made for watching together</span
+      ><span>Private rooms. Your own media.</span>
     </footer>
+    <Modal v-if="settingsOpen" title="Room settings" @close="settingsOpen = false"
+      ><form @submit.prevent="settingsOpen = false">
+        <SettingsForm v-model="draftSettings" :disabled="busy" /><button>Apply settings</button>
+      </form></Modal
+    >
+    <Modal v-if="profileOpen" title="Your profile" @close="profileOpen = false"
+      ><IdentityPanel
+        :busy="busy || !!attempt"
+        :invalid="invalidField === 'display-name'"
+        @edit="invalidField = undefined"
+        @rename="
+          (name) =>
+            perform(async () => {
+              await identity.rename(name, controller.signal);
+              message = 'Name saved.';
+            }, 'rename')
+        "
+        @forget="perform(forget)"
+    /></Modal>
   </div>
 </template>

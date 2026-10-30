@@ -1,3 +1,4 @@
+import { createLocalRoom, dismissHelper } from './flows';
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../web/playwright-fixtures';
 import { generatedVideo } from './media';
@@ -26,8 +27,11 @@ test.describe('autoplay permission', () => {
     try {
       const h = await host.newPage();
       await h.goto(baseURL!);
-      await h.getByLabel('Room title', { exact: true }).fill('Autoplay permission');
-      await h.getByRole('button', { name: 'Create room', exact: true }).click();
+      await createLocalRoom(
+        h,
+        { name: 'opus-vp8.webm', mimeType: 'video/webm', buffer: fixture },
+        'Autoplay permission',
+      );
       await expect(h.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
       const response = await guest.request.post(`${baseURL}/api/v2/session`, {
         headers: { Origin: baseURL! },
@@ -35,7 +39,12 @@ test.describe('autoplay permission', () => {
       });
       expect(response.status()).toBe(200);
       const session = await response.json();
-      const code = (await h.locator('.invite-code').innerText()).replaceAll(' ', '');
+      await h.getByRole('button', { name: 'Invite', exact: true }).click();
+      const code = (await h.getByLabel('Invitation code', { exact: true }).inputValue()).replaceAll(
+        ' ',
+        '',
+      );
+      await h.getByRole('button', { name: 'Close dialog', exact: true }).click();
       const joined = await guest.request.post(`${baseURL}/api/v2/invitations/redeem`, {
         headers: {
           Origin: baseURL!,
@@ -69,9 +78,7 @@ test.describe('autoplay permission', () => {
                 .state;
             if (input && !input.disabled && !selected) {
               selected = true;
-              const checkbox = document.querySelector<HTMLInputElement>('#local-mute')!;
-              checkbox.checked = false;
-              checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+              document.querySelector<HTMLButtonElement>('[aria-label="Unmute locally"]')!.click();
               const transfer = new DataTransfer();
               transfer.items.add(
                 new File([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], 'opus-vp8.webm', {
@@ -98,6 +105,7 @@ test.describe('autoplay permission', () => {
       await readyPromise;
       await h.getByRole('button', { name: 'Play together', exact: true }).click();
       await blockedPromise;
+      await dismissHelper(p);
       await expect(h.getByTestId('playback-phase')).toHaveAttribute('data-state', 'waiting');
       // Keyboard activation is a user gesture; focus stays in the player afterwards.
       await p.getByRole('button', { name: 'Enable playback', exact: true }).focus();

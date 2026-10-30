@@ -11,6 +11,7 @@ func (l *liveRoom) clone() liveRoom {
 	n.receipts = maps.Clone(l.receipts)
 	n.cohort = maps.Clone(l.cohort)
 	n.disconnected = maps.Clone(l.disconnected)
+	n.departures = maps.Clone(l.departures)
 	n.bufferSince = maps.Clone(l.bufferSince)
 	n.readySince = maps.Clone(l.readySince)
 	n.connections = maps.Clone(l.connections)

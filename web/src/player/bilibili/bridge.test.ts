@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
-import { HelperBridge } from './bridge';
+import { helperRelease, HelperBridge } from './bridge';
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -85,7 +85,7 @@ test('startup waits for late manager registration without opening media first', 
           client: q.client,
           id: q.id,
           ok: true,
-          value: { version: 1, helper: '1.0.0', maxChunk: 262144 },
+          value: { version: 1, helper: helperRelease.version, maxChunk: 262144 },
         }),
       }),
     );

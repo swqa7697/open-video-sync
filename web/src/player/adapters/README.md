@@ -8,3 +8,7 @@ B0 has validated a separate Tampermonkey-assisted MediaSource prototype with dan
 
 `../bilibili/adapter.ts` implements the production Bilibili adapter with the same native observations and room synchronization controls. It owns bounded SIDX/MediaSource delivery, per-player helper channels, request cancellation, source buffers, and danmaku disposal.
 The embedded `userscripts/` package keeps provider responses and signed locations in helper memory. The room receives only stable matching metadata. Local volume, mute, and danmaku settings stay outside shared state.
+
+The helper exposes actual AVC track quality IDs. Selecting a quality disposes the previous adapter, opens a new player channel, and reports readiness before converging to room playback.
+`userscripts/release.json` is the release-version source for script delivery, handshake validation, and onboarding. The protocol version remains separate.
+Live quality-switching evidence is required beyond the historical B0 fixed-quality baseline.

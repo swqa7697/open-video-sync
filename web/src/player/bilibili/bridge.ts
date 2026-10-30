@@ -1,3 +1,5 @@
+import release from '../../../../userscripts/release.json';
+export const helperRelease = release;
 import { parseBridgeJSON } from '../../../../userscripts/bridge-json.js';
 // All privileged values remain in the helper. This bridge owns one player channel.
 type FailureStatus = 'access_denied' | 'unsupported' | 'error';
@@ -170,12 +172,21 @@ export class HelperBridge {
       pending.reject(error instanceof HelperError ? error : new HelperError('invalid-reply'));
     }
   };
-  async hello(): Promise<void> {
+  async hello(probe = false): Promise<void> {
+    const value = await this.handshake(probe);
+    if (
+      value.version !== release.protocol ||
+      value.helper !== release.version ||
+      value.maxChunk !== 256 * 1024
+    )
+      throw new HelperError('helper-incompatible');
+  }
+  async handshake(probe = false): Promise<{ version: number; helper: string; maxChunk: number }> {
     let reply: unknown;
     // A manager can register its document listener after the application mounts.
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        reply = await this.call('hello', { version: 1 }, 500);
+        reply = await this.call(probe ? 'probe' : 'hello', { version: release.protocol }, 500);
         break;
       } catch (error) {
         if (!(error instanceof HelperError) || error.code !== 'helper-missing' || attempt === 4)
@@ -184,8 +195,11 @@ export class HelperBridge {
     }
     const value = object(reply);
     exact(value, ['version', 'helper', 'maxChunk']);
-    if (value.version !== 1 || value.helper !== '1.0.0' || value.maxChunk !== 256 * 1024)
-      throw new HelperError('helper-incompatible');
+    return {
+      version: integer(value.version, 1, 100),
+      helper: boundedText(value.helper, 32),
+      maxChunk: integer(value.maxChunk, 1, 1024 * 1024),
+    };
   }
   call(op: string, args: Record<string, unknown> = {}, deadline = 15000): Promise<unknown> {
     if (this.closed) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
@@ -203,25 +217,28 @@ export class HelperBridge {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new HelperError(op === 'hello' ? 'helper-missing' : 'bridge-timeout'));
+        reject(
+          new HelperError(op === 'hello' || op === 'probe' ? 'helper-missing' : 'bridge-timeout'),
+        );
       }, deadline);
       this.pending.set(id, { resolve, reject, timer });
       window.postMessage(request, location.origin);
     });
   }
-  close(generation: number): void {
+  close(generation: number, releaseOwner = true): void {
     if (this.closed) return;
     // Cancellation must remain available when all four request slots are occupied.
-    window.postMessage(
-      JSON.stringify({
-        channel: 'ovs-bilibili-request',
-        client: this.client,
-        id: ++this.sequence,
-        op: 'dispose',
-        generation,
-      }),
-      location.origin,
-    );
+    if (releaseOwner)
+      window.postMessage(
+        JSON.stringify({
+          channel: 'ovs-bilibili-request',
+          client: this.client,
+          id: ++this.sequence,
+          op: 'dispose',
+          generation,
+        }),
+        location.origin,
+      );
     this.closed = true;
     window.removeEventListener('message', this.receive);
     for (const p of this.pending.values()) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name OVS Bilibili {{ORIGIN}}
 // @namespace ovs-bilibili-{{ORIGIN}}
-// @version 1.0.0
+// @version {{HELPER_VERSION}}
 // @description Browser-local Bilibili playback for one OVS instance
 // @match {{MATCH}}
 // @noframes
@@ -178,7 +178,7 @@
       );
     return x.data;
   }
-  async function resolve(bvid, part) {
+  async function resolve(bvid, part, selectedQuality = 0) {
     const view = await api('/x/web-interface/view', { bvid });
     if (!Array.isArray(view?.pages) || view.pages.length > 10000) throw Error('invalid-media');
     const page = view.pages.find((p) => p.page === part);
@@ -193,12 +193,22 @@
     const play = await api('/x/player/playurl', {
       bvid,
       cid: String(page.cid),
-      qn: '32',
+      qn: String(selectedQuality || 127),
       fnval: '16',
-      fourk: '0',
+      fourk: '1',
     });
     if (!play.dash?.video?.length || !play.dash?.audio?.length) throw Error('unsupported-stream');
-    const video = play.dash.video.find((t) => t.id <= 32 && t.codecs.startsWith('avc1'));
+    const playable = play.dash.video.filter(
+      (t) =>
+        Number.isSafeInteger(t.id) &&
+        t.id > 0 &&
+        t.id <= 127 &&
+        typeof t.codecs === 'string' &&
+        t.codecs.startsWith('avc1'),
+    );
+    const video = selectedQuality
+      ? playable.find((t) => t.id === selectedQuality)
+      : playable.find((t) => t.id === 32) || playable.sort((a, b) => a.id - b.id)[0];
     const audio = play.dash.audio.find((t) => t.codecs.startsWith('mp4a'));
     if (!video || !audio) throw Error('unsupported-codec');
     if (!Number.isFinite(play.timelength) || play.timelength < 1 || play.timelength > 604800000)
@@ -238,6 +248,8 @@
       duration: play.timelength / 1000,
       title: String(view.title).slice(0, 160),
       parts: view.pages.length,
+      quality: video.id,
+      qualities: [...new Set(playable.map((t) => t.id))].sort((a, b) => b - a),
       tracks,
     };
   }
@@ -280,8 +292,9 @@
   async function dispatch(q) {
     const allowed = {
       hello: ['version'],
+      probe: ['version'],
       session: [],
-      open: ['bvid', 'part', 'generation'],
+      open: ['bvid', 'part', 'generation', ...(Object.hasOwn(q, 'quality') ? ['quality'] : [])],
       bytes: ['handle', 'track', 'offset', 'length', 'generation'],
       danmaku: ['handle', 'segment', 'generation'],
       dispose: ['generation'],
@@ -293,15 +306,15 @@
       Object.keys(q).some((k) => !['channel', 'id', 'op', 'client', ...allowed[q.op]].includes(k))
     )
       throw Error('invalid-request');
-    if (q.op === 'hello') {
+    if (q.op === 'hello' || q.op === 'probe') {
       if (q.version !== 1) throw Error('helper-incompatible');
-      if (client !== q.client) {
+      if (q.op === 'hello' && client !== q.client) {
         for (const cancel of [...pending]) cancel();
         handles.clear();
         generation = 0;
         client = q.client;
       }
-      return { version: 1, helper: '1.0.0', maxChunk: MAX };
+      return { version: 1, helper: '{{HELPER_VERSION}}', maxChunk: MAX };
     }
     if (q.client !== client) throw Error('stale-generation');
     if (q.op === 'metrics') return metrics;
@@ -328,8 +341,13 @@
         q.part > 10000
       )
         throw Error('invalid-media');
+      if (
+        Object.hasOwn(q, 'quality') &&
+        (!Number.isSafeInteger(q.quality) || q.quality < 1 || q.quality > 127)
+      )
+        throw Error('invalid-request');
       const mine = generation,
-        media = await resolve(q.bvid, q.part);
+        media = await resolve(q.bvid, q.part, q.quality);
       if (mine !== generation) throw Error('stale-generation');
       const handle = `h${++serial}-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
       handles.set(handle, media);
@@ -372,7 +390,7 @@
         });
       } catch (e) {
         if (e.message !== 'access-expired') throw e;
-        const fresh = await resolve(media.bvid, media.part);
+        const fresh = await resolve(media.bvid, media.part, media.quality);
         if (q.generation !== generation || q.client !== client || handles.get(q.handle) !== media)
           throw Error('stale-generation');
         if (

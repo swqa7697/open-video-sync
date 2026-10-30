@@ -42,6 +42,7 @@ func NewHandler(publicHost string, ready func(context.Context) error, frontend h
 	}
 	if len(api) > 2 {
 		mux.Handle("/userscripts/ovs-bilibili.user.js", api[2])
+		mux.Handle("/userscripts/ovs-bilibili.version.json", api[2])
 	}
 	mux.HandleFunc("/userscripts/", http.NotFound)
 	mux.Handle("/", frontend)

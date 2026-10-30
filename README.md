@@ -8,97 +8,99 @@ The Go application embeds the Vue frontend and stores identities, memberships, r
 Authenticated room sockets support local files and browser-local Bilibili AVC/AAC playback with danmaku.
 Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 
-## Use identities and rooms
+## Watch together
 
-Open OVS to restore or create your identity automatically. A display name is optional.
-Create a room with a title, or enter a private invitation code. Invitation links use `/join#invite=...`; the page removes the fragment before mounting components.
-Links and codes remain valid until replaced or the room closes. **Share invitation** retrieves the same link and code.
+Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
+On home, select **Bilibili** or **Local file**. Preview a canonical Bilibili URL/BV identifier, or choose/drop a supported local video.
+Select a multipart video's part in the preview. Short links must first be opened on Bilibili to obtain the canonical URL.
+The room name is optional; the default is **Watch party**. Local filenames never become shared room names.
+**Room settings** changes the creation draft: host-only playback and waiting for everyone are the defaults.
+Select **Create room** to save the room with its initial media. The room begins paused.
+The creator's selected local file stays available through this in-app transition.
+
+Paste an invitation link or code on home, or open an invitation link to enter automatically.
+Links use `/join#invite=...`; OVS removes the fragment before mounting provider components.
+Bilibili loads automatically on entry and media changes, using each participant's own helper and access.
+For local media, select your own matching file inside the player. Reloading requires local-file reselection.
+There is no home room directory. An existing member can revisit an authorized room URL while the room remains open.
+
+**Invite** shows the host's reusable link and code. Copy actions fall back to selectable text on ordinary HTTP.
 **Replace invitation** resets both values. Removing a participant also replaces the invitation.
-Membership survives browser reload and server restart. Room sockets deliver changes automatically; **Refresh room** also retrieves a snapshot.
-If the host closes the room, removes you, or your session ends, the page returns to **Your rooms** and states the reason.
+Only the host can retrieve invitations, replace media, change settings, remove participants, or close the room for everyone.
+Room settings and destructive confirmation appear in dialogs. **Members** toggles a side panel or opens a narrow-screen dialog.
 
-The header shows **Server: ready**, **online, but cannot save changes**, or **unreachable**. The page checks again after a failure, a reconnect, or a return online.
-Errors begin with **Error:** and name the next step, such as checking the connection, waiting, or reloading. A **Reload page** button appears when only a reload can recover.
-The interface works with a keyboard. **Skip to main content** is the first focus stop. After you open, leave, or close a room, focus moves to the new heading.
+**Leave** and the OVS home button leave the active session. After the host leaves, everyone can control playback without gaining management rights.
+A returning host keeps Everyone enabled and can deliberately change it later. Ownership never transfers.
+The final explicit departure closes the room immediately. Closing a room page starts a 30-second reconnection grace.
+Refresh, brief disconnection, tab replacement, and backgrounding do not by themselves close the room.
+After server restart, restored rooms have 60 seconds for reconnection before empty rooms close.
+Restarted playback begins paused at zero with a fresh epoch. Invitations stop working after closure.
 
-Sessions use a host-only HttpOnly cookie with a rolling 365-day expiry, renewed at most once daily on bootstrap.
+The header reports server availability. Failed persistent changes leave memory unchanged.
+A failed automatic departure transition reports a storage error to remaining viewers and stops automatic lifecycle writes until restart.
+Existing playback stays available; the operator must fix storage and restart OVS.
+Create/redeem retry results remain in memory for 60 seconds. An uncertain creation checks its original request and known room ID.
+Recovery never automatically creates another room or depends on a room list.
+
+Sessions use a host-only HttpOnly cookie with rolling 365-day expiry, renewed at most daily.
 **Forget this identity** revokes the current session. Owned rooms may become inaccessible; ownership does not transfer.
 Cookies are scoped to the browser profile and OVS origin. Private profiles receive independent identities.
-Only the host can retrieve sharing details. Create/redeem requests retain bounded retry results for 60 seconds in memory.
-After an uncertain creation expires, refresh **Your rooms** and choose a new action explicitly. A server restart clears retry results.
 
-## Watch a local video
+## Player controls
 
-The host selects a file under **Watch together**. Each participant selects the same file independently.
-The optional shared label comes from host input. File names, timestamps, paths, handles, samples, and video bytes stay in each browser.
-A worker computes a room-specific sampled SHA-256 digest with pinned `@noble/hashes`; matching works on ordinary HTTP without SubtleCrypto.
-Equal size and digest plus duration within 250 ms permit matching. Sampled matching detects accidental differences; it does not prove identical content.
+Play/pause, replay, seeking, volume, mute, and fullscreen are inside the video surface.
+Shared controls follow server permissions. Volume, mute, fullscreen, quality, and danmaku affect only your browser.
+The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
+Focus the player to use Space/K for playback, arrows for seeking, M for mute, and F for fullscreen.
+Controls remain available while keyboard focus is inside them. Dialogs support Escape and restore focus.
+Playback starts muted. When autoplay is blocked, select **Enable playback** inside the video.
 
-Use **Play together**, **Pause together**, **Seek together**, or **Replay**. The server enforces host/everyone control permissions.
-Volume and mute remain local. Playback starts muted. If a browser blocks playback, select **Enable playback**.
-Opening the room in a new page automatically takes over playback and disposes the previous page’s player.
-The replaced page stays inactive until explicitly reloaded or reopened.
-A disconnected browser pauses after five seconds without server liveness, reconnects, obtains state, and recalibrates its clock.
-On a high-latency or unstable link the status shows **Synchronization may drift**. Small rate corrections pause, but the participant can still release waits and use room controls.
-An uncertain command can be checked with its original ID; controls are never queued for offline replay.
+Every participant supplies their own local file. OVS exchanges only a room-specific sampled SHA-256 digest, size, and duration.
+Filenames, paths, handles, timestamps, object URLs, samples, and video bytes stay in the browser.
+A worker uses pinned `@noble/hashes` so matching works on ordinary HTTP without SubtleCrypto.
+Equal size and digest, plus duration within 250 ms, permit matching. Sampled matching detects accidental differences; it does not prove identical content.
 
-Room preferences contain **Playback controls** (host or everyone) and **Wait for everyone** (enabled by default).
-Waiting freezes the connected participants for startup or sustained buffering. Each participant must load matching media and permit playback.
-The waiting notice names the participants who are not ready yet. Participants in a host-controlled room see why room controls are unavailable.
-Seeking during a wait replaces its target and preserves play intent. Ready late joiners catch up without enlarging an existing wait.
-Buffering for at least 750 ms pauses the room. Playback resumes after one second of stable readiness.
-A wait times out after 30 seconds and stays paused until an allowed controller explicitly retries.
-Changing **Wait for everyone** cancels pending playback and pauses the room. Changing control permission preserves playback.
-Disconnected required participants retain a 15-second grace. Controller permission still applies while the host is absent; ownership never transfers.
-Reloading requires local file selection again. Restart preserves selected media and metadata, with playback paused at zero in a new epoch.
-A failed durable write leaves application memory unchanged. Existing playback continues; fix storage and restart to restore persistent writes.
-Bounded expired-session cleanup runs each minute. Rooms and new invitations have no scheduled expiry.
+A new page takes playback ownership from the same identity's previous page in that room. The old page disposes its player.
+A disconnected browser pauses after five seconds without liveness, reconnects, fetches state, and recalibrates its clock.
+An uncertain command can be checked with its original ID. Controls are never queued for offline replay.
 
-Chromium and Firefox automation check synthetic VP8/WebM playback, including a room with both browsers.
-An Opus audio track checks each browser's native autoplay permission handling.
-Current stable browser releases, other codecs, mobile suspension, physical displays, and impaired networks need separate evidence.
-Safari is outside the roadmap. OVS does not transcode unsupported files.
+Waiting freezes the connected participants for startup or sustained buffering. Ready late joiners catch up without enlarging an existing wait.
+Buffering for 750 ms pauses the room; one second of stable readiness permits resumption.
+A wait times out after 30 seconds and stays paused until an allowed controller retries.
+Changing **Wait for everyone** pauses playback and cancels pending play intent. Changing control permission preserves playback.
+A disconnected required participant retains a separate 15-second waiting grace.
 
-## Watch Bilibili
+## Bilibili helper and local preferences
 
-### Install or update the helper
+Install the Tampermonkey browser extension independently. OVS installation buttons install only the instance-specific **OVS playback helper**.
+A missing or outdated helper produces a top banner and an entry dialog. **Later** dismisses the dialog; local workflows remain available.
+Use **Install OVS helper**, **Update helper**, or **Install matching helper**, then confirm installation/replacement in Tampermonkey.
+Return to OVS and recheck or refresh when required. Updating uses the same script name and namespace within an instance.
+Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
+The bundled `userscripts/release.json` supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
+For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
 
-1. Install Tampermonkey in each participant's browser.
-2. In the room, open **OVS Bilibili helper 1.0.0** to install the reviewed code from your OVS instance.
-3. If the manager does not open automatically, create a new userscript and paste the complete code from that link.
-4. In Chromium, allow user scripts when the manager requires that setting.
-5. Enable the helper for the exact OVS scheme, host, and port. Then reload OVS.
+The helper runs only on the configured OVS origin, never on Bilibili pages or frames. Each profile uses its own platform access.
+Sign in on Bilibili in that profile when required. Access failures leave only that participant unready.
+Provider responses and signed media locations stay in helper memory. The room receives only `{bvid,cid,part,durationMs}`.
+The page requests bounded byte ranges through opaque handles. It cannot supply URLs, headers, methods, or cookies.
 
-The helper never runs on Bilibili pages or frames. It permits only the reviewed Bilibili API and media CDN destinations.
-Automatic remote code updates are disabled. After an OVS update that changes the helper version, install it again from the same instance and reload OVS pages.
-The helper is scoped to `OVS_PUBLIC_ORIGIN`. A new origin, such as a switch from HTTP to HTTPS, needs a new helper installation.
+The player lists the returned playable AVC qualities and requests the selected quality through the helper.
+Initial loading prefers the previously validated quality 32 when available; Retry video returns to that safe default after a failed quality switch.
+Switching reloads local media buffers, reports readiness, and converges to the authoritative room position without changing room playback intent.
+Only an active loaded quality is displayed as selected. No adaptive Auto mode is offered.
+Quality switching needs new live-platform validation; the earlier B0 evidence covers the previous fixed-quality path.
+DASH AVC/AAC remains the supported path. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
 
-### Watch a Bilibili video
+Danmaku follows observed playback through pause and seek. Visibility, density, and text size remain local.
+Hidden comments and loading failures have separate status. **Reload danmaku** retries loading.
+Only ordinary scrolling, top, and bottom text comments are rendered; executable modes are ignored.
+Local files do not show quality or danmaku menus. There is no comment submission, OVS media relay, or media persistence.
 
-The host enters a canonical Bilibili video URL or BV identifier and part, then selects **Select Bilibili video**.
-A URL's `p` parameter selects its exact part. Short links require opening Bilibili and copying the canonical video URL.
-Other participants select **Load room Bilibili video**. Each profile uses its own platform access and must independently match the CID, part, and duration.
-Sign in on Bilibili in that browser profile when required. An access failure leaves only that participant unready; others see **Platform access unavailable** for that participant. OVS supplies no shared access.
-Use the same room controls, waiting policies, and local playback permission button as local videos.
-Changing media or transferring tab ownership cancels requests, clears buffers and comments, and invalidates old helper handles.
-Reloading the page requires loading the room video again.
-
-Danmaku follows observed video time through pause, seek, and rate correction. Visibility, density, and text size remain local.
-Fetch/decode failures appear separately from hiding comments. **Reload danmaku** retries the current segment.
-Only ordinary scrolling, top, and bottom text comments are displayed. Executable and advanced-script modes are ignored.
-There is no comment submission, server persistence, or OVS media/danmaku relay.
-
-The helper keeps provider responses and signed locations in memory. Only stable `{bvid,cid,part,durationMs}` metadata enters the room protocol.
-The page requests bounded byte ranges through opaque handles; it cannot supply request URLs, methods, headers, or cookies.
-Missing or incompatible helpers do not affect local-file playback. Failures are grouped by the action you can take: install or update the helper, sign in or fix access, wait after rate limits, check network permissions, or choose another part or browser.
-The supported delivery path is ordinary on-demand AVC/AAC DASH.
-The current helper selects Bilibili video quality 32 or lower, with AAC audio. Live, DRM, paid episodic formats, other codecs, and mobile remain unverified.
-Bilibili interfaces can change. See [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept) for the validated baseline and boundaries.
-
-The OVS origin and helper are trusted code. A malicious page on that origin can use its bridge privileges.
-Plain HTTP also trusts the network path. The bridge does not protect against a compromised instance, helper, or same-origin script.
-The production helper endpoint uses `OVS_PUBLIC_ORIGIN`, never request or forwarding headers.
-For Bilibili development, open the embedded Go application at its configured public origin. The Vite hot-reload origin is outside that helper scope.
+Chromium and Firefox automation use synthetic VP8/WebM and native autoplay checks.
+Live Bilibili quality switching, independent platform sessions, real mobile devices, and cross-region networks require explicit separate evidence.
+The OVS origin and helper are trusted code. Plain HTTP also trusts the network path.
+See [DESIGN](specs/DESIGN.md#8-bilibili-integration-and-required-proof-of-concept) for the accepted baseline and boundaries.
 
 ## Start development
 
