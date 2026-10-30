@@ -154,6 +154,9 @@ Run `make help` to list the available targets.
 | --- | --- |
 | `install`, `setup` | Install locked project dependencies and build the template |
 | `deps` | Check tool versions and install locked Go/frontend dependencies |
+| `upgrade` | Upgrade frontend dependencies, then Go modules |
+| `upgrade-frontend` | Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain |
+| `upgrade-backend` | Upgrade Go modules within current module paths, including test dependencies |
 | `uninstall` | Remove frontend dependencies and build output; preserve data and lockfiles |
 | `clean` | Remove generated assets and binaries; preserve dependencies and data |
 | `format`, `tidy` | Apply Go and Oxfmt formatting |
@@ -175,6 +178,21 @@ Run `make help` to list the available targets.
 
 `make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `VERSION` supplies the application version.
 Container targets accept `IMAGE=ovs:dev`; `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
+
+Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
+Use `VERBOSE=1` to show recipe commands and enable tracing in installation and build scripts.
+
+`make upgrade-frontend` runs the latest official [Vite+ migrator](https://viteplus.dev/guide/upgrade-project) to align its toolchain catalog and aliases.
+Then `pnpm dlx taze minor --write` updates other dependency ranges within their current major versions.
+Vite+ toolchain packages are excluded from taze. The command finishes with `pnpm install --no-frozen-lockfile` to refresh the lockfile.
+Review migration notices before accepting the result.
+
+`make upgrade-backend` builds the embedded frontend assets, runs `go get -u -t ./...`, then runs `go mod tidy`.
+The [Go command](https://go.dev/ref/mod#go-get) upgrades modules and test dependencies within their existing module paths.
+Major versions that change a module path require a separate migration. Dependencies can raise the minimum Go version in `go.mod`.
+The target removes any suggested `toolchain` directive so the project retains only its minimum Go requirement.
+
+After either upgrade, review the manifest and lockfile changes. Run `make check`, `make test test-race`, and `make build`.
 
 The Bash scripts under `scripts/` own dependency checks, installation, cleanup, and build sequencing.
 Go commands under `scripts/gofmt/`, `scripts/notices/`, `scripts/image-smoke/`, `scripts/proxy-smoke/`, and `scripts/release/` own formatting checks, dependency notices, container and proxy verification, and release maintenance. `scripts/internal/smoke/` holds their shared API and room-socket helpers.
