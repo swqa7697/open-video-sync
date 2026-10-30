@@ -32,7 +32,13 @@
   --accent-light: #4d6686;
   --accent-dark: #a5b8d0;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   color: var(--text);
   background: var(--background);
   line-height: 1.5;
@@ -1762,7 +1768,9 @@ fieldset select {
     transition: transform var(--motion-press) var(--ease-out);
   }
   :root[data-input='pointer']
-    :is(.create-submit, .room-actions button, .modal button):active:not(:disabled),
+    :is(.create-submit, .room-actions button, .modal button):active:not(
+      :disabled
+    ),
   :root[data-input='pointer'] .appearance-choice:active .appearance-tile {
     transform: scale(0.98);
   }

@@ -8,10 +8,15 @@ import { InputError } from '../features/failures';
 export const useIdentityStore = defineStore('identity', () => {
   const session = ref<Session>();
   async function bootstrap(signal: AbortSignal): Promise<void> {
-    const value = decodeSession(await request('/session', 'POST', '', {}, signal));
+    const value = decodeSession(
+      await request('/session', 'POST', '', {}, signal)
+    );
     if (!signal.aborted) session.value = value;
   }
-  async function rename(displayName: string, signal: AbortSignal): Promise<void> {
+  async function rename(
+    displayName: string,
+    signal: AbortSignal
+  ): Promise<void> {
     let patch: ReturnType<typeof decodeProfilePatch>;
     try {
       patch = decodeProfilePatch({ displayName });
@@ -19,12 +24,24 @@ export const useIdentityStore = defineStore('identity', () => {
       throw new InputError('invalid display name');
     }
     const value = decodeSession(
-      await request('/me', 'PATCH', session.value?.csrfToken ?? '', patch, signal),
+      await request(
+        '/me',
+        'PATCH',
+        session.value?.csrfToken ?? '',
+        patch,
+        signal
+      )
     );
     if (!signal.aborted) session.value = value;
   }
   async function forget(signal: AbortSignal): Promise<void> {
-    await request('/session', 'DELETE', session.value?.csrfToken ?? '', {}, signal);
+    await request(
+      '/session',
+      'DELETE',
+      session.value?.csrfToken ?? '',
+      {},
+      signal
+    );
     session.value = undefined;
   }
   return { session, bootstrap, rename, forget };

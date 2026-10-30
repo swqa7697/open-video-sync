@@ -7,7 +7,11 @@ export async function checkReadiness(signal: AbortSignal): Promise<Readiness> {
       cache: 'no-store',
       credentials: 'omit',
     });
-    return response.ok ? 'ready' : response.status === 503 ? 'not_ready' : 'unreachable';
+    return response.ok
+      ? 'ready'
+      : response.status === 503
+        ? 'not_ready'
+        : 'unreachable';
   } catch (error) {
     if (signal.aborted) throw error;
     return 'unreachable';

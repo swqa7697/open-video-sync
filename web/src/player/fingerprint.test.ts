@@ -6,8 +6,12 @@ test('sampled matching agrees with independent tiny, overlap, and separated refe
   for (const vector of vectors) {
     const bytes = new Uint8Array(vector.sizeBytes);
     for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) % 251;
-    expect(await fingerprint(new Blob([bytes]), vector.roomId)).toBe(vector.digest);
+    expect(await fingerprint(new Blob([bytes]), vector.roomId)).toBe(
+      vector.digest
+    );
     bytes[0] = bytes[0]! ^ 1;
-    expect(await fingerprint(new Blob([bytes]), vector.roomId)).not.toBe(vector.digest);
+    expect(await fingerprint(new Blob([bytes]), vector.roomId)).not.toBe(
+      vector.digest
+    );
   }
 });

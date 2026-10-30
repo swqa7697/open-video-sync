@@ -18,7 +18,13 @@ export type MediaDescriptor =
       durationMs: number;
       label?: string;
     }
-  | { kind: 'bilibili'; bvid: string; cid: string; part: number; durationMs: number };
+  | {
+      kind: 'bilibili';
+      bvid: string;
+      cid: string;
+      part: number;
+      durationMs: number;
+    };
 
 const maxDurationMs = 604_800_000;
 const maxFileBytes = 17_592_186_044_416;
@@ -29,7 +35,8 @@ function invalid(): never {
 }
 
 function object(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return invalid();
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return invalid();
   return value as Record<string, unknown>;
 }
 
@@ -50,7 +57,11 @@ function text(value: unknown, maxCodepoints: number, maxBytes: number): string {
     new TextEncoder().encode(value).length > maxBytes ||
     points.some((point) => {
       const code = point.codePointAt(0)!;
-      return code <= 0x1f || (code >= 0x7f && code <= 0x9f) || (code >= 0xd800 && code <= 0xdfff);
+      return (
+        code <= 0x1f ||
+        (code >= 0x7f && code <= 0x9f) ||
+        (code >= 0xd800 && code <= 0xdfff)
+      );
     })
   ) {
     return invalid();
@@ -100,8 +111,16 @@ export function decodeMedia(value: unknown): MediaDescriptor {
   const input = object(value);
   const durationMs = integer(input.durationMs, 1, maxDurationMs);
   if (input.kind === 'local') {
-    const fields = ['kind', 'fingerprintVersion', 'digest', 'sizeBytes', 'durationMs'];
-    const label = Object.hasOwn(input, 'label') ? text(input.label, 120, 480) : undefined;
+    const fields = [
+      'kind',
+      'fingerprintVersion',
+      'digest',
+      'sizeBytes',
+      'durationMs',
+    ];
+    const label = Object.hasOwn(input, 'label')
+      ? text(input.label, 120, 480)
+      : undefined;
     if (label !== undefined) fields.push('label');
     shape(input, fields);
     if (input.fingerprintVersion !== 1) return invalid();

@@ -20,7 +20,7 @@ ifneq ($(VERBOSE),1)
 .SILENT:
 endif
 
-.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-frontend format tidy check test test-race web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-frontend format tidy format-check lint check test test-race web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 .PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
 
 help: ## Show available commands
@@ -67,21 +67,27 @@ upgrade-frontend: ## Upgrade frontend dependencies within current majors and ali
 	pnpm --dir web install --no-frozen-lockfile
 	@$(SUCCESS) "Updated frontend manifests and lockfile."
 
-format: ## Apply Go and frontend formatting
-	@$(INFO) "Formatting Go and frontend sources..."
-	go run ./scripts/gofmt -write
-	pnpm --dir web run format
-	pnpm --dir web exec vp fmt "$(CURDIR)/tests/e2e" "$(CURDIR)/userscripts"
+format: ## Apply formatting to Go, frontend, Bash, Makefile, docs, and config
+	@$(INFO) "Formatting Go, frontend, Bash, Makefile, documentation, and configuration..."
+	./tidy.sh
 
 tidy: format ## Alias for format
 
-check: web-build ## Check formatting, Go vet, frontend lint, and Vue types
-	@$(INFO) "Checking formatting, Go vet, Bash syntax, frontend lint, and types..."
-	go run ./scripts/gofmt
+format-check: ## Check formatting without changing source files
+	@$(INFO) "Checking Go, Prettier, and Makefile formatting..."
+	./tidy.sh --check
+
+lint: web-build ## Run Go vet, Bash syntax checks, Oxlint, and Vue template lint
+	@$(INFO) "Checking Go vet, Bash syntax, and frontend lint..."
 	go vet ./...
+	bash -n tidy.sh
 	@for script in scripts/*.sh; do bash -n "$$script"; done
-	pnpm --dir web run check
-	pnpm --dir web exec vp check --deny-warnings "$(CURDIR)/tests/e2e" "$(CURDIR)/userscripts"
+	pnpm --dir web run lint
+	pnpm --dir web exec vp lint --deny-warnings "$(CURDIR)/tests/e2e" "$(CURDIR)/userscripts" "$(CURDIR)/.prettierrc.cjs"
+	@$(SUCCESS) "All lint checks passed."
+
+check: format-check lint ## Run format checks, frontend/backend lint, and Vue types
+	pnpm --dir web run typecheck
 	@$(SUCCESS) "All static checks passed."
 
 test: web-build ## Run Go and frontend unit/integration tests

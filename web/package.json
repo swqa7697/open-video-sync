@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "check": "vp check --deny-warnings && eslint . && vue-tsc --noEmit",
-    "format": "vp fmt",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck",
+    "format": "bash ../tidy.sh",
     "typecheck": "vue-tsc --noEmit",
     "test": "vp test run",
     "test:e2e": "playwright test",
-    "build": "vue-tsc -b && vp build"
+    "build": "vue-tsc -b && vp build",
+    "format:check": "bash ../tidy.sh --check",
+    "lint": "vp lint --deny-warnings && eslint . --max-warnings 0"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
@@ -25,6 +27,8 @@
     "eslint": "^10.14.0",
     "eslint-plugin-vue": "^10.12.0",
     "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
+    "prettier-plugin-sh": "^0.20.2",
     "typescript": "^5.9.3",
     "vite": "catalog:",
     "vite-plus": "catalog:",

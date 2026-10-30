@@ -72,19 +72,19 @@ Cancel pending work on room, media, connection-owner, or adapter changes.
 
 ## 3. Trust boundaries and data ownership
 
-| Data | Browser | OVS memory / SQLite |
-| --- | --- | --- |
-| Local video bytes, filename, path, file handle, object URL | Local player only | Never |
-| Platform cookies and login tokens | Browser/manager session only | Never |
-| Signed media URLs and provider responses | Helper memory only | Never |
-| Media bytes and danmaku payloads | Browser-local delivery and rendering | Never |
-| Local fingerprint, size, duration | Matching metadata | Memory; selected descriptor may persist |
-| Bilibili BV ID, CID, part, duration | Matching metadata | Memory; selected descriptor may persist |
-| Identity, display name, room settings and membership | Authorized views | Persistent; also loaded in memory |
-| OVS session bearer token | HttpOnly cookie | Hash and session metadata only |
-| Invitation link secret and code | Host sharing and participant redemption | Private persistent invitation record; host-only retrieval |
-| Playback position, phase, waiting, presence, command receipts | Current room | Memory only |
-| Volume, mute, quality, danmaku preferences | Local preference | Never |
+| Data                                                          | Browser                                 | OVS memory / SQLite                                       |
+| ------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
+| Local video bytes, filename, path, file handle, object URL    | Local player only                       | Never                                                     |
+| Platform cookies and login tokens                             | Browser/manager session only            | Never                                                     |
+| Signed media URLs and provider responses                      | Helper memory only                      | Never                                                     |
+| Media bytes and danmaku payloads                              | Browser-local delivery and rendering    | Never                                                     |
+| Local fingerprint, size, duration                             | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Bilibili BV ID, CID, part, duration                           | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Identity, display name, room settings and membership          | Authorized views                        | Persistent; also loaded in memory                         |
+| OVS session bearer token                                      | HttpOnly cookie                         | Hash and session metadata only                            |
+| Invitation link secret and code                               | Host sharing and participant redemption | Private persistent invitation record; host-only retrieval |
+| Playback position, phase, waiting, presence, command receipts | Current room                            | Memory only                                               |
+| Volume, mute, quality, danmaku preferences                    | Local preference                        | Never                                                     |
 
 Invitation secrets are recoverable to support repeated sharing. Treat `/data` as private credential-bearing storage.
 This does not change session-token storage: OVS session bearer tokens remain hash-only.
@@ -155,10 +155,10 @@ A full snapshot is sufficient for reconnect. There is no persistent event log or
 
 ### 5.2 Settings
 
-| Setting | Values | Default |
-| --- | --- | --- |
-| `controllers` | `host`, `everyone` | `host` |
-| `waitForAll` | Boolean | `true` |
+| Setting       | Values             | Default |
+| ------------- | ------------------ | ------- |
+| `controllers` | `host`, `everyone` | `host`  |
+| `waitForAll`  | Boolean            | `true`  |
 
 `waitForAll` covers startup and sustained buffering. Synchronization thresholds and timing constants are implementation defaults, not room preferences.
 All participants use base rate 1.0; small temporary rate corrections are automatic. Volume, mute, fullscreen, quality, and danmaku remain local.
@@ -319,15 +319,15 @@ A reused in-memory request ID with changed input is rejected. Never promise reco
 
 ### 10.1 Persistent data
 
-| Record | Persisted information | Write trigger |
-| --- | --- | --- |
-| Schema migrations | Version and checksum | Startup upgrade |
-| Identities | ID, optional display name | Create or rename |
-| Sessions | Token hash, identity, CSRF metadata, expiry | Create, daily renewal if needed, revoke |
-| Rooms | ID, title, host, two settings | Create, change settings, close |
-| Members | Room, identity, room-scoped member ID | Join, leave, remove |
-| Invitations | Current link/code values and indexed verification hashes | Create or reset; member removal |
-| Selected media | Allowlisted local or Bilibili descriptor | Select or replace media |
+| Record            | Persisted information                                    | Write trigger                           |
+| ----------------- | -------------------------------------------------------- | --------------------------------------- |
+| Schema migrations | Version and checksum                                     | Startup upgrade                         |
+| Identities        | ID, optional display name                                | Create or rename                        |
+| Sessions          | Token hash, identity, CSRF metadata, expiry              | Create, daily renewal if needed, revoke |
+| Rooms             | ID, title, host, two settings                            | Create, change settings, close          |
+| Members           | Room, identity, room-scoped member ID                    | Join, leave, remove                     |
+| Invitations       | Current link/code values and indexed verification hashes | Create or reset; member removal         |
+| Selected media    | Allowlisted local or Bilibili descriptor                 | Select or replace media                 |
 
 SQLite is not a runtime state store, queue, authorization polling mechanism, or synchronization clock.
 Do not persist playback checkpoints, command results, HTTP retry receipts, storage probes, connection state, runtime revisions, or media generations.

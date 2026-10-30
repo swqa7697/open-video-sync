@@ -1,12 +1,19 @@
-export function localFingerprint(file: File, roomId: string, signal: AbortSignal): Promise<string> {
+export function localFingerprint(
+  file: File,
+  roomId: string,
+  signal: AbortSignal
+): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(new DOMException('Cancelled', 'AbortError'));
       return;
     }
-    const worker = new Worker(new URL('./fingerprint.worker.ts', import.meta.url), {
-      type: 'module',
-    });
+    const worker = new Worker(
+      new URL('./fingerprint.worker.ts', import.meta.url),
+      {
+        type: 'module',
+      }
+    );
     const cleanup = () => {
       clearTimeout(timer);
       signal.removeEventListener('abort', abort);
@@ -23,7 +30,8 @@ export function localFingerprint(file: File, roomId: string, signal: AbortSignal
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = (event: MessageEvent<unknown>) => {
       cleanup();
-      if (typeof event.data === 'string' && /^[a-f0-9]{64}$/.test(event.data)) resolve(event.data);
+      if (typeof event.data === 'string' && /^[a-f0-9]{64}$/.test(event.data))
+        resolve(event.data);
       else reject(new Error('Local matching failed. Select the file again.'));
     };
     worker.onerror = () => {

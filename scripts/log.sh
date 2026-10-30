@@ -11,8 +11,14 @@ case "$level" in
   info) code=36 ;;
   success) code=32 ;;
   warn) code=33 ;;
-  error) code=31; exec 1>&2 ;;
-  *) printf 'Unknown log level: %s\n' "$level" >&2; exit 1 ;;
+  error)
+    code=31
+    exec 1>&2
+    ;;
+  *)
+    printf 'Unknown log level: %s\n' "$level" >&2
+    exit 1
+    ;;
 esac
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; then
   color=$'\033['"${code}m"

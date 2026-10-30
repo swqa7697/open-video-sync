@@ -1,4 +1,7 @@
-import type { PlayerCapabilities, ReadinessStatus } from '../../transport/protocol-values';
+import type {
+  PlayerCapabilities,
+  ReadinessStatus,
+} from '../../transport/protocol-values';
 export interface PlayerObservation {
   positionMs: number;
   durationMs: number;
@@ -52,11 +55,13 @@ export class LocalAdapter implements PlayerAdapter {
           // Only waiting means playback lacks data. Firefox fires stalled for MediaSource when
           // appends pause with enough data buffered, and no event would clear that state.
           else if (event === 'waiting') this.status = 'buffering';
-          else if (['canplay', 'playing', 'seeked', 'loadeddata'].includes(event))
+          else if (
+            ['canplay', 'playing', 'seeked', 'loadeddata'].includes(event)
+          )
             this.status = 'ready';
           for (const listener of this.listeners) listener();
         },
-        { signal: this.lifetime.signal },
+        { signal: this.lifetime.signal }
       );
   }
   async load(file: File, signal: AbortSignal): Promise<void> {
@@ -64,7 +69,8 @@ export class LocalAdapter implements PlayerAdapter {
     this.url = URL.createObjectURL(file);
     this.video.src = this.url;
     await this.wait('loadeddata', signal);
-    if (this.disposed || signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (this.disposed || signal.aborted)
+      throw new DOMException('Cancelled', 'AbortError');
     const duration = this.video.duration * 1000;
     if (
       !Number.isFinite(duration) ||
@@ -74,7 +80,7 @@ export class LocalAdapter implements PlayerAdapter {
     ) {
       this.status = 'unsupported';
       throw new Error(
-        'This browser cannot decode this file or determine its duration. Select a supported video.',
+        'This browser cannot decode this file or determine its duration. Select a supported video.'
       );
     }
     this.status = 'ready';
@@ -91,7 +97,10 @@ export class LocalAdapter implements PlayerAdapter {
       this.status = 'ready';
     } catch (error) {
       // A pause or a new source cancels a pending play with AbortError; the media stays usable.
-      if (!this.disposed && !(error instanceof DOMException && error.name === 'AbortError'))
+      if (
+        !this.disposed &&
+        !(error instanceof DOMException && error.name === 'AbortError')
+      )
         this.status =
           error instanceof DOMException && error.name === 'NotAllowedError'
             ? 'gesture_required'
@@ -104,7 +113,11 @@ export class LocalAdapter implements PlayerAdapter {
   }
   async seek(positionMs: number): Promise<void> {
     if (this.disposed) throw new DOMException('Disposed', 'AbortError');
-    if (Math.abs(this.video.currentTime * 1000 - positionMs) < 20 && !this.video.seeking) return;
+    if (
+      Math.abs(this.video.currentTime * 1000 - positionMs) < 20 &&
+      !this.video.seeking
+    )
+      return;
     const completed = this.wait('seeked', this.lifetime.signal);
     this.video.currentTime = positionMs / 1000;
     await completed;
@@ -115,11 +128,14 @@ export class LocalAdapter implements PlayerAdapter {
   getState(): PlayerObservation {
     return {
       positionMs: Math.max(0, Math.round(this.video.currentTime * 1000)),
-      durationMs: Number.isFinite(this.video.duration) ? Math.round(this.video.duration * 1000) : 0,
+      durationMs: Number.isFinite(this.video.duration)
+        ? Math.round(this.video.duration * 1000)
+        : 0,
       paused: this.video.paused,
       seeking: this.video.seeking,
       status:
-        this.status === 'ready' && this.video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+        this.status === 'ready' &&
+        this.video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
           ? 'buffering'
           : this.status,
     };
@@ -162,7 +178,11 @@ export class LocalAdapter implements PlayerAdapter {
         };
       const timer = setTimeout(() => {
         cleanup();
-        reject(new Error('The local video did not become ready. Select the file again.'));
+        reject(
+          new Error(
+            'The local video did not become ready. Select the file again.'
+          )
+        );
       }, 15000);
       this.video.addEventListener(event, done, { once: true });
       this.video.addEventListener('error', fail, { once: true });

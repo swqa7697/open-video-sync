@@ -2,8 +2,8 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-for tool in go node pnpm make; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
+for tool in go node pnpm make uvx; do
+  if ! command -v "$tool" > /dev/null 2>&1; then
     bash scripts/log.sh deps error "Missing tool: $tool. See README.md for prerequisites."
     exit 1
   fi

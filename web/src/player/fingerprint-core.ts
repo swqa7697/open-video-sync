@@ -11,7 +11,10 @@ function u64(n: number): Uint8Array {
   return b;
 }
 // The exact v1 byte encoding is shared with specs/fixtures/local-fingerprints-v1.json.
-export async function fingerprint(file: SampleFile, roomId: string): Promise<string> {
+export async function fingerprint(
+  file: SampleFile,
+  roomId: string
+): Promise<string> {
   if (
     !/^[a-f0-9]{32}$/.test(roomId) ||
     !Number.isSafeInteger(file.size) ||
@@ -27,8 +30,14 @@ export async function fingerprint(file: SampleFile, roomId: string): Promise<str
   }
   hash.update(u64(file.size));
   const length = Math.min(file.size, 1048576);
-  for (const offset of [0, Math.floor((file.size - length) / 2), file.size - length]) {
-    const bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+  for (const offset of [
+    0,
+    Math.floor((file.size - length) / 2),
+    file.size - length,
+  ]) {
+    const bytes = new Uint8Array(
+      await file.slice(offset, offset + length).arrayBuffer()
+    );
     if (bytes.length !== length) throw new Error('File read failed.');
     hash.update(u64(offset)).update(u64(length)).update(bytes);
   }

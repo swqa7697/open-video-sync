@@ -12,11 +12,12 @@ defineProps<{ disabled: boolean }>();
       <option value="everyone">Everyone</option>
     </select>
     <label class="checkbox"
-      ><input v-model="settings.waitForAll" type="checkbox" />Wait for everyone</label
+      ><input v-model="settings.waitForAll" type="checkbox" />Wait for
+      everyone</label
     >
     <p class="hint">
-      Wait for everyone to load media and recover from buffering. Changing this preference pauses
-      the room.
+      Wait for everyone to load media and recover from buffering. Changing this
+      preference pauses the room.
     </p>
   </fieldset>
 </template>

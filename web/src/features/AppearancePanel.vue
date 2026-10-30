@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import Icon from '../components/Icon.vue';
-import { appearanceModes, appearanceAccents, useAppearanceStore } from '../stores/appearance';
+import {
+  appearanceModes,
+  appearanceAccents,
+  useAppearanceStore,
+} from '../stores/appearance';
 
 const appearance = useAppearanceStore();
 </script>
 
 <template>
   <div class="appearance-panel">
-    <p class="hint">Make this space your own. Changes apply only to this browser.</p>
+    <p class="hint">
+      Make this space your own. Changes apply only to this browser.
+    </p>
     <fieldset class="appearance-options">
       <legend>Color mode</legend>
       <div class="appearance-grid">
-        <label v-for="option in appearanceModes" :key="option.value" class="appearance-choice">
+        <label
+          v-for="option in appearanceModes"
+          :key="option.value"
+          class="appearance-choice"
+        >
           <input
             type="radio"
             name="color-mode"
@@ -29,7 +39,11 @@ const appearance = useAppearanceStore();
     <fieldset class="appearance-options">
       <legend>Accent color</legend>
       <div class="appearance-grid">
-        <label v-for="option in appearanceAccents" :key="option.value" class="appearance-choice">
+        <label
+          v-for="option in appearanceAccents"
+          :key="option.value"
+          class="appearance-choice"
+        >
           <input
             type="radio"
             name="accent-color"
@@ -39,7 +53,10 @@ const appearance = useAppearanceStore();
           />
           <span class="appearance-tile">
             <span class="accent-swatch" :data-accent="option.value"
-              ><Icon v-if="appearance.accent === option.value" name="check" :size="16"
+              ><Icon
+                v-if="appearance.accent === option.value"
+                name="check"
+                :size="16"
             /></span>
             <span>{{ option.label }}</span>
           </span>

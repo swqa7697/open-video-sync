@@ -4,11 +4,17 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { parseBridgeJSON } from './bridge-json.js';
 import { readFile } from 'node:fs/promises';
-const release = JSON.parse(await readFile(new URL('./release.json', import.meta.url), 'utf8'));
-const code = (await readFile(new URL('./helper.user.js', import.meta.url), 'utf8'))
+const release = JSON.parse(
+  await readFile(new URL('./release.json', import.meta.url), 'utf8')
+);
+const code = (
+  await readFile(new URL('./helper.user.js', import.meta.url), 'utf8')
+)
   .replace(
     '/* OVS_BRIDGE_JSON */',
-    (await readFile(new URL('./bridge-json.js', import.meta.url), 'utf8')).replace(/^export /, ''),
+    (
+      await readFile(new URL('./bridge-json.js', import.meta.url), 'utf8')
+    ).replace(/^export /, '')
   )
   .replaceAll('{{ORIGIN}}', 'http://127.0.0.1:18090')
   .replaceAll('{{MATCH}}', 'http://127.0.0.1/*')
@@ -27,7 +33,8 @@ function fixture(options = {}) {
   const page = {};
   page.self = page;
   page.top = options.frame ? {} : page;
-  page.addEventListener = (name, callback) => (listeners[name] ??= []).push(callback);
+  page.addEventListener = (name, callback) =>
+    (listeners[name] ??= []).push(callback);
   page.postMessage = (raw) => replies.push(JSON.parse(raw));
   const view = {
     bvid: 'BV1hf4y1N75G',
@@ -46,7 +53,9 @@ function fixture(options = {}) {
     timelength: 100000,
     dash: {
       video: [track, { ...track, id: 64 }],
-      audio: [{ ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' }],
+      audio: [
+        { ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' },
+      ],
     },
     token: CANARY,
   };
@@ -71,7 +80,10 @@ function fixture(options = {}) {
               dash: {
                 ...play.dash,
                 video: [
-                  { ...track, baseUrl: `https://bilivideo.com.evil.invalid/upgcxcode/${CANARY}` },
+                  {
+                    ...track,
+                    baseUrl: `https://bilivideo.com.evil.invalid/upgcxcode/${CANARY}`,
+                  },
                 ],
               },
             }
@@ -124,7 +136,8 @@ function fixture(options = {}) {
       if (options.oversize) value = new Uint8Array(256 * 1024 + 1);
       if (options.redirect) finalUrl = `https://evil.invalid/${CANARY}`;
     }
-    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+    const bytes =
+      typeof value === 'string' ? new TextEncoder().encode(value) : value;
     const response = {
       status,
       finalUrl,
@@ -135,7 +148,11 @@ function fixture(options = {}) {
     };
     details.onreadystatechange?.(response);
     if (details.cancelled) return;
-    details.onprogress?.({ loaded: bytes.length, total: bytes.length, lengthComputable: true });
+    details.onprogress?.({
+      loaded: bytes.length,
+      total: bytes.length,
+      lengthComputable: true,
+    });
     if (details.cancelled) return;
     response.readyState = 4;
     details.onload(response);
@@ -192,7 +209,9 @@ function fixture(options = {}) {
       }),
       ...eventOptions,
     };
-    await Promise.all((listeners.message || []).map((listener) => listener(event)));
+    await Promise.all(
+      (listeners.message || []).map((listener) => listener(event))
+    );
     return replies.find((r) => r.id === number);
   }
   ready = call('hello', { version: 1 });
@@ -225,18 +244,28 @@ test('exact activation and source checks reject origins, frames, and forged wind
     const f = fixture({ firefox });
     assert.equal(
       await f.call('hello', { version: 1 }, { origin: 'https://evil.invalid' }),
-      undefined,
+      undefined
     );
     assert.equal(
-      await f.call('hello', { version: 1 }, { source: { wrappedJSObject: f.page } }),
-      undefined,
+      await f.call(
+        'hello',
+        { version: 1 },
+        { source: { wrappedJSObject: f.page } }
+      ),
+      undefined
     );
-    assert.equal(await f.call('hello', { version: 1 }, { data: 'x'.repeat(2049) }), undefined);
+    assert.equal(
+      await f.call('hello', { version: 1 }, { data: 'x'.repeat(2049) }),
+      undefined
+    );
     assert.equal((await f.call('hello', { version: 1 })).ok, true);
     if (firefox) {
       const source = {};
       f.unwrap.set(source, f.page);
-      assert.equal((await f.call('hello', { version: 1 }, { source })).ok, true);
+      assert.equal(
+        (await f.call('hello', { version: 1 }, { source })).ok,
+        true
+      );
     }
   }
 });
@@ -256,7 +285,10 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     version: 1,
   };
   await f.call('probe', { version: 1 }, { data: JSON.stringify(inspection) });
-  assert.equal(f.replies.find((r) => r.id === 999).value.helper, release.version);
+  assert.equal(
+    f.replies.find((r) => r.id === 999).value.helper,
+    release.version
+  );
   assert(!JSON.stringify(open).includes(CANARY));
   assert(!JSON.stringify(open).includes('https://'));
   const data = await f.call('bytes', {
@@ -269,8 +301,20 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert.equal(atob(data.value.base64).length, 32);
   for (const args of [
     { url: 'https://evil.invalid', headers: { Cookie: CANARY } },
-    { handle: open.value.handle, track: 0, offset: 0, length: 999999, generation: 1 },
-    { handle: open.value.handle, track: 0, offset: -1, length: 32, generation: 1 },
+    {
+      handle: open.value.handle,
+      track: 0,
+      offset: 0,
+      length: 999999,
+      generation: 1,
+    },
+    {
+      handle: open.value.handle,
+      track: 0,
+      offset: -1,
+      length: 32,
+      generation: 1,
+    },
     {
       handle: open.value.handle,
       track: 0,
@@ -282,7 +326,10 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     const r = await f.call('bytes', args);
     assert.equal(r.ok, false);
   }
-  assert.equal(f.requests.filter((r) => r.url.includes('/upgcxcode/')).length, 1);
+  assert.equal(
+    f.requests.filter((r) => r.url.includes('/upgcxcode/')).length,
+    1
+  );
   const switched = await f.call('open', {
     bvid: 'BV1hf4y1N75G',
     part: 1,
@@ -292,8 +339,10 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert.equal(switched.value.quality, 64);
   assert.equal(switched.value.tracks[0].id, 64);
   assert.equal(
-    new URL(f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url).searchParams.get('qn'),
-    '64',
+    new URL(
+      f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url
+    ).searchParams.get('qn'),
+    '64'
   );
   assert(!JSON.stringify(switched).includes(CANARY));
 });
@@ -356,7 +405,11 @@ test('bounded concurrency, flood rejection, disposal, and late callbacks preserv
   await Promise.all([one, two]);
   assert.equal(f.aborted, 2);
   for (const request of f.held)
-    request.onload({ status: 200, finalUrl: request.url, responseText: CANARY });
+    request.onload({
+      status: 200,
+      finalUrl: request.url,
+      responseText: CANARY,
+    });
   assert(!JSON.stringify(f.replies).includes(CANARY));
   const flood = fixture();
   for (let i = 0; i < 100; i++) await flood.call('hello', { version: 1 });
@@ -377,7 +430,12 @@ test('a replacement player channel cancels old work and refuses stale owners', a
     generation: 1,
   });
   assert.equal(stale.error, 'stale-generation');
-  const next = await f.call('open', { bvid: 'BV1hf4y1N75G', part: 1, generation: 1, client });
+  const next = await f.call('open', {
+    bvid: 'BV1hf4y1N75G',
+    part: 1,
+    generation: 1,
+    client,
+  });
   assert.equal(next.ok, true);
   assert.notEqual(next.value.handle, opened.value.handle);
 });
@@ -385,21 +443,28 @@ test('a replacement player channel cancels old work and refuses stale owners', a
 test('danmaku strips provider fields and executable modes while preserving plain text', async () => {
   const f = fixture(),
     opened = await f.open();
-  const reply = await f.call('danmaku', { handle: opened.value.handle, segment: 1, generation: 1 });
+  const reply = await f.call('danmaku', {
+    handle: opened.value.handle,
+    segment: 1,
+    generation: 1,
+  });
   assert.equal(reply.ok, true);
   assert.deepEqual(
     reply.value.comments.map((c) => c.mode),
-    [1, 5],
+    [1, 5]
   );
   assert.equal(reply.value.comments[0].text, '<script>text only</script>');
   assert(!JSON.stringify(reply).includes(CANARY));
 });
 
 test('bridge JSON rejects duplicate keys, nesting, invalid scalars, and oversized UTF-8', async () => {
-  assert.deepEqual(parseBridgeJSON('{"duration":10.25,"comments":[{"time":1.5}]}', 2048), {
-    duration: 10.25,
-    comments: [{ time: 1.5 }],
-  });
+  assert.deepEqual(
+    parseBridgeJSON('{"duration":10.25,"comments":[{"time":1.5}]}', 2048),
+    {
+      duration: 10.25,
+      comments: [{ time: 1.5 }],
+    }
+  );
   for (const raw of [
     '{"op":"session","op":"session"}',
     '{"value":{"cid":"1","cid":"2"}}',
@@ -423,7 +488,7 @@ test('bridge JSON rejects duplicate keys, nesting, invalid scalars, and oversize
         id: 999,
         op: 'session',
       }).replace('"op":"session"', '"op":"session","op":"session"'),
-    },
+    }
   );
   assert.equal(f.requests.length, before);
 });

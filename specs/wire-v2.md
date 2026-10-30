@@ -30,22 +30,22 @@ Use `/api/v2`. Health paths and the helper distribution URL do not change.
 Bootstrap and authenticated mutations require the configured exact origin. Authenticated mutations also require the session-bound CSRF token.
 Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate expiry and authorization against application memory.
 
-| Method and relative path | Input | Result |
-| --- | --- | --- |
-| `POST /session` | `{}` | `{identity:{identityId,displayName},csrfToken,expiresAtMs}` |
-| `GET /me` | None | Same profile/session shape |
-| `PATCH /me` | `{displayName}` | Same profile/session shape |
-| `DELETE /session` | `{}` | `{forgotten:true}` after persistent revocation and socket closure |
-| `GET /rooms` | Optional existing `cursor` and `limit` | `{rooms:[{roomId,title,role}],nextCursor}` from memory |
-| `POST /rooms` | `{title,settings,media}` | `{snapshot,invitation,replayed}` |
-| `POST /invitations/redeem` | Exactly `{linkSecret}` or `{code}` | `{snapshot,replayed}` |
-| `GET /rooms/{roomId}` | None | Authorized snapshot from memory |
-| `PATCH /rooms/{roomId}/settings` | `{epoch,expectedRevision,settings}` | `{snapshot}` |
-| `GET /rooms/{roomId}/invitations` | None | `{invitation}`; host only |
-| `POST /rooms/{roomId}/invitations` | `{epoch,expectedRevision}` | `{snapshot,invitation}`; host-only reset |
-| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}` | `{roomId,revision,removedMemberId}` |
-| `POST /rooms/{roomId}/leave` | `{epoch,expectedRevision}` | Committed departure receipt; host membership retained for return |
-| `DELETE /rooms/{roomId}` | `{epoch,expectedRevision}` | `{roomId,revision,closed:true}` |
+| Method and relative path                    | Input                                  | Result                                                            |
+| ------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
+| `POST /session`                             | `{}`                                   | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`       |
+| `GET /me`                                   | None                                   | Same profile/session shape                                        |
+| `PATCH /me`                                 | `{displayName}`                        | Same profile/session shape                                        |
+| `DELETE /session`                           | `{}`                                   | `{forgotten:true}` after persistent revocation and socket closure |
+| `GET /rooms`                                | Optional existing `cursor` and `limit` | `{rooms:[{roomId,title,role}],nextCursor}` from memory            |
+| `POST /rooms`                               | `{title,settings,media}`               | `{snapshot,invitation,replayed}`                                  |
+| `POST /invitations/redeem`                  | Exactly `{linkSecret}` or `{code}`     | `{snapshot,replayed}`                                             |
+| `GET /rooms/{roomId}`                       | None                                   | Authorized snapshot from memory                                   |
+| `PATCH /rooms/{roomId}/settings`            | `{epoch,expectedRevision,settings}`    | `{snapshot}`                                                      |
+| `GET /rooms/{roomId}/invitations`           | None                                   | `{invitation}`; host only                                         |
+| `POST /rooms/{roomId}/invitations`          | `{epoch,expectedRevision}`             | `{snapshot,invitation}`; host-only reset                          |
+| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`             | `{roomId,revision,removedMemberId}`                               |
+| `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`             | Committed departure receipt; host membership retained for return  |
+| `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`             | `{roomId,revision,closed:true}`                                   |
 
 `Invitation` is `{linkSecret,code}`. It has no expiry. GET reuses the current invitation without rotating it.
 The host learns the replacement invitation through the host-only endpoint after removing a participant.
@@ -123,15 +123,15 @@ Remove `waiting.exclude` and `member.observation`. No frame can override its aut
 
 Server room envelopes remain `{v:2,type,epoch,eventSeq,payload}`. Sequence is per connection, starts at 1, and is never persisted.
 
-| Type | Payload |
-| --- | --- |
-| `session.welcome` | `{connectionId,snapshot}` |
-| `room.snapshot` | Full authorized snapshot |
-| `command.result` | `{commandId,accepted,revision,error}`; rejected revision or accepted error is null |
-| `room.closed` | `{roomId,revision}` |
-| `session.replaced` | `{reason:"connection_replaced"|"session_revoked"}` |
-| `server.stopping` | `{reason:"shutdown"}` |
-| `error` | Safe public error |
+| Type               | Payload                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `session.welcome`  | `{connectionId,snapshot}`                                                          |
+| `room.snapshot`    | Full authorized snapshot                                                           |
+| `command.result`   | `{commandId,accepted,revision,error}`; rejected revision or accepted error is null |
+| `room.closed`      | `{roomId,revision}`                                                                |
+| `session.replaced` | `{reason:"connection_replaced"                                                     | "session_revoked"}` |
+| `server.stopping`  | `{reason:"shutdown"}`                                                              |
+| `error`            | Safe public error                                                                  |
 
 Use full snapshots after meaningful changes; coalesce replaceable queued snapshots before assigning event sequence numbers.
 Do not publish a snapshot merely because a timer fired. Preserve results and lifecycle messages; disconnect slow clients instead of blocking the room.

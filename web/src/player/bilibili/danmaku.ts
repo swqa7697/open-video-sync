@@ -40,7 +40,7 @@ export class DanmakuRenderer {
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
   constructor(
     private video: HTMLVideoElement,
-    private overlay: HTMLElement,
+    private overlay: HTMLElement
   ) {
     this.frame = requestAnimationFrame(this.draw);
   }

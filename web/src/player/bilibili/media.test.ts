@@ -4,9 +4,15 @@ import { DanmakuRenderer, decodeComments } from './danmaku';
 afterEach(() => vi.unstubAllGlobals());
 test('selection resolves only canonical IDs and exact parts without forwarding pasted credentials', () => {
   expect(
-    parseSelection('https://www.bilibili.com/video/BV1hf4y1N75G?p=2&token=synthetic', 1),
+    parseSelection(
+      'https://www.bilibili.com/video/BV1hf4y1N75G?p=2&token=synthetic',
+      1
+    )
   ).toEqual({ bvid: 'BV1hf4y1N75G', part: 2 });
-  expect(parseSelection('BV1hf4y1N75G', 3)).toEqual({ bvid: 'BV1hf4y1N75G', part: 3 });
+  expect(parseSelection('BV1hf4y1N75G', 3)).toEqual({
+    bvid: 'BV1hf4y1N75G',
+    part: 3,
+  });
   for (const input of [
     'https://b23.tv/example',
     'https://www.bilibili.com.evil.invalid/video/BV1hf4y1N75G',
@@ -24,7 +30,9 @@ test('SIDX decoding yields bounded seek ranges and rejects truncated, nested, an
   v.setUint16(30, 1);
   v.setUint32(32, 1024);
   v.setUint32(36, 5000);
-  expect(parseIndex(data, 100)).toEqual([{ offset: 144, length: 1024, time: 0, end: 5 }]);
+  expect(parseIndex(data, 100)).toEqual([
+    { offset: 144, length: 1024, time: 0, end: 5 },
+  ]);
   expect(() => parseIndex(data.slice(0, 43), 100)).toThrow();
   for (const size of [0, 4 * 1024 * 1024 + 1, 0x80000400]) {
     v.setUint32(32, size);
@@ -32,7 +40,12 @@ test('SIDX decoding yields bounded seek ranges and rejects truncated, nested, an
   }
 });
 test('helper metadata and display comments reject foreign payload fields and script modes', () => {
-  const comment = { time: 1, mode: 1, color: 0xffffff, text: '<script>synthetic</script>' };
+  const comment = {
+    time: 1,
+    mode: 1,
+    color: 0xffffff,
+    text: '<script>synthetic</script>',
+  };
   expect(decodeComments({ comments: [comment] }, 10)).toEqual([comment]);
   let frame: FrameRequestCallback | undefined;
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -54,9 +67,17 @@ test('helper metadata and display comments reject foreign payload fields and scr
   expect(overlay.textContent).toBe('');
   renderer.dispose();
 
-  expect(() => decodeComments({ comments: [{ ...comment, mode: 8 }] }, 10)).toThrow();
-  expect(() => decodeComments({ comments: [{ ...comment, cookie: 'synthetic' }] }, 10)).toThrow();
   expect(() =>
-    decodeInfo({ bvid: 'BV1hf4y1N75G', part: 1, signedURL: 'synthetic' }, 'BV1hf4y1N75G', 1),
+    decodeComments({ comments: [{ ...comment, mode: 8 }] }, 10)
+  ).toThrow();
+  expect(() =>
+    decodeComments({ comments: [{ ...comment, cookie: 'synthetic' }] }, 10)
+  ).toThrow();
+  expect(() =>
+    decodeInfo(
+      { bvid: 'BV1hf4y1N75G', part: 1, signedURL: 'synthetic' },
+      'BV1hf4y1N75G',
+      1
+    )
   ).toThrow();
 });

@@ -20,7 +20,8 @@ function animate(opening: boolean): Animation | undefined {
   const style = getComputedStyle(element);
   // The production CSS optimizer can convert milliseconds to seconds.
   const duration = style.getPropertyValue('--motion-dialog').trim();
-  const durationMs = parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000);
+  const durationMs =
+    parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000);
   const current = { opacity: style.opacity, transform: style.transform };
   animation?.cancel();
   animation = element.animate(
@@ -34,7 +35,7 @@ function animate(opening: boolean): Animation | undefined {
       duration: reduced ? 80 : durationMs,
       easing: style.getPropertyValue('--ease-out').trim(),
       fill: 'both',
-    },
+    }
   );
   return animation;
 }
@@ -50,7 +51,10 @@ async function close(): Promise<void> {
   if (!disposed) emit('close');
 }
 onMounted(async () => {
-  trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  trigger =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   await nextTick();
   if (disposed) return;
   dialog.value?.showModal();
@@ -73,7 +77,12 @@ onBeforeUnmount(() => {
   >
     <div class="modal-heading">
       <h2 :id="titleId">{{ title }}</h2>
-      <button type="button" class="icon-button quiet" aria-label="Close dialog" @click="close">
+      <button
+        type="button"
+        class="icon-button quiet"
+        aria-label="Close dialog"
+        @click="close"
+      >
         <Icon name="close" />
       </button>
     </div>

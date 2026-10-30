@@ -13,13 +13,15 @@ interface FailureGroup {
 const groups: FailureGroup[] = [
   {
     codes: /^helper-missing$/,
-    message: 'Install or enable the OVS Bilibili helper, then reload this page.',
+    message:
+      'Install or enable the OVS Bilibili helper, then reload this page.',
     status: 'error',
     reload: true,
   },
   {
     codes: /^helper-incompatible$/,
-    message: 'Update the OVS Bilibili helper from this instance, then reload this page.',
+    message:
+      'Update the OVS Bilibili helper from this instance, then reload this page.',
     status: 'error',
     reload: true,
   },
@@ -31,7 +33,8 @@ const groups: FailureGroup[] = [
   },
   {
     codes: /^login-required$/,
-    message: 'Sign in to Bilibili in this browser profile, then load the video again.',
+    message:
+      'Sign in to Bilibili in this browser profile, then load the video again.',
     status: 'access_denied',
   },
   {
@@ -42,12 +45,14 @@ const groups: FailureGroup[] = [
   },
   {
     codes: /^(unsupported-codec)$/,
-    message: 'This browser cannot decode the selected Bilibili AVC/AAC streams.',
+    message:
+      'This browser cannot decode the selected Bilibili AVC/AAC streams.',
     status: 'unsupported',
   },
   {
     codes: /^(unsupported-stream)$/,
-    message: 'This Bilibili video does not provide a supported on-demand AVC/AAC stream.',
+    message:
+      'This Bilibili video does not provide a supported on-demand AVC/AAC stream.',
     status: 'unsupported',
   },
   {
@@ -63,7 +68,8 @@ const groups: FailureGroup[] = [
   },
   {
     codes: /^(media-changed|stale-generation|unknown-handle)$/,
-    message: 'The video changed or loading was interrupted. Load the video again.',
+    message:
+      'The video changed or loading was interrupted. Load the video again.',
     status: 'error',
   },
   {
@@ -96,11 +102,19 @@ export function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 export function exact(value: Record<string, unknown>, fields: string[]): void {
-  if (Object.keys(value).length !== fields.length || fields.some((f) => !Object.hasOwn(value, f)))
+  if (
+    Object.keys(value).length !== fields.length ||
+    fields.some((f) => !Object.hasOwn(value, f))
+  )
     throw new HelperError('invalid-reply');
 }
 export function integer(value: unknown, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < min ||
+    value > max
+  )
     throw new HelperError('invalid-reply');
   return value;
 }
@@ -122,8 +136,9 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 export class HelperBridge {
-  private readonly client = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
-    b.toString(16).padStart(2, '0'),
+  private readonly client = Array.from(
+    crypto.getRandomValues(new Uint8Array(16)),
+    (b) => b.toString(16).padStart(2, '0')
   ).join('');
   private sequence = 0;
   private pending = new Map<number, Pending>();
@@ -163,13 +178,16 @@ export class HelperBridge {
       } else {
         exact(reply, ['channel', 'client', 'id', 'ok', 'error']);
         throw new HelperError(
-          typeof reply.error === 'string' && /^[a-z0-9-]{1,64}$/.test(reply.error)
+          typeof reply.error === 'string' &&
+            /^[a-z0-9-]{1,64}$/.test(reply.error)
             ? reply.error
-            : 'invalid-reply',
+            : 'invalid-reply'
         );
       }
     } catch (error) {
-      pending.reject(error instanceof HelperError ? error : new HelperError('invalid-reply'));
+      pending.reject(
+        error instanceof HelperError ? error : new HelperError('invalid-reply')
+      );
     }
   };
   async hello(probe = false): Promise<void> {
@@ -181,15 +199,25 @@ export class HelperBridge {
     )
       throw new HelperError('helper-incompatible');
   }
-  async handshake(probe = false): Promise<{ version: number; helper: string; maxChunk: number }> {
+  async handshake(
+    probe = false
+  ): Promise<{ version: number; helper: string; maxChunk: number }> {
     let reply: unknown;
     // A manager can register its document listener after the application mounts.
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        reply = await this.call(probe ? 'probe' : 'hello', { version: release.protocol }, 500);
+        reply = await this.call(
+          probe ? 'probe' : 'hello',
+          { version: release.protocol },
+          500
+        );
         break;
       } catch (error) {
-        if (!(error instanceof HelperError) || error.code !== 'helper-missing' || attempt === 4)
+        if (
+          !(error instanceof HelperError) ||
+          error.code !== 'helper-missing' ||
+          attempt === 4
+        )
           throw error;
       }
     }
@@ -201,8 +229,13 @@ export class HelperBridge {
       maxChunk: integer(value.maxChunk, 1, 1024 * 1024),
     };
   }
-  call(op: string, args: Record<string, unknown> = {}, deadline = 15000): Promise<unknown> {
-    if (this.closed) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
+  call(
+    op: string,
+    args: Record<string, unknown> = {},
+    deadline = 15000
+  ): Promise<unknown> {
+    if (this.closed)
+      return Promise.reject(new DOMException('Cancelled', 'AbortError'));
     if (this.pending.size >= 4) return Promise.reject(new HelperError('busy'));
     const id = ++this.sequence;
     const request = JSON.stringify({
@@ -218,7 +251,11 @@ export class HelperBridge {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(
-          new HelperError(op === 'hello' || op === 'probe' ? 'helper-missing' : 'bridge-timeout'),
+          new HelperError(
+            op === 'hello' || op === 'probe'
+              ? 'helper-missing'
+              : 'bridge-timeout'
+          )
         );
       }, deadline);
       this.pending.set(id, { resolve, reject, timer });
@@ -237,7 +274,7 @@ export class HelperBridge {
           op: 'dispose',
           generation,
         }),
-        location.origin,
+        location.origin
       );
     this.closed = true;
     window.removeEventListener('message', this.receive);

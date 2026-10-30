@@ -43,15 +43,15 @@ Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
 
 ### Configuration
 
-| Make variable | Default | Meaning |
-| --- | --- | --- |
-| `HOST` | Required | SSH destination |
-| `URL` | Saved value | Public origin; required for the first deployment |
-| `DEPLOY_DIR` | Remote `~/.local/share/ovs` | Absolute remote configuration directory |
-| `PROXY` | Saved value, initially `auto` | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
-| `PROXY_NETWORK` | Saved value | Existing Docker network for an external container proxy |
-| `TRUSTED_PROXIES` | Saved value | Trusted proxy CIDRs; required for an external container proxy |
-| `PROXY_SUBNET` | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps |
+| Make variable     | Default                                | Meaning                                                                        |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| `HOST`            | Required                               | SSH destination                                                                |
+| `URL`             | Saved value                            | Public origin; required for the first deployment                               |
+| `DEPLOY_DIR`      | Remote `~/.local/share/ovs`            | Absolute remote configuration directory                                        |
+| `PROXY`           | Saved value, initially `auto`          | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
+| `PROXY_NETWORK`   | Saved value                            | Existing Docker network for an external container proxy                        |
+| `TRUSTED_PROXIES` | Saved value                            | Trusted proxy CIDRs; required for an external container proxy                  |
+| `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps                |
 
 Saved settings are reused when a variable is omitted. Explicitly passing a new
 `URL` changes the public origin. Choose the final origin before inviting people:
@@ -212,18 +212,18 @@ OVS limits session bootstrap, room creation, and invitation redemption per clien
 Behind a proxy, every request arrives from the proxy. Without `OVS_TRUSTED_PROXIES`, all clients share the proxy's limits.
 With it, OVS reads `X-Forwarded-For` only from the listed peers and uses the rightmost address that is not a trusted proxy.
 
-| Topology | Publication | `OVS_TRUSTED_PROXIES` |
-| --- | --- | --- |
-| Binary on the host behind host Caddy | `OVS_LISTEN_ADDR=127.0.0.1:8080` | `127.0.0.1/32,::1/128` |
-| Compose behind host Caddy | Default loopback `OVS_BIND_ADDR` | The Compose network gateway as `/32` |
-| Caddy in another container | No host port (`compose.caddy.yaml`) | Caddy's static address, such as `172.30.0.2/32` |
+| Topology                             | Publication                         | `OVS_TRUSTED_PROXIES`                           |
+| ------------------------------------ | ----------------------------------- | ----------------------------------------------- |
+| Binary on the host behind host Caddy | `OVS_LISTEN_ADDR=127.0.0.1:8080`    | `127.0.0.1/32,::1/128`                          |
+| Compose behind host Caddy            | Default loopback `OVS_BIND_ADDR`    | The Compose network gateway as `/32`            |
+| Caddy in another container           | No host port (`compose.caddy.yaml`) | Caddy's static address, such as `172.30.0.2/32` |
 
 For Compose behind host Caddy, start once, read the gateway, then set it and start again:
 
 ```bash
 docker compose -f deploy/compose.yaml up -d --wait
 docker network inspect deploy_default --format '{{(index .IPAM.Config 0).Gateway}}'
-OVS_TRUSTED_PROXIES=<gateway>/32 docker compose -f deploy/compose.yaml up -d --wait
+OVS_TRUSTED_PROXIES= < gateway > /32 docker compose -f deploy/compose.yaml up -d --wait
 ```
 
 The network is recreated after `down`; check the gateway again after that.

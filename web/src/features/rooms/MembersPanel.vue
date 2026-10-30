@@ -14,7 +14,7 @@ watch(
       await nextTick();
       heading.value?.focus();
     }
-  },
+  }
 );
 </script>
 <template>
@@ -25,20 +25,29 @@ watch(
     </div>
     <ul class="roster" aria-labelledby="participants-title">
       <li v-for="member in room.members" :key="member.memberId">
-        <span class="avatar" :class="{ 'host-avatar': member.role === 'host' }">{{
-          member.displayName.slice(0, 1).toUpperCase()
-        }}</span>
+        <span
+          class="avatar"
+          :class="{ 'host-avatar': member.role === 'host' }"
+          >{{ member.displayName.slice(0, 1).toUpperCase() }}</span
+        >
         <div class="member-info">
           <strong
-            >{{ member.memberId === room.selfMemberId ? 'You' : member.displayName
-            }}<span v-if="member.role === 'host'" class="host-label">Host</span></strong
-          ><span v-if="member.memberId === room.selfMemberId" class="self-name">{{
-            member.displayName
-          }}</span
+            >{{
+              member.memberId === room.selfMemberId
+                ? 'You'
+                : member.displayName
+            }}<span v-if="member.role === 'host'" class="host-label"
+              >Host</span
+            ></strong
+          ><span
+            v-if="member.memberId === room.selfMemberId"
+            class="self-name"
+            >{{ member.displayName }}</span
           ><small
-            ><span class="status-dot" :class="{ offline: member.presence !== 'connected' }" />{{
-              memberState(member, room.mediaGeneration)
-            }}</small
+            ><span
+              class="status-dot"
+              :class="{ offline: member.presence !== 'connected' }"
+            />{{ memberState(member, room.mediaGeneration) }}</small
           >
         </div>
         <button

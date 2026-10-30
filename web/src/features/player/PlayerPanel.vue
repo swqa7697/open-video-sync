@@ -2,7 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
-import type { Readiness, ReadinessStatus } from '../../transport/protocol-values';
+import type {
+  Readiness,
+  ReadinessStatus,
+} from '../../transport/protocol-values';
 import {
   RoomSocket,
   type Command,
@@ -49,7 +52,10 @@ const video = ref<HTMLVideoElement>(),
   mediaStatus = ref<ReadinessStatus>('no_media'),
   calibration = ref('Calibrating clocks…');
 // Sampled every 250 ms; only a changed label re-renders the panel.
-let quality: SyncQualityState = { quality: 'calibrating', degradedSince: undefined };
+let quality: SyncQualityState = {
+  quality: 'calibrating',
+  degradedSince: undefined,
+};
 const qualityText = {
   calibrating: 'Calibrating clocks…',
   calibrated: 'Clock calibrated',
@@ -73,7 +79,9 @@ const position = ref(0),
 const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
 const streamInfo = shallowRef<MediaInfo>();
 const videoTitle = ref('');
-const totalSeconds = computed(() => (current.value.media?.durationMs ?? 0) / 1000);
+const totalSeconds = computed(
+  () => (current.value.media?.durationMs ?? 0) / 1000
+);
 const isPlaying = computed(() => current.value.playback.phase === 'playing');
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 function wake(): void {
@@ -115,18 +123,25 @@ const waitTimedOut = ref(false),
 const current = ref(props.room);
 // Rendered state must be reactive; the adapter itself stays outside reactivity.
 const descriptor = shallowRef<MediaDescriptor>();
-const host = computed(() => current.value.selfMemberId === current.value.hostMemberId);
-const permitted = computed(() => host.value || current.value.settings.controllers === 'everyone');
-const controls = computed(
-  () => connected.value && active.value && permitted.value && !uncertain.value,
+const host = computed(
+  () => current.value.selfMemberId === current.value.hostMemberId
 );
-const matched = computed(() => mediaMatches(current.value.media, descriptor.value));
+const permitted = computed(
+  () => host.value || current.value.settings.controllers === 'everyone'
+);
+const controls = computed(
+  () => connected.value && active.value && permitted.value && !uncertain.value
+);
+const matched = computed(() =>
+  mediaMatches(current.value.media, descriptor.value)
+);
 // One reason, in priority order, explains why room controls are unavailable.
 const controlNote = computed(() => {
   if (replaced.value) return 'This page no longer controls playback.';
   if (!connected.value || !active.value)
     return 'Reconnecting. Room controls return when the connection is restored.';
-  if (uncertain.value) return 'Checking the previous command before accepting another.';
+  if (uncertain.value)
+    return 'Checking the previous command before accepting another.';
   if (!permitted.value)
     return 'Only the host can play, pause, or seek in this room. Volume, mute, and fullscreen stay local.';
   if (!current.value.media)
@@ -136,11 +151,12 @@ const controlNote = computed(() => {
   return '';
 });
 const canPlay = computed(
-  () => controls.value && !!current.value.media && matched.value && !loading.value,
+  () =>
+    controls.value && !!current.value.media && matched.value && !loading.value
 );
 const canControl = computed(() => controls.value && !!current.value.media);
 const shownStatus = computed<ReadinessStatus>(() =>
-  loading.value ? 'loading' : mediaStatus.value,
+  loading.value ? 'loading' : mediaStatus.value
 );
 const blockers = computed(() => {
   const room = current.value,
@@ -163,7 +179,7 @@ const waitingText = computed(() => {
   if (!barrier) return '';
   const at = `${(barrier.targetPositionMs / 1000).toFixed(1)} seconds`;
   const names = blockers.value.map((m) =>
-    m.memberId === current.value.selfMemberId ? 'you' : m.displayName,
+    m.memberId === current.value.selfMemberId ? 'you' : m.displayName
   );
   if (!names.length) return `Waiting at ${at} for readiness to settle.`;
   const shown = names.slice(0, 5),
@@ -182,7 +198,8 @@ let handoff = props.initialFile;
 let lastConnected: boolean | undefined;
 let selection = new AbortController(),
   selectionGeneration = 0;
-let timer: ReturnType<typeof setInterval> | undefined, subscription: (() => void) | undefined;
+let timer: ReturnType<typeof setInterval> | undefined,
+  subscription: (() => void) | undefined;
 let lastReport = '',
   lastReportAt = 0,
   disposed = false;
@@ -194,8 +211,10 @@ async function probe(signal: AbortSignal): Promise<ProbeResult> {
     await request(`/rooms/${props.room.roomId}`, 'GET', '', undefined, signal);
     return 'reachable';
   } catch (reason) {
-    if (reason instanceof APIError && reason.code === 'session_required') return 'session_ended';
-    if (reason instanceof APIError && reason.code === 'not_found') return 'room_unavailable';
+    if (reason instanceof APIError && reason.code === 'session_required')
+      return 'session_ended';
+    if (reason instanceof APIError && reason.code === 'not_found')
+      return 'room_unavailable';
     return 'unreachable';
   }
 }
@@ -226,9 +245,11 @@ const transport = new RoomSocket(
         snapshot.epoch !== current.value.epoch
       ) {
         const local = descriptor.value;
-        if (
-          !(local && (publishing || local.kind === 'local') && mediaMatches(snapshot.media, local))
-        )
+        if (!(
+          local &&
+          (publishing || local.kind === 'local') &&
+          mediaMatches(snapshot.media, local)
+        ))
           clearMedia();
         publishing = false;
       }
@@ -238,7 +259,8 @@ const transport = new RoomSocket(
         current.value.settings.controllers === 'host' &&
         snapshot.settings.controllers === 'everyone' &&
         previousHost &&
-        snapshot.members.find((m) => m.memberId === previousHost.memberId)?.presence !== 'connected'
+        snapshot.members.find((m) => m.memberId === previousHost.memberId)
+          ?.presence !== 'connected'
       )
         hostNotice.value = true;
       current.value = snapshot;
@@ -276,7 +298,7 @@ const transport = new RoomSocket(
       else emit('ended', reason);
     },
   },
-  probe,
+  probe
 );
 function clearMedia(): void {
   selection.abort();
@@ -298,11 +320,18 @@ function clearMedia(): void {
 }
 function mediaMatches(
   selected: MediaDescriptor | null,
-  local: MediaDescriptor | undefined,
+  local: MediaDescriptor | undefined
 ): boolean {
-  if (!selected || !local || Math.abs(selected.durationMs - local.durationMs) > 250) return false;
+  if (
+    !selected ||
+    !local ||
+    Math.abs(selected.durationMs - local.durationMs) > 250
+  )
+    return false;
   if (selected.kind === 'local' && local.kind === 'local')
-    return selected.digest === local.digest && selected.sizeBytes === local.sizeBytes;
+    return (
+      selected.digest === local.digest && selected.sizeBytes === local.sizeBytes
+    );
   return (
     selected.kind === 'bilibili' &&
     local.kind === 'bilibili' &&
@@ -336,7 +365,7 @@ function showError(value: string, reload = false): void {
 async function chooseBilibili(
   selected: Extract<MediaDescriptor, { kind: 'bilibili' }>,
   publishMedia = false,
-  quality?: number,
+  quality?: number
 ): Promise<void> {
   if (
     !video.value ||
@@ -361,13 +390,18 @@ async function chooseBilibili(
     },
     (failure) => {
       if (adapter === local) showError(failure.message, failure.reload);
-    },
+    }
   );
   adapter = local;
   danmakuPreferences();
   void sample();
   try {
-    const media = await local.load(selected.bvid, selected.part, signal, quality);
+    const media = await local.load(
+      selected.bvid,
+      selected.part,
+      signal,
+      quality
+    );
     streamInfo.value = local.mediaInfo;
     videoTitle.value = local.mediaInfo?.title ?? selected.bvid;
     if (signal.aborted || generation !== selectionGeneration) return;
@@ -382,7 +416,10 @@ async function chooseBilibili(
     await sample();
   } catch (reason) {
     if (!signal.aborted && generation === selectionGeneration) {
-      const failure = reason instanceof HelperError ? reason : new HelperError('invalid-media');
+      const failure =
+        reason instanceof HelperError
+          ? reason
+          : new HelperError('invalid-media');
       showError(failure.message, failure.reload);
       clearMedia();
       // Platform access failures reach other participants as access_denied readiness.
@@ -405,7 +442,7 @@ async function choose(event: Event): Promise<void> {
 async function loadLocal(
   file: File,
   prepared?: MediaDescriptor,
-  publishMedia = false,
+  publishMedia = false
 ): Promise<void> {
   if (!video.value || uncertain.value || !connected.value) return;
   clearMedia();
@@ -444,8 +481,11 @@ async function loadLocal(
     await sample();
   } catch (reason) {
     if (!signal.aborted && generation === selectionGeneration) {
-      showError(reason instanceof Error ? reason.message : 'Local matching failed.');
-      const failed = local.getState().status === 'unsupported' ? 'unsupported' : 'error';
+      showError(
+        reason instanceof Error ? reason.message : 'Local matching failed.'
+      );
+      const failed =
+        local.getState().status === 'unsupported' ? 'unsupported' : 'error';
       clearMedia();
       mediaStatus.value = failed;
       void sample();
@@ -485,7 +525,7 @@ watch(
       autoAttempt = '';
       void autoLoad();
     }
-  },
+  }
 );
 async function retryMedia(): Promise<void> {
   autoAttempt = '';
@@ -498,7 +538,8 @@ async function replaceMedia(): Promise<void> {
   replaceOpen.value = false;
   if (selected.media.kind === 'local' && selected.file)
     await loadLocal(selected.file, selected.media, true);
-  else if (selected.media.kind === 'bilibili') await chooseBilibili(selected.media, true);
+  else if (selected.media.kind === 'bilibili')
+    await chooseBilibili(selected.media, true);
 }
 async function changeQuality(event: Event): Promise<void> {
   const selected = current.value.media;
@@ -517,8 +558,9 @@ function hoverSeek(event: PointerEvent): void {
     0,
     Math.min(
       totalSeconds.value,
-      ((event.clientX - box.getBoundingClientRect().left) / box.clientWidth) * totalSeconds.value,
-    ),
+      ((event.clientX - box.getBoundingClientRect().left) / box.clientWidth) *
+        totalSeconds.value
+    )
   );
 }
 function dragSeek(event: Event): void {
@@ -531,7 +573,13 @@ function seek(event: Event): void {
   command('seek');
 }
 function keyboard(event: KeyboardEvent): void {
-  if (event.target !== stage.value || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (
+    event.target !== stage.value ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey
+  )
+    return;
   if (event.key === ' ' || event.key === 'k') {
     event.preventDefault();
     command(isPlaying.value ? 'pause' : 'play');
@@ -539,7 +587,7 @@ function keyboard(event: KeyboardEvent): void {
     event.preventDefault();
     seekSeconds.value = Math.min(
       totalSeconds.value,
-      Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5)),
+      Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5))
     );
     command('seek');
   } else if (event.key === 'm') muted.value = !muted.value;
@@ -565,7 +613,9 @@ async function sample(): Promise<void> {
   }
   if (!local) {
     if (loading.value) mediaStatus.value = 'loading';
-    else if (!['unsupported', 'error', 'access_denied'].includes(mediaStatus.value))
+    else if (
+      !['unsupported', 'error', 'access_denied'].includes(mediaStatus.value)
+    )
       mediaStatus.value = 'no_media';
     publish(
       {
@@ -586,7 +636,7 @@ async function sample(): Promise<void> {
           positionResolutionMs: 1000,
         },
       },
-      now,
+      now
     );
     return;
   }
@@ -602,7 +652,10 @@ async function sample(): Promise<void> {
         snapshot,
         estimate,
         now,
-        active.value && transport.connected && matched && document.visibilityState === 'visible',
+        active.value &&
+          transport.connected &&
+          matched &&
+          document.visibilityState === 'visible'
       );
       const barrier = snapshot.barrier;
       if (
@@ -664,8 +717,15 @@ async function sample(): Promise<void> {
   publish(report, now);
 }
 function publish(report: Readiness, now: number): void {
-  const key = JSON.stringify([report.status, report.mediaGeneration, report.barrierId]);
-  if (key !== lastReport || (report.barrierId !== null && now - lastReportAt >= 1000)) {
+  const key = JSON.stringify([
+    report.status,
+    report.mediaGeneration,
+    report.barrierId,
+  ]);
+  if (
+    key !== lastReport ||
+    (report.barrierId !== null && now - lastReportAt >= 1000)
+  ) {
     transport.readiness(report);
     lastReport = key;
     lastReportAt = now;
@@ -678,7 +738,9 @@ function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
   waitTimedOut.value = false;
   sync.invalidate();
   transport.command(
-    action === 'seek' ? { action, positionMs: Math.round(seekSeconds.value * 1000) } : { action },
+    action === 'seek'
+      ? { action, positionMs: Math.round(seekSeconds.value * 1000) }
+      : { action }
   );
 }
 async function enable(): Promise<void> {
@@ -699,13 +761,14 @@ async function enable(): Promise<void> {
     if (reason instanceof DOMException && reason.name === 'AbortError') {
       // An interrupted play is not a failure. If the notice stays, the participant can select
       // it again; otherwise its button is gone, so keep keyboard focus in the player.
-      if (local.getState().status !== 'gesture_required') heading.value?.focus();
+      if (local.getState().status !== 'gesture_required')
+        heading.value?.focus();
       return;
     }
     showError(
       local.getState().status === 'gesture_required'
         ? 'The browser still blocked playback. Select Enable playback again, or allow autoplay for this site.'
-        : 'This browser cannot decode this video. Try another file or browser.',
+        : 'This browser cannot decode this video. Try another file or browser.'
     );
   }
 }
@@ -738,7 +801,9 @@ onUnmounted(() => {
 
 <template>
   <section class="player-panel" aria-labelledby="player-title">
-    <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">Watch together</h3>
+    <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">
+      Watch together
+    </h3>
     <div
       ref="stage"
       class="video-stage"
@@ -763,14 +828,19 @@ onUnmounted(() => {
       <div v-if="replaced" class="player-state">
         <Icon name="screen" :size="36" />
         <h3>Playback moved to another page</h3>
-        <p>This room is open elsewhere. Playback continues in the newer page.</p>
+        <p>
+          This room is open elsewhere. Playback continues in the newer page.
+        </p>
         <button @click="reload">Use this page</button>
       </div>
       <div v-else-if="error && !loading" class="player-state" role="alert">
         <Icon name="screen" :size="32" />
         <p>{{ error }}</p>
         <button v-if="errorReload" @click="reload">Reload page</button
-        ><button v-else-if="current.media?.kind === 'bilibili'" @click="retryMedia">
+        ><button
+          v-else-if="current.media?.kind === 'bilibili'"
+          @click="retryMedia"
+        >
           Retry video</button
         ><button v-else type="button" class="file-button" @click="chooseFile">
           Choose another file
@@ -795,15 +865,25 @@ onUnmounted(() => {
       </div>
       <div v-else-if="mediaStatus === 'mismatch'" class="player-state">
         <h3>A different video</h3>
-        <p>This video does not match the room. Choose the same file as the host.</p>
-        <button type="button" class="file-button" @click="chooseFile">Choose matching video</button>
+        <p>
+          This video does not match the room. Choose the same file as the host.
+        </p>
+        <button type="button" class="file-button" @click="chooseFile">
+          Choose matching video
+        </button>
       </div>
       <div
-        v-else-if="loading || (!descriptor && current.media?.kind === 'bilibili')"
+        v-else-if="
+          loading || (!descriptor && current.media?.kind === 'bilibili')
+        "
         class="player-state"
       >
         <Icon name="screen" :size="36" />
-        <h3>{{ loading ? 'Preparing your video…' : 'Connect your playback helper' }}</h3>
+        <h3>
+          {{
+            loading ? 'Preparing your video…' : 'Connect your playback helper'
+          }}
+        </h3>
         <p>
           {{
             loading
@@ -811,7 +891,9 @@ onUnmounted(() => {
               : 'Set up the OVS helper to load this video automatically.'
           }}
         </p>
-        <button v-if="!loading" class="quiet" @click="retryMedia">Retry video</button>
+        <button v-if="!loading" class="quiet" @click="retryMedia">
+          Retry video
+        </button>
       </div>
       <div v-else-if="current.playback.phase === 'ended'" class="player-state">
         <h3>One more time?</h3>
@@ -820,7 +902,9 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        v-if="current.barrier && descriptor && mediaStatus !== 'gesture_required'"
+        v-if="
+          current.barrier && descriptor && mediaStatus !== 'gesture_required'
+        "
         class="waiting-overlay"
         role="status"
       >
@@ -848,10 +932,16 @@ onUnmounted(() => {
           wake();
         "
       >
-        <div class="seek-track" @pointermove="hoverSeek" @pointerleave="hoveredTime = undefined">
+        <div
+          class="seek-track"
+          @pointermove="hoverSeek"
+          @pointerleave="hoveredTime = undefined"
+        >
           <div
             class="buffered-track"
-            :style="{ width: `${totalSeconds ? (buffered / totalSeconds) * 100 : 0}%` }"
+            :style="{
+              width: `${totalSeconds ? (buffered / totalSeconds) * 100 : 0}%`,
+            }"
           />
           <div
             class="played-track"
@@ -887,17 +977,29 @@ onUnmounted(() => {
                     ? 'Replay'
                     : 'Play together'
               "
-              :title="controlNote || (isPlaying ? 'Pause (Space)' : 'Play (Space)')"
+              :title="
+                controlNote || (isPlaying ? 'Pause (Space)' : 'Play (Space)')
+              "
               :disabled="isPlaying ? !canControl : !canPlay"
               :aria-describedby="controlNote ? 'control-note' : undefined"
               @click="
                 command(
-                  isPlaying ? 'pause' : current.playback.phase === 'ended' ? 'replay' : 'play',
+                  isPlaying
+                    ? 'pause'
+                    : current.playback.phase === 'ended'
+                      ? 'replay'
+                      : 'play'
                 )
               "
             >
               <Icon
-                :name="isPlaying ? 'pause' : current.playback.phase === 'ended' ? 'replay' : 'play'"
+                :name="
+                  isPlaying
+                    ? 'pause'
+                    : current.playback.phase === 'ended'
+                      ? 'replay'
+                      : 'play'
+                "
                 :size="22"
               />
             </button>
@@ -955,13 +1057,21 @@ onUnmounted(() => {
             >
               <Icon name="settings" />
             </button>
-            <button class="icon-button" aria-label="Fullscreen locally" @click="fullscreen">
+            <button
+              class="icon-button"
+              aria-label="Fullscreen locally"
+              @click="fullscreen"
+            >
               <Icon name="fullscreen" />
             </button>
           </div>
         </div>
       </div>
-      <div v-if="playerMenu" class="player-menu" @keydown.esc.stop="playerMenu = false">
+      <div
+        v-if="playerMenu"
+        class="player-menu"
+        @keydown.esc.stop="playerMenu = false"
+      >
         <div class="menu-heading">
           <strong>Playback preferences</strong
           ><button
@@ -1017,7 +1127,9 @@ onUnmounted(() => {
             @input="danmakuPreferences"
           />
           <p class="hint" role="status">
-            {{ showDanmaku ? danmakuStatus : `Hidden by you · ${danmakuStatus}` }}
+            {{
+              showDanmaku ? danmakuStatus : `Hidden by you · ${danmakuStatus}`
+            }}
           </p>
           <button class="quiet" @click="reloadDanmaku">Reload danmaku</button>
         </template>
@@ -1045,7 +1157,9 @@ onUnmounted(() => {
             · Part {{ current.media.part }}</span
           >
         </h3>
-        <p v-if="controlNote" id="control-note" class="hint">{{ controlNote }}</p>
+        <p v-if="controlNote" id="control-note" class="hint">
+          {{ controlNote }}
+        </p>
       </div>
       <button
         v-if="host"
@@ -1058,18 +1172,25 @@ onUnmounted(() => {
     </div>
     <div class="playback-status">
       <div role="status">
-        <span class="status-dot" />{{ status }}<span class="separator">·</span>{{ calibration }}
+        <span class="status-dot" />{{ status }}<span class="separator">·</span
+        >{{ calibration }}
       </div>
-      <span class="media-status" data-testid="media-status" :data-state="shownStatus">{{
-        readinessText[shownStatus]
-      }}</span
-      ><span data-testid="playback-phase" :data-state="current.playback.phase">{{
-        phaseText[current.playback.phase]
-      }}</span>
+      <span
+        class="media-status"
+        data-testid="media-status"
+        :data-state="shownStatus"
+        >{{ readinessText[shownStatus] }}</span
+      ><span
+        data-testid="playback-phase"
+        :data-state="current.playback.phase"
+        >{{ phaseText[current.playback.phase] }}</span
+      >
     </div>
     <div v-if="roomError" class="notice error" role="alert">
       <span>{{ roomError }}</span
-      ><button v-if="roomErrorReload" class="quiet" @click="reload">Reload page</button>
+      ><button v-if="roomErrorReload" class="quiet" @click="reload">
+        Reload page
+      </button>
     </div>
     <p v-if="hostNotice" class="notice" role="status">
       The host left. Everyone can now control playback.
@@ -1082,12 +1203,23 @@ onUnmounted(() => {
     </div>
     <p v-if="waitTimedOut" class="notice" role="status">
       Waiting timed out. The room stays paused.
-      {{ permitted ? 'Select Play to try again.' : 'The host can retry playback.' }}
+      {{
+        permitted ? 'Select Play to try again.' : 'The host can retry playback.'
+      }}
     </p>
-    <Modal v-if="replaceOpen" title="Change the video" @close="replaceOpen = false"
-      ><MediaPicker ref="mediaPicker" :room-id="current.roomId" :disabled="loading" />
+    <Modal
+      v-if="replaceOpen"
+      title="Change the video"
+      @close="replaceOpen = false"
+      ><MediaPicker
+        ref="mediaPicker"
+        :room-id="current.roomId"
+        :disabled="loading"
+      />
       <p class="hint">Everyone will pause at the start of the new video.</p>
-      <button :disabled="loading" @click="replaceMedia">Use this video</button></Modal
+      <button :disabled="loading" @click="replaceMedia">
+        Use this video
+      </button></Modal
     >
   </section>
 </template>

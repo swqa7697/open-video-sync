@@ -5,38 +5,56 @@ export interface VideoFile {
   buffer: Buffer;
 }
 export async function dismissHelper(page: Page): Promise<void> {
-  await expect(page.getByRole('complementary', { name: 'Playback helper' })).not.toContainText(
-    'Checking',
-    { timeout: 8000 },
-  );
+  await expect(
+    page.getByRole('complementary', { name: 'Playback helper' })
+  ).not.toContainText('Checking', { timeout: 8000 });
   const later = page.getByRole('button', { name: 'Later', exact: true });
   if (await later.isVisible()) await later.click();
 }
-export async function createLocalRoom(page: Page, file: VideoFile, title: string): Promise<void> {
+export async function createLocalRoom(
+  page: Page,
+  file: VideoFile,
+  title: string
+): Promise<void> {
   await dismissHelper(page);
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
   await page.locator('#create-local-video').setInputFiles(file);
   await page.getByLabel('Room name', { exact: false }).fill(title);
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
-  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-  await expect(page.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
+  await expect(
+    page.getByRole('heading', { name: title, exact: true })
+  ).toBeVisible();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready'
+  );
 }
 export async function invitationLink(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Invite', exact: true }).click();
-  await expect(page.getByLabel('Invitation link', { exact: true })).not.toHaveValue('');
-  const value = await page.getByLabel('Invitation link', { exact: true }).inputValue();
+  await expect(
+    page.getByLabel('Invitation link', { exact: true })
+  ).not.toHaveValue('');
+  const value = await page
+    .getByLabel('Invitation link', { exact: true })
+    .inputValue();
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   return value;
 }
 export async function settings(
   page: Page,
   controllers: 'host' | 'everyone',
-  wait = true,
+  wait = true
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Room settings', exact: true }).click();
-  await page.getByLabel('Playback controls', { exact: true }).selectOption(controllers);
+  await page
+    .getByRole('button', { name: 'Room settings', exact: true })
+    .click();
+  await page
+    .getByLabel('Playback controls', { exact: true })
+    .selectOption(controllers);
   await page.getByLabel('Wait for everyone', { exact: true }).setChecked(wait);
-  await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Save preferences', exact: true })
+    .click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 // Exact synthetic slider input keeps the independent decoded-frame calibration deterministic.
@@ -51,7 +69,13 @@ export async function seekTo(page: Page, seconds: number): Promise<void> {
     }, seconds);
 }
 export async function closeRoom(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Room settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Close room for everyone', exact: true }).click();
-  await page.getByRole('button', { name: 'Confirm close room', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Room settings', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Close room for everyone', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Confirm close room', exact: true })
+    .click();
 }

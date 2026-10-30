@@ -3,55 +3,35 @@
     "roomId": "00112233445566778899aabbccddeeff",
     "sizeBytes": 1,
     "pattern": "byte[i] = (i * 31) % 251",
-    "offsets": [
-      0,
-      0,
-      0
-    ],
+    "offsets": [0, 0, 0],
     "digest": "ecd7544a1948cb9bb23380d8e341d23a1975cc117f069619bbb07646298ab5fe"
   },
   {
     "roomId": "00112233445566778899aabbccddeeff",
     "sizeBytes": 17,
     "pattern": "byte[i] = (i * 31) % 251",
-    "offsets": [
-      0,
-      0,
-      0
-    ],
+    "offsets": [0, 0, 0],
     "digest": "3c1b7ba5d65e22e505394887e25bb304433103ee6b6104e3ff49f8c6d5a6bfd6"
   },
   {
     "roomId": "00112233445566778899aabbccddeeff",
     "sizeBytes": 1048577,
     "pattern": "byte[i] = (i * 31) % 251",
-    "offsets": [
-      0,
-      0,
-      1
-    ],
+    "offsets": [0, 0, 1],
     "digest": "604b30d1b039d9ab87cf96e238a8cf81268af247c866a160bbe32089d2a90094"
   },
   {
     "roomId": "00112233445566778899aabbccddeeff",
     "sizeBytes": 2097153,
     "pattern": "byte[i] = (i * 31) % 251",
-    "offsets": [
-      0,
-      524288,
-      1048577
-    ],
+    "offsets": [0, 524288, 1048577],
     "digest": "498a96b8f07cb086ee726a80736149c3b8691f75d903b8108fe401664f59635e"
   },
   {
     "roomId": "00112233445566778899aabbccddeeff",
     "sizeBytes": 4194304,
     "pattern": "byte[i] = (i * 31) % 251",
-    "offsets": [
-      0,
-      1572864,
-      3145728
-    ],
+    "offsets": [0, 1572864, 3145728],
     "digest": "0edf75539eec47f351e355536d307b11db5991fbe3bd69a9c4b15171d6e550be"
   }
 ]

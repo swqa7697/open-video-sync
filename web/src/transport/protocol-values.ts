@@ -68,7 +68,8 @@ export function decodeReadiness(value: unknown): Readiness {
     if (key !== 'positionResolutionMs' && typeof c[key] !== 'boolean')
       throw new Error('Invalid capabilities.');
   const resolution = integer(c.positionResolutionMs);
-  if (resolution < 1 || resolution > 60000) throw new Error('Invalid resolution.');
+  if (resolution < 1 || resolution > 60000)
+    throw new Error('Invalid resolution.');
   const position = v.positionMs === null ? null : integer(v.positionMs),
     duration = v.durationMs === null ? null : integer(v.durationMs);
   if (
@@ -112,7 +113,9 @@ export function parseFrame(raw: string): Record<string, unknown> {
         const value: unknown = JSON.parse(raw.slice(start, at));
         if (
           typeof value !== 'string' ||
-          /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
+          /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
+            value
+          )
         )
           throw new Error('Invalid string.');
         return value;
@@ -153,7 +156,9 @@ export function parseFrame(raw: string): Record<string, unknown> {
       }
     } else if (c === '"') string();
     else {
-      const token = /^(?:true|false|null|0|[1-9][0-9]*)/.exec(raw.slice(at))?.[0];
+      const token = /^(?:true|false|null|0|[1-9][0-9]*)/.exec(
+        raw.slice(at)
+      )?.[0];
       if (!token) throw new Error('Invalid value.');
       at += token.length;
     }

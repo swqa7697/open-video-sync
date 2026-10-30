@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { HelperBridge, HelperError, helperRelease } from '../../player/bilibili/bridge';
+import {
+  HelperBridge,
+  HelperError,
+  helperRelease,
+} from '../../player/bilibili/bridge';
 import Modal from '../../components/Modal.vue';
 import Icon from '../../components/Icon.vue';
 const emit = defineEmits<{ ready: [] }>();
-type State = 'checking' | 'ready' | 'missing' | 'outdated' | 'mismatch' | 'communication' | 'stale';
+type State =
+  | 'checking'
+  | 'ready'
+  | 'missing'
+  | 'outdated'
+  | 'mismatch'
+  | 'communication'
+  | 'stale';
 const state = ref<State>('checking'),
   installed = ref(''),
   modal = ref(false);
@@ -21,15 +32,16 @@ const text = computed(
       mismatch: 'This helper does not match this OVS instance.',
       communication:
         'The playback helper could not be checked. Check network and script permissions.',
-      stale: 'OVS has been updated. Refresh the application before updating the helper.',
-    })[state.value],
+      stale:
+        'OVS has been updated. Refresh the application before updating the helper.',
+    })[state.value]
 );
 const action = computed(() =>
   state.value === 'outdated'
     ? 'Update helper'
     : state.value === 'mismatch'
       ? 'Install matching helper'
-      : 'Install OVS helper',
+      : 'Install OVS helper'
 );
 async function check(): Promise<void> {
   if (bridge) return;
@@ -62,7 +74,8 @@ async function check(): Promise<void> {
       reply = await bridge.handshake(true);
     } catch (reason) {
       // Older releases have no non-owning probe and cannot run the current adapter.
-      if (!(reason instanceof HelperError) || reason.code !== 'invalid-request') throw reason;
+      if (!(reason instanceof HelperError) || reason.code !== 'invalid-request')
+        throw reason;
       reply = await bridge.handshake();
     }
     installed.value = reply.helper;
@@ -74,7 +87,9 @@ async function check(): Promise<void> {
         b = helperRelease.version.split('.').map(Number);
       const difference = a.findIndex((value, index) => value !== b[index]);
       state.value =
-        /^\d+\.\d+\.\d+$/.test(reply.helper) && difference >= 0 && a[difference]! < b[difference]!
+        /^\d+\.\d+\.\d+$/.test(reply.helper) &&
+        difference >= 0 &&
+        a[difference]! < b[difference]!
           ? 'outdated'
           : 'mismatch';
     }
@@ -119,10 +134,16 @@ onUnmounted(() => {
 defineExpose({ check });
 </script>
 <template>
-  <aside v-if="state !== 'ready'" class="helper-banner" aria-label="Playback helper">
+  <aside
+    v-if="state !== 'ready'"
+    class="helper-banner"
+    aria-label="Playback helper"
+  >
     <Icon name="screen" /><span>{{ text }}</span>
     <template v-if="state !== 'checking'">
-      <button v-if="state === 'stale'" class="quiet" @click="refresh">Refresh application</button>
+      <button v-if="state === 'stale'" class="quiet" @click="refresh">
+        Refresh application
+      </button>
       <a
         v-else-if="state !== 'communication'"
         class="helper-link"
@@ -138,15 +159,15 @@ defineExpose({ check });
     <div class="setup-symbol"><Icon name="screen" :size="32" /></div>
     <h3>{{ text }}</h3>
     <p>
-      Install the Tampermonkey browser extension independently. Then install and enable the OVS
-      helper from this instance.
+      Install the Tampermonkey browser extension independently. Then install and
+      enable the OVS helper from this instance.
     </p>
     <p v-if="installed" class="version-note">
       Installed {{ installed }} · Required {{ helperRelease.version }}
     </p>
     <p class="hint">
-      Confirm replacement when updating an existing helper. Return here and refresh OVS if needed.
-      Local files work without the helper.
+      Confirm replacement when updating an existing helper. Return here and
+      refresh OVS if needed. Local files work without the helper.
     </p>
     <div class="actions">
       <a

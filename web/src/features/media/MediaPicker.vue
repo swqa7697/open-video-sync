@@ -15,7 +15,9 @@ const url = ref(''),
   error = ref(''),
   working = ref(false);
 const fileName = ref('');
-let file: File | undefined, prepared: MediaDescriptor | undefined, bridge: HelperBridge | undefined;
+let file: File | undefined,
+  prepared: MediaDescriptor | undefined,
+  bridge: HelperBridge | undefined;
 let controller = new AbortController();
 function invalidate(): void {
   controller.abort();
@@ -46,9 +48,15 @@ function drop(event: DragEvent): void {
   event.preventDefault();
   choose(event.dataTransfer?.files[0]);
 }
-async function prepare(): Promise<{ media: MediaDescriptor; file?: File } | undefined> {
+async function prepare(): Promise<
+  { media: MediaDescriptor; file?: File } | undefined
+> {
   if (working.value) return;
-  if (prepared) return { media: prepared, ...(source.value === 'local' && file ? { file } : {}) };
+  if (prepared)
+    return {
+      media: prepared,
+      ...(source.value === 'local' && file ? { file } : {}),
+    };
   working.value = true;
   error.value = '';
   const signal = controller.signal;
@@ -56,7 +64,8 @@ async function prepare(): Promise<{ media: MediaDescriptor; file?: File } | unde
   try {
     let media: MediaDescriptor;
     if (source.value === 'local') {
-      if (!file || !file.size) throw new Error('Select a supported video file first.');
+      if (!file || !file.size)
+        throw new Error('Select a supported video file first.');
       const video = document.createElement('video');
       video.preload = 'auto';
       video.muted = true;
@@ -80,7 +89,7 @@ async function prepare(): Promise<{ media: MediaDescriptor; file?: File } | unde
       const info = decodeInfo(
         await bridge.call('open', { ...selected, generation: 1 }),
         selected.bvid,
-        selected.part,
+        selected.part
       );
       if (signal.aborted) return;
       url.value = info.bvid;
@@ -171,8 +180,12 @@ defineExpose({ prepare });
       </div>
     </template>
     <div v-else class="file-drop" @dragover.prevent @drop="drop">
-      <Icon name="file" :size="30" /><strong>{{ fileName || 'Bring your own video' }}</strong
-      ><span class="hint">Your file stays on your device. Everyone needs their own copy.</span>
+      <Icon name="file" :size="30" /><strong>{{
+        fileName || 'Bring your own video'
+      }}</strong
+      ><span class="hint"
+        >Your file stays on your device. Everyone needs their own copy.</span
+      >
       <label class="file-button" for="create-local-video">{{
         fileName ? 'Choose another file' : 'Choose a video file'
       }}</label>
@@ -186,7 +199,9 @@ defineExpose({ prepare });
       />
       <span class="hint">or drop a file here</span>
     </div>
-    <p v-if="summary" class="media-preview"><Icon name="check" />{{ summary }}</p>
+    <p v-if="summary" class="media-preview">
+      <Icon name="check" />{{ summary }}
+    </p>
     <p v-if="error" role="alert" class="notice error">{{ error }}</p>
     <p v-if="working" role="status" class="hint">Preparing your video…</p>
   </div>

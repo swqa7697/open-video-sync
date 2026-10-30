@@ -13,7 +13,12 @@ export const roomFixture = {
   media: null,
   barrier: null,
   serverNowMs: 100,
-  playback: { phase: 'empty', positionMs: 0, anchorServerMs: 0, desiredPlaying: false },
+  playback: {
+    phase: 'empty',
+    positionMs: 0,
+    anchorServerMs: 0,
+    desiredPlaying: false,
+  },
   members: [
     {
       memberId: 'd'.repeat(32),
@@ -47,11 +52,20 @@ export class FakeSocket {
   }
   frame(type: string, payload: unknown, epoch = roomFixture.epoch): void {
     this.onmessage?.({
-      data: JSON.stringify({ v: 2, type, epoch, eventSeq: ++this.sequence, payload }),
+      data: JSON.stringify({
+        v: 2,
+        type,
+        epoch,
+        eventSeq: ++this.sequence,
+        payload,
+      }),
     });
   }
   welcome(): void {
     this.readyState = 1;
-    this.frame('session.welcome', { connectionId: 'e'.repeat(32), snapshot: roomFixture });
+    this.frame('session.welcome', {
+      connectionId: 'e'.repeat(32),
+      snapshot: roomFixture,
+    });
   }
 }

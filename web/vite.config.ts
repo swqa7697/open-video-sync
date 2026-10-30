@@ -37,7 +37,6 @@ export default defineConfig({
     outDir: '../internal/web/dist',
     emptyOutDir: true,
   },
-  fmt: { singleQuote: true, semi: true },
   lint: {
     jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
     plugins: ['typescript', 'vue'],

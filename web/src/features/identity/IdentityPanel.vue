@@ -13,7 +13,7 @@ watch(
   (value) => {
     name.value = value ?? '';
   },
-  { immediate: true },
+  { immediate: true }
 );
 // Opening waits for idle; Cancel always works and returns focus to the trigger.
 async function confirm(open: boolean): Promise<void> {
@@ -30,13 +30,16 @@ watch(
   () => identity.session?.identity.identityId,
   () => {
     confirming.value = false;
-  },
+  }
 );
 </script>
 <template>
   <section aria-labelledby="identity-title">
     <h2 id="identity-title" tabindex="-1">Your identity</h2>
-    <p>{{ identity.session?.identity.displayName || 'Guest' }} · Saved in this browser</p>
+    <p>
+      {{ identity.session?.identity.displayName || 'Guest' }} · Saved in this
+      browser
+    </p>
     <form @submit.prevent="!props.busy && emit('rename', name)">
       <label for="display-name">Display name (optional)</label>
       <div class="form-row">
@@ -64,15 +67,26 @@ watch(
     >
       Forget this identity
     </button>
-    <div v-else class="notice" role="group" aria-label="Confirm identity removal">
+    <div
+      v-else
+      class="notice"
+      role="group"
+      aria-label="Confirm identity removal"
+    >
       <p>
-        Forgetting this identity ends your session. Your owned rooms may become inaccessible.
-        Ownership does not transfer.
+        Forgetting this identity ends your session. Your owned rooms may become
+        inaccessible. Ownership does not transfer.
       </p>
       <div class="actions">
-        <button class="danger" :aria-disabled="props.busy || undefined" @click="forget">
+        <button
+          class="danger"
+          :aria-disabled="props.busy || undefined"
+          @click="forget"
+        >
           Confirm forget</button
-        ><button ref="cancelButton" class="quiet" @click="confirm(false)">Cancel</button>
+        ><button ref="cancelButton" class="quiet" @click="confirm(false)">
+          Cancel
+        </button>
       </div>
     </div>
   </section>

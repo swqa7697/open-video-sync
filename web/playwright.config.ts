@@ -31,7 +31,9 @@ export default defineConfig<BrowserOptions>({
     env: {
       OVS_LISTEN_ADDR: `${host}:18080`,
       OVS_PUBLIC_ORIGIN: baseURL,
-      OVS_DATA_DIR: fileURLToPath(new URL('../.misc/e2e/data', import.meta.url)),
+      OVS_DATA_DIR: fileURLToPath(
+        new URL('../.misc/e2e/data', import.meta.url)
+      ),
     },
   },
 });

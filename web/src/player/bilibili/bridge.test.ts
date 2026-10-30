@@ -23,9 +23,17 @@ test('a player accepts only its exact channel and disposal rejects pending repli
     ok: true,
     value: { loggedIn: true },
   };
-  const deliver = (value: unknown, origin = location.origin, source: Window | null = window) =>
+  const deliver = (
+    value: unknown,
+    origin = location.origin,
+    source: Window | null = window
+  ) =>
     window.dispatchEvent(
-      new MessageEvent('message', { origin, source, data: JSON.stringify(value) }),
+      new MessageEvent('message', {
+        origin,
+        source,
+        data: JSON.stringify(value),
+      })
     );
   deliver({ ...reply, client: 'b'.repeat(32) });
   deliver(reply, 'https://foreign.invalid');
@@ -35,7 +43,7 @@ test('a player accepts only its exact channel and disposal rejects pending repli
       origin: location.origin,
       source: window,
       data: JSON.stringify(reply).replace('"value":', '"value":null,"value":'),
-    }),
+    })
   );
   await Promise.resolve();
   expect(settled).toBe(false);
@@ -52,7 +60,13 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   ] as const) {
     const failing = bridge.call('session'),
       sent = posted.at(-1)!;
-    deliver({ channel: reply.channel, client: sent.client, id: sent.id, ok: false, error: code });
+    deliver({
+      channel: reply.channel,
+      client: sent.client,
+      id: sent.id,
+      ok: false,
+      error: code,
+    });
     await expect(failing).rejects.toMatchObject({
       code,
       status,
@@ -62,7 +76,7 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   }
   const pendingCalls = Array.from({ length: 4 }, () => bridge.call('session'));
   const rejected = pendingCalls.map((call) =>
-    expect(call).rejects.toMatchObject({ name: 'AbortError' }),
+    expect(call).rejects.toMatchObject({ name: 'AbortError' })
   );
   bridge.close(2);
   await Promise.all(rejected);
@@ -85,9 +99,13 @@ test('startup waits for late manager registration without opening media first', 
           client: q.client,
           id: q.id,
           ok: true,
-          value: { version: 1, helper: helperRelease.version, maxChunk: 262144 },
+          value: {
+            version: 1,
+            helper: helperRelease.version,
+            maxChunk: 262144,
+          },
         }),
-      }),
+      })
     );
   });
   const bridge = new HelperBridge(),

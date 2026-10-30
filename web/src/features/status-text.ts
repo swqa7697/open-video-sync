@@ -24,7 +24,8 @@ export const phaseText: Record<Snapshot['playback']['phase'], string> = {
 export function memberState(member: Member, mediaGeneration: number): string {
   if (member.presence !== 'connected') return 'Offline';
   const readiness = member.readiness;
-  if (!readiness || readiness.mediaGeneration !== mediaGeneration) return readinessText.no_media;
+  if (!readiness || readiness.mediaGeneration !== mediaGeneration)
+    return readinessText.no_media;
   const note =
     readiness.capabilities.canPlay && !readiness.capabilities.canDetectBuffering
       ? ' · buffering not detected'

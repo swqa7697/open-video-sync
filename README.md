@@ -114,6 +114,7 @@ Install these prerequisites:
 - The latest stable Go release. `go.mod` declares the minimum supported version.
 - Node 24.19.x and pnpm. `.node-version` selects Node 24.19.0.
 - Make and Bash on Linux or macOS.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`) for Makefile formatting and format checks.
 - A C compiler for `make test-race`.
 - Docker Engine with Buildx and Compose for container work.
 
@@ -144,43 +145,58 @@ Vite+ proxies health, API, and WebSocket requests to `127.0.0.1:8080`. The API a
 Keep the default backend public origin when using this development proxy.
 
 Go embedding requires generated frontend files. Run `make web-build` before direct `go vet`, `go test`, or `go build` commands.
-The Make check, test, development, and build targets prepare these assets automatically.
+The Make lint, check, test, development, and build targets prepare these assets automatically.
 
 ## Commands
 
 Run `make help` to list the available targets.
 
-| Target | Purpose |
-| --- | --- |
-| `install`, `setup` | Install locked project dependencies and build the template |
-| `deps` | Check tool versions and install locked Go/frontend dependencies |
-| `upgrade` | Upgrade frontend dependencies, then Go modules |
-| `upgrade-frontend` | Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain |
-| `upgrade-backend` | Upgrade Go modules within current module paths, including test dependencies |
-| `uninstall` | Remove frontend dependencies and build output; preserve data and lockfiles |
-| `clean` | Remove generated assets and binaries; preserve dependencies and data |
-| `format`, `tidy` | Apply Go and Oxfmt formatting |
-| `check` | Check Go formatting/vet, Bash syntax, Oxlint, Vue templates, and Vue types |
-| `test` | Run Go, frontend, and userscript unit/integration tests |
-| `test-race` | Run Go tests with the race detector |
-| `web-build` | Generate `internal/web/dist/` for Go embedding |
-| `build` | Produce `build/ovs`, the project license, and dependency notices |
-| `dev` | Run Go with loopback defaults and local storage |
-| `dev-web` | Run the Vite+ development server |
-| `browser-install` | Install the Chromium and Firefox versions selected by Playwright |
-| `test-e2e` | Check shared journeys and decoded-frame measurements in Chromium and Firefox, plus mixed-room playback |
-| `image` | Build the single application container |
-| `image-smoke` | Check the built image with an isolated persistent volume |
-| `proxy-smoke` | Check the built image behind containerized Caddy HTTPS, including trusted-proxy addresses and reconnect after a reload |
-| `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations |
-| `release-commit` | Preview, stage, commit, and push release files after confirmation |
-| `release-tag` | Confirm and push an annotated `vX.Y.Z` tag from clean, current `main` |
+| Target                                   | Purpose                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `install`, `setup`                       | Install locked project dependencies and build the template                                                             |
+| `deps`                                   | Check tool versions and install locked Go/frontend dependencies                                                        |
+| `upgrade`                                | Upgrade frontend dependencies, then Go modules                                                                         |
+| `upgrade-frontend`                       | Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain                               |
+| `upgrade-backend`                        | Upgrade Go modules within current module paths, including test dependencies                                            |
+| `uninstall`                              | Remove frontend dependencies and build output; preserve data and lockfiles                                             |
+| `clean`                                  | Remove generated assets and binaries; preserve dependencies and data                                                   |
+| `format`, `tidy`                         | Format Go, frontend, scripts, documentation, and configuration                                                         |
+| `format-check`                           | Check the same formatting without changing source files                                                                |
+| `lint`                                   | Run Go vet, Bash syntax checks, Oxlint, and ESLint Vue template checks                                                 |
+| `check`                                  | Run `format-check`, `lint`, and Vue type checks                                                                        |
+| `test`                                   | Run Go, frontend, and userscript unit/integration tests                                                                |
+| `test-race`                              | Run Go tests with the race detector                                                                                    |
+| `web-build`                              | Generate `internal/web/dist/` for Go embedding                                                                         |
+| `build`                                  | Produce `build/ovs`, the project license, and dependency notices                                                       |
+| `dev`                                    | Run Go with loopback defaults and local storage                                                                        |
+| `dev-web`                                | Run the Vite+ development server                                                                                       |
+| `browser-install`                        | Install the Chromium and Firefox versions selected by Playwright                                                       |
+| `test-e2e`                               | Check shared journeys and decoded-frame measurements in Chromium and Firefox, plus mixed-room playback                 |
+| `image`                                  | Build the single application container                                                                                 |
+| `image-smoke`                            | Check the built image with an isolated persistent volume                                                               |
+| `proxy-smoke`                            | Check the built image behind containerized Caddy HTTPS, including trusted-proxy addresses and reconnect after a reload |
+| `bump-major`, `bump-minor`, `bump-patch` | Increase root `VERSION`; no Git mutations                                                                              |
+| `release-commit`                         | Preview, stage, commit, and push release files after confirmation                                                      |
+| `release-tag`                            | Confirm and push an annotated `vX.Y.Z` tag from clean, current `main`                                                  |
 
 `make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `VERSION` supplies the application version.
 Container targets accept `IMAGE=ovs:dev`; `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
 
 Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
 Use `VERBOSE=1` to show recipe commands and enable tracing in installation and build scripts.
+
+`make tidy` and `make format` run the root `tidy.sh` script and update files in place.
+Run `./tidy.sh` from the repository root, or invoke the script by its path from another working directory.
+The script applies `gofmt` to Go files, including Go automation under `scripts/`.
+Prettier formats frontend sources, browser tests, userscripts, Markdown documentation, and JSON/YAML configuration.
+The `prettier-plugin-sh` plugin formats Bash scripts, including `tidy.sh`. Both packages are locked frontend development dependencies, installed by `make deps`.
+The script runs [mbake](https://github.com/EbodShojaei/bake) through `uvx` to format `Makefile`, using repository-owned `.bake.toml` settings.
+`./tidy.sh --check` checks all the same files without changing them; `make format-check` uses this mode.
+Root `.prettierrc.cjs` supplies shared options and resolves the shell plugin from `web/node_modules`, including for editor integrations.
+`.gitignore` and `.prettierignore` exclude dependencies, generated files, local state, artifacts, and lockfiles.
+Frontend package format scripts also use `tidy.sh` to keep formatter commands in one place.
+`make lint` checks backend and frontend code without applying fixes. `make check` includes lint and adds formatting and Vue type checks.
+CI continues to use `make check`, so these checks run once through the shared targets.
 
 `make upgrade-frontend` runs the latest official [Vite+ migrator](https://viteplus.dev/guide/upgrade-project) to align its toolchain catalog and aliases.
 Then `pnpm dlx taze minor --write` updates other dependency ranges within their current major versions.
@@ -227,13 +243,13 @@ OVS has no automated publication workflow. Pushing a tag does not publish an app
 
 The application implements these variables:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OVS_LISTEN_ADDR` | `:8080` | HTTP listener; `make dev` defaults to `127.0.0.1:8080` |
-| `OVS_DATA_DIR` | `/data` | SQLite database, sidecars, and application ownership lock |
-| `OVS_PUBLIC_ORIGIN` | Required | Canonical browser origin, such as `http://127.0.0.1:8080` |
-| `OVS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`; logs are JSON on standard error |
-| `OVS_TRUSTED_PROXIES` | Empty | Optional comma-separated CIDRs of reverse proxies, such as `172.30.0.2/32` |
+| Variable              | Default  | Purpose                                                                    |
+| --------------------- | -------- | -------------------------------------------------------------------------- |
+| `OVS_LISTEN_ADDR`     | `:8080`  | HTTP listener; `make dev` defaults to `127.0.0.1:8080`                     |
+| `OVS_DATA_DIR`        | `/data`  | SQLite database, sidecars, and application ownership lock                  |
+| `OVS_PUBLIC_ORIGIN`   | Required | Canonical browser origin, such as `http://127.0.0.1:8080`                  |
+| `OVS_LOG_LEVEL`       | `info`   | `debug`, `info`, `warn`, or `error`; logs are JSON on standard error       |
+| `OVS_TRUSTED_PROXIES` | Empty    | Optional comma-separated CIDRs of reverse proxies, such as `172.30.0.2/32` |
 
 Use a lowercase host. Omit default ports and trailing slashes from the public origin.
 An `https://` public origin makes the session cookie `Secure`. Links, cookies, and the helper scope always come from this origin, never from request headers.

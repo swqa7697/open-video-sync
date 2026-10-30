@@ -13,7 +13,11 @@ export class ClockEstimator {
     this.samples = [];
   }
   add(c0: number, s1: number, s2: number, c3: number): boolean {
-    if (![c0, s1, s2, c3].every((n) => Number.isFinite(n) && n >= 0) || c3 < c0 || s2 < s1)
+    if (
+      ![c0, s1, s2, c3].every((n) => Number.isFinite(n) && n >= 0) ||
+      c3 < c0 ||
+      s2 < s1
+    )
       return false;
     const rtt = c3 - c0 - (s2 - s1);
     if (rtt < 0 || rtt > 2000) return false;
@@ -30,11 +34,16 @@ export class ClockEstimator {
     const subset = [...usable].sort((a, b) => a.rtt - b.rtt).slice(0, 5),
       offsets = subset.map((s) => s.offset).sort((a, b) => a - b);
     const mid = Math.floor(offsets.length / 2),
-      offsetMs = offsets.length % 2 ? offsets[mid]! : (offsets[mid - 1]! + offsets[mid]!) / 2;
+      offsetMs =
+        offsets.length % 2
+          ? offsets[mid]!
+          : (offsets[mid - 1]! + offsets[mid]!) / 2;
     return {
       offsetMs,
       uncertaintyMs:
-        Math.max(...subset.map((s) => s.rtt / 2)) + offsets[offsets.length - 1]! - offsets[0]!,
+        Math.max(...subset.map((s) => s.rtt / 2)) +
+        offsets[offsets.length - 1]! -
+        offsets[0]!,
     };
   }
 }
@@ -48,10 +57,14 @@ export interface SyncQualityState {
 export function nextSyncQuality(
   previous: SyncQualityState,
   estimate: Estimate | undefined,
-  now: number,
+  now: number
 ): SyncQualityState {
   if (!estimate) return { quality: 'calibrating', degradedSince: undefined };
-  if (estimate.uncertaintyMs <= 250) return { quality: 'calibrated', degradedSince: undefined };
+  if (estimate.uncertaintyMs <= 250)
+    return { quality: 'calibrated', degradedSince: undefined };
   const since = previous.degradedSince ?? now;
-  return { quality: now - since >= 3000 ? 'degraded' : previous.quality, degradedSince: since };
+  return {
+    quality: now - since >= 3000 ? 'degraded' : previous.quality,
+    degradedSince: since,
+  };
 }

@@ -88,11 +88,13 @@ export function integer(value: unknown): number {
 }
 export function id(value: unknown): string {
   const result = text(value);
-  if (!/^[a-f0-9]{32}$/.test(result)) throw new Error('Invalid server response.');
+  if (!/^[a-f0-9]{32}$/.test(result))
+    throw new Error('Invalid server response.');
   return result;
 }
 function role(value: unknown): 'host' | 'participant' {
-  if (value !== 'host' && value !== 'participant') throw new Error('Invalid server response.');
+  if (value !== 'host' && value !== 'participant')
+    throw new Error('Invalid server response.');
   return value;
 }
 function title(value: unknown): string {
@@ -111,11 +113,13 @@ export function decodeSession(value: unknown): Session {
   shape(v, ['identity', 'csrfToken', 'expiresAtMs']);
   shape(profile, ['identityId', 'displayName']);
   const csrfToken = text(v.csrfToken);
-  if (!/^[A-Za-z0-9_-]{43}$/.test(csrfToken)) throw new Error('Invalid server response.');
+  if (!/^[A-Za-z0-9_-]{43}$/.test(csrfToken))
+    throw new Error('Invalid server response.');
   return {
     identity: {
       identityId: id(profile.identityId),
-      displayName: decodeProfilePatch({ displayName: profile.displayName }).displayName,
+      displayName: decodeProfilePatch({ displayName: profile.displayName })
+        .displayName,
     },
     csrfToken,
     expiresAtMs: integer(v.expiresAtMs),
@@ -138,14 +142,20 @@ export function decodeSnapshot(value: unknown): Snapshot {
     'members',
     'serverNowMs',
   ]);
-  if (!Array.isArray(v.members) || v.members.length < 1 || v.members.length > 32)
+  if (
+    !Array.isArray(v.members) ||
+    v.members.length < 1 ||
+    v.members.length > 32
+  )
     throw new Error('Invalid server response.');
   const playback = object(v.playback);
   shape(playback, ['phase', 'positionMs', 'anchorServerMs', 'desiredPlaying']);
   const media = v.media === null ? null : decodeMedia(v.media);
   const generation = integer(v.mediaGeneration);
   if (
-    !['empty', 'paused', 'waiting', 'playing', 'ended'].includes(text(playback.phase)) ||
+    !['empty', 'paused', 'waiting', 'playing', 'ended'].includes(
+      text(playback.phase)
+    ) ||
     typeof playback.desiredPlaying !== 'boolean'
   )
     throw new Error('Invalid playback.');
@@ -157,13 +167,22 @@ export function decodeSnapshot(value: unknown): Snapshot {
         generation !== 0 ||
         positionMs !== 0 ||
         playback.desiredPlaying)) ||
-    (media && (generation < 1 || playback.phase === 'empty' || positionMs > media.durationMs))
+    (media &&
+      (generation < 1 ||
+        playback.phase === 'empty' ||
+        positionMs > media.durationMs))
   )
     throw new Error('Invalid timeline.');
   let barrier: Snapshot['barrier'] = null;
   if (v.barrier !== null) {
     const b = object(v.barrier);
-    shape(b, ['barrierId', 'requiredMemberIds', 'reason', 'targetPositionMs', 'deadlineServerMs']);
+    shape(b, [
+      'barrierId',
+      'requiredMemberIds',
+      'reason',
+      'targetPositionMs',
+      'deadlineServerMs',
+    ]);
     if (
       !Array.isArray(b.requiredMemberIds) ||
       b.requiredMemberIds.length > 32 ||
@@ -178,11 +197,13 @@ export function decodeSnapshot(value: unknown): Snapshot {
       deadlineServerMs: integer(b.deadlineServerMs),
     };
   }
-  if ((playback.phase === 'waiting') !== (barrier !== null)) throw new Error('Invalid barrier.');
+  if ((playback.phase === 'waiting') !== (barrier !== null))
+    throw new Error('Invalid barrier.');
   const members: Member[] = v.members.map((value: unknown) => {
     const m = object(value);
     shape(m, ['memberId', 'displayName', 'role', 'presence', 'readiness']);
-    if (!['offline', 'connected'].includes(text(m.presence))) throw new Error('Invalid member.');
+    if (!['offline', 'connected'].includes(text(m.presence)))
+      throw new Error('Invalid member.');
     const displayName = text(m.displayName);
     decodeProfilePatch({ displayName });
     return {
@@ -195,8 +216,11 @@ export function decodeSnapshot(value: unknown): Snapshot {
   });
   if (
     barrier &&
-    (barrier.requiredMemberIds.some((mid) => !members.some((m) => m.memberId === mid)) ||
-      new Set(barrier.requiredMemberIds).size !== barrier.requiredMemberIds.length ||
+    (barrier.requiredMemberIds.some(
+      (mid) => !members.some((m) => m.memberId === mid)
+    ) ||
+      new Set(barrier.requiredMemberIds).size !==
+        barrier.requiredMemberIds.length ||
       barrier.targetPositionMs > (media?.durationMs ?? 0))
   )
     throw new Error('Invalid barrier members.');
@@ -251,19 +275,24 @@ export function decodeRoomResult(value: unknown): RoomResult {
     v,
     Object.hasOwn(v, 'invitation')
       ? ['snapshot', 'invitation', 'replayed']
-      : ['snapshot', 'replayed'],
+      : ['snapshot', 'replayed']
   );
-  if (typeof v.replayed !== 'boolean') throw new Error('Invalid server response.');
+  if (typeof v.replayed !== 'boolean')
+    throw new Error('Invalid server response.');
   return {
     snapshot: decodeSnapshot(v.snapshot),
     invitation: v.invitation == null ? null : decodeInvitation(v.invitation),
     replayed: v.replayed,
   };
 }
-export function decodeList(value: unknown): { rooms: RoomSummary[]; nextCursor: string | null } {
+export function decodeList(value: unknown): {
+  rooms: RoomSummary[];
+  nextCursor: string | null;
+} {
   const v = object(value);
   shape(v, ['rooms', 'nextCursor']);
-  if (!Array.isArray(v.rooms) || v.rooms.length > 100) throw new Error('Invalid server response.');
+  if (!Array.isArray(v.rooms) || v.rooms.length > 100)
+    throw new Error('Invalid server response.');
   return {
     rooms: v.rooms.map((value: unknown) => {
       const r = object(value);
@@ -282,20 +311,28 @@ const errors: Record<string, string> = {
   request_outcome_unknown:
     'Request recovery expired. Check the original room link before starting a new request.',
   invalid_input: 'Check the entered values.',
-  invalid_command: 'This playback action is unavailable. Check room state and choose a new action.',
-  session_required: 'Your identity session ended. Reload to start a new identity.',
+  invalid_command:
+    'This playback action is unavailable. Check room state and choose a new action.',
+  session_required:
+    'Your identity session ended. Reload to start a new identity.',
   forbidden: 'You do not have permission for this action.',
   not_found: 'This room is no longer available to you.',
   invalid_invitation: 'This invitation is unavailable or the room has closed.',
   invitation_reset_required:
     'This older invitation needs replacement. Select Replace invitation to create new sharing details.',
-  upgrade_required: 'This page is out of date. Reload to use the updated application.',
-  stale_state: 'The room changed before your change was saved. Review the room and try again.',
-  idempotency_conflict: 'This request was already sent with different details. Reload and retry.',
+  upgrade_required:
+    'This page is out of date. Reload to use the updated application.',
+  stale_state:
+    'The room changed before your change was saved. Review the room and try again.',
+  idempotency_conflict:
+    'This request was already sent with different details. Reload and retry.',
   message_too_large: 'The request is too large.',
-  unsupported_content_type: 'The page sent an unsupported request. Reload and try again.',
-  rate_limited: 'Too many requests from this browser or network. Wait a minute, then try again.',
-  capacity_reached: 'This server or room is full. Try again later or ask the host.',
+  unsupported_content_type:
+    'The page sent an unsupported request. Reload and try again.',
+  rate_limited:
+    'Too many requests from this browser or network. Wait a minute, then try again.',
+  capacity_reached:
+    'This server or room is full. Try again later or ask the host.',
   busy: 'The server is busy. Try again in a few seconds.',
   storage_unavailable:
     'The server cannot save changes right now. Existing playback can continue. Try again later or ask the operator to check storage.',
@@ -321,7 +358,7 @@ export class NetworkError extends Error {
     super(
       status === undefined
         ? 'Cannot reach the server. Check your connection and try again.'
-        : `The server is unreachable through its proxy (HTTP ${status}). Try again shortly.`,
+        : `The server is unreachable through its proxy (HTTP ${status}). Try again shortly.`
     );
   }
 }
@@ -330,7 +367,7 @@ export class ResponseError extends Error {
   readonly reload = true;
   constructor() {
     super(
-      'The server sent an unexpected response. Reload the page; if this continues, check the server or proxy.',
+      'The server sent an unexpected response. Reload the page; if this continues, check the server or proxy.'
     );
   }
 }
@@ -341,7 +378,7 @@ export async function request(
   payload: unknown,
   signal: AbortSignal,
   key?: string,
-  replayOnly = false,
+  replayOnly = false
 ): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
@@ -365,7 +402,8 @@ export async function request(
   }
   // Bound decoded data even when a proxy produces an unexpected response.
   const reader = response.body?.getReader();
-  if (!reader) throw response.ok ? new ResponseError() : new NetworkError(response.status);
+  if (!reader)
+    throw response.ok ? new ResponseError() : new NetworkError(response.status);
   const chunks: Uint8Array[] = [];
   let length = 0;
   try {
@@ -401,14 +439,16 @@ export async function request(
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw new NetworkError(response.status);
     const code = (value as Record<string, unknown>).code;
-    throw new APIError(typeof code === 'string' && Object.hasOwn(errors, code) ? code : 'unknown');
+    throw new APIError(
+      typeof code === 'string' && Object.hasOwn(errors, code) ? code : 'unknown'
+    );
   }
   return value;
 }
 // getRandomValues is available on ordinary HTTP; randomUUID is not required.
 export function requestKey(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
-    b.toString(16).padStart(2, '0'),
+    b.toString(16).padStart(2, '0')
   ).join('');
 }
 export function defaultSettings(): RoomSettings {

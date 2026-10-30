@@ -24,9 +24,10 @@ export class DriftController {
     now: number,
     rateSupported: boolean,
     degraded: boolean,
-    resolution: number,
+    resolution: number
   ): Correction {
-    if (now < this.settledUntil || now - this.sampledAt < 250) return { kind: 'none' };
+    if (now < this.settledUntil || now - this.sampledAt < 250)
+      return { kind: 'none' };
     this.sampledAt = now;
     const distance = Math.abs(error),
       soft = Math.max(100, resolution),
@@ -45,7 +46,10 @@ export class DriftController {
     }
     if (degraded && rateSupported) return { kind: 'rate', rate: 1 };
     if (this.samples >= 3 && rateSupported)
-      return { kind: 'rate', rate: Math.max(0.95, Math.min(1.05, 1 + error / 5000)) };
+      return {
+        kind: 'rate',
+        rate: Math.max(0.95, Math.min(1.05, 1 + error / 5000)),
+      };
     return { kind: 'none' };
   }
 }
@@ -72,7 +76,7 @@ export class SyncController {
     snapshot: Snapshot,
     estimate: Estimate | undefined,
     now: number,
-    enabled: boolean,
+    enabled: boolean
   ): Promise<void> {
     if (!enabled || !snapshot.media) {
       this.invalidate();
@@ -99,14 +103,21 @@ export class SyncController {
       return;
     // Preserve a buffering report while the server decides whether to wait.
     // Applying an old anchor here can seek and manufacture a new ready event.
-    if (observed.status === 'buffering' && snapshot.playback.phase === 'playing') return;
+    if (
+      observed.status === 'buffering' &&
+      snapshot.playback.phase === 'playing'
+    )
+      return;
     const playing = snapshot.playback.phase === 'playing';
     let target = Math.min(
       snapshot.media.durationMs,
       snapshot.playback.positionMs +
         (playing && estimate
-          ? Math.max(0, now + estimate.offsetMs - snapshot.playback.anchorServerMs)
-          : 0),
+          ? Math.max(
+              0,
+              now + estimate.offsetMs - snapshot.playback.anchorServerMs
+            )
+          : 0)
     );
     const explicit = this.revision !== snapshot.revision;
     // Calibration changes alone cannot send a running target backward.
@@ -121,7 +132,8 @@ export class SyncController {
     const token = this.generation,
       operation = ++this.operation;
     this.applying = true;
-    const current = () => token === this.generation && operation === this.operation;
+    const current = () =>
+      token === this.generation && operation === this.operation;
     try {
       if (!playing) {
         await adapter.pause();
@@ -154,14 +166,15 @@ export class SyncController {
             now,
             adapter.capabilities.canSetPlaybackRate,
             estimate.uncertaintyMs > 250,
-            adapter.capabilities.positionResolutionMs,
+            adapter.capabilities.positionResolutionMs
           );
           if (correction.kind === 'seek') {
             await adapter.setPlaybackRate?.(1);
             if (!current()) return;
             await adapter.seek(correction.target);
             if (!current()) return;
-          } else if (correction.kind === 'rate') await adapter.setPlaybackRate?.(correction.rate);
+          } else if (correction.kind === 'rate')
+            await adapter.setPlaybackRate?.(correction.rate);
         }
       } else await adapter.pause();
     } finally {

@@ -43,7 +43,7 @@
   };
   const publicError = (error) =>
     /^(destination-denied|busy|cancelled|stale-generation|request-timeout|response-too-large|network-or-permission-denied|redirect-denied|access-expired|http-[0-9]{3}|invalid-range-response|unavailable|login-required|platform-access-denied|part-unavailable|unsupported-stream|unsupported-codec|invalid-danmaku|invalid-request|helper-incompatible|invalid-media|unknown-handle|invalid-range|media-changed|invalid-segment|rate-limited)$/.test(
-      error.message,
+      error.message
     )
       ? error.message
       : 'platform-response-invalid';
@@ -70,7 +70,10 @@
       throw Error('destination-denied');
     return u.href;
   }
-  function request(url, { range, binary = false, limit = 1024 * 1024, media = false } = {}) {
+  function request(
+    url,
+    { range, binary = false, limit = 1024 * 1024, media = false } = {}
+  ) {
     safeURL(url, media);
     if (active >= 2) throw Error('busy');
     const mine = generation;
@@ -101,7 +104,10 @@
         controller?.abort();
       }, DEADLINE);
       function bounds(event) {
-        if (event.loaded > limit || (event.lengthComputable && event.total > limit)) {
+        if (
+          event.loaded > limit ||
+          (event.lengthComputable && event.total > limit)
+        ) {
           metrics.oversizeBytes = event.loaded;
           finish('response-too-large');
           controller?.abort();
@@ -123,7 +129,9 @@
           onreadystatechange: (r) => {
             if (r.readyState === 2) {
               const length = Number(
-                r.responseHeaders?.match(/(?:^|\n)content-length:\s*(\d+)/i)?.[1],
+                r.responseHeaders?.match(
+                  /(?:^|\n)content-length:\s*(\d+)/i
+                )?.[1]
               );
               if (length > limit) {
                 metrics.oversizeBytes = 0;
@@ -138,20 +146,31 @@
           onload: (r) => {
             try {
               safeURL(r.finalUrl || url, media);
-              if (r.finalUrl && new URL(r.finalUrl).origin !== new URL(url).origin)
+              if (
+                r.finalUrl &&
+                new URL(r.finalUrl).origin !== new URL(url).origin
+              )
                 throw Error('redirect-denied');
               if (r.status !== (range ? 206 : 200))
                 throw Error(
-                  r.status === 403 || r.status === 410 ? 'access-expired' : `http-${r.status}`,
+                  r.status === 403 || r.status === 410
+                    ? 'access-expired'
+                    : `http-${r.status}`
                 );
               const data = binary ? r.response : r.responseText,
-                size = binary ? data.byteLength : new TextEncoder().encode(data).byteLength;
-              metrics.maxResponseBytes = Math.max(metrics.maxResponseBytes, size);
+                size = binary
+                  ? data.byteLength
+                  : new TextEncoder().encode(data).byteLength;
+              metrics.maxResponseBytes = Math.max(
+                metrics.maxResponseBytes,
+                size
+              );
               if (size > limit) {
                 metrics.oversizeBytes = size;
                 throw Error('response-too-large');
               }
-              if (range && size !== range[1] - range[0] + 1) throw Error('invalid-range-response');
+              if (range && size !== range[1] - range[0] + 1)
+                throw Error('invalid-range-response');
               metrics.bytes += size;
               finish(undefined, data);
             } catch (e) {
@@ -166,7 +185,9 @@
   }
   async function api(path, params) {
     const x = JSON.parse(
-      await request(`https://api.bilibili.com${path}?${new URLSearchParams(params)}`),
+      await request(
+        `https://api.bilibili.com${path}?${new URLSearchParams(params)}`
+      )
     );
     if (x.code !== 0)
       throw Error(
@@ -174,13 +195,14 @@
           ? 'unavailable'
           : x.code === -101
             ? 'login-required'
-            : 'platform-access-denied',
+            : 'platform-access-denied'
       );
     return x.data;
   }
   async function resolve(bvid, part, selectedQuality = 0) {
     const view = await api('/x/web-interface/view', { bvid });
-    if (!Array.isArray(view?.pages) || view.pages.length > 10000) throw Error('invalid-media');
+    if (!Array.isArray(view?.pages) || view.pages.length > 10000)
+      throw Error('invalid-media');
     const page = view.pages.find((p) => p.page === part);
     if (!page) throw Error('part-unavailable');
     if (
@@ -197,28 +219,38 @@
       fnval: '16',
       fourk: '1',
     });
-    if (!play.dash?.video?.length || !play.dash?.audio?.length) throw Error('unsupported-stream');
+    if (!play.dash?.video?.length || !play.dash?.audio?.length)
+      throw Error('unsupported-stream');
     const playable = play.dash.video.filter(
       (t) =>
         Number.isSafeInteger(t.id) &&
         t.id > 0 &&
         t.id <= 127 &&
         typeof t.codecs === 'string' &&
-        t.codecs.startsWith('avc1'),
+        t.codecs.startsWith('avc1')
     );
     const video = selectedQuality
       ? playable.find((t) => t.id === selectedQuality)
-      : playable.find((t) => t.id === 32) || playable.sort((a, b) => a.id - b.id)[0];
+      : playable.find((t) => t.id === 32) ||
+        playable.sort((a, b) => a.id - b.id)[0];
     const audio = play.dash.audio.find((t) => t.codecs.startsWith('mp4a'));
     if (!video || !audio) throw Error('unsupported-codec');
-    if (!Number.isFinite(play.timelength) || play.timelength < 1 || play.timelength > 604800000)
+    if (
+      !Number.isFinite(play.timelength) ||
+      play.timelength < 1 ||
+      play.timelength > 604800000
+    )
       throw Error('invalid-media');
     const tracks = [video, audio].map((t) => ({
       url: safeURL(t.baseUrl || t.base_url, true),
       id: t.id,
       codec: t.codecs,
       mime: t.mimeType || t.mime_type,
-      init: (t.SegmentBase?.Initialization || t.segment_base?.initialization || '')
+      init: (
+        t.SegmentBase?.Initialization ||
+        t.segment_base?.initialization ||
+        ''
+      )
         .split('-')
         .map(Number),
       index: (t.SegmentBase?.indexRange || t.segment_base?.index_range || '')
@@ -236,8 +268,8 @@
               !r.every(Number.isSafeInteger) ||
               r[0] < 0 ||
               r[1] < r[0] ||
-              r[1] > 65535,
-          ),
+              r[1] > 65535
+          )
       )
     )
       throw Error('invalid-media');
@@ -278,7 +310,8 @@
       if (wire === 0) value = varint();
       else if (wire === 2) {
         const n = varint();
-        if (!Number.isSafeInteger(n) || n > end - at) throw Error('invalid-danmaku');
+        if (!Number.isSafeInteger(n) || n > end - at)
+          throw Error('invalid-danmaku');
         value = bytes.subarray(at, at + n);
         at += n;
       } else if (wire === 1) at += 8;
@@ -294,7 +327,12 @@
       hello: ['version'],
       probe: ['version'],
       session: [],
-      open: ['bvid', 'part', 'generation', ...(Object.hasOwn(q, 'quality') ? ['quality'] : [])],
+      open: [
+        'bvid',
+        'part',
+        'generation',
+        ...(Object.hasOwn(q, 'quality') ? ['quality'] : []),
+      ],
       bytes: ['handle', 'track', 'offset', 'length', 'generation'],
       danmaku: ['handle', 'segment', 'generation'],
       dispose: ['generation'],
@@ -303,7 +341,9 @@
     if (
       !Object.hasOwn(allowed, q.op) ||
       Object.keys(q).length !== allowed[q.op].length + 4 ||
-      Object.keys(q).some((k) => !['channel', 'id', 'op', 'client', ...allowed[q.op]].includes(k))
+      Object.keys(q).some(
+        (k) => !['channel', 'id', 'op', 'client', ...allowed[q.op]].includes(k)
+      )
     )
       throw Error('invalid-request');
     if (q.op === 'hello' || q.op === 'probe') {
@@ -391,13 +431,18 @@
       } catch (e) {
         if (e.message !== 'access-expired') throw e;
         const fresh = await resolve(media.bvid, media.part, media.quality);
-        if (q.generation !== generation || q.client !== client || handles.get(q.handle) !== media)
+        if (
+          q.generation !== generation ||
+          q.client !== client ||
+          handles.get(q.handle) !== media
+        )
           throw Error('stale-generation');
         if (
           fresh.cid !== media.cid ||
           fresh.duration !== media.duration ||
           fresh.tracks.some(
-            (t, i) => t.codec !== media.tracks[i].codec || t.id !== media.tracks[i].id,
+            (t, i) =>
+              t.codec !== media.tracks[i].codec || t.id !== media.tracks[i].id
           )
         )
           throw Error('media-changed');
@@ -423,7 +468,7 @@
         throw Error('invalid-segment');
       const buffer = await request(
         `https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=${media.cid}&segment_index=${q.segment}`,
-        { binary: true, limit: 8 * 1024 * 1024 },
+        { binary: true, limit: 8 * 1024 * 1024 }
       );
       const comments = [];
       let commentBytes = 0;
@@ -450,7 +495,8 @@
           [1, 4, 5].includes(mode)
         ) {
           const comment = { time, mode, color: color & 0xffffff, text };
-          commentBytes += new TextEncoder().encode(JSON.stringify(comment)).byteLength + 1;
+          commentBytes +=
+            new TextEncoder().encode(JSON.stringify(comment)).byteLength + 1;
           if (commentBytes > 300 * 1024) break;
           comments.push(comment);
         }
@@ -522,7 +568,7 @@
             ok: false,
             error: 'reply-too-large',
           }),
-      ORIGIN,
+      ORIGIN
     );
   });
   window.addEventListener(
@@ -532,6 +578,6 @@
       for (const cancel of [...pending]) cancel();
       handles.clear();
     },
-    { once: true },
+    { once: true }
   );
 })();

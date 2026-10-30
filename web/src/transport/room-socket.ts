@@ -34,12 +34,16 @@ export type EndReason =
   | 'room_unavailable'
   | 'revoked';
 // The browser cannot read HTTP statuses of refused WebSocket upgrades; an HTTP probe can.
-export type ProbeResult = 'reachable' | 'session_ended' | 'room_unavailable' | 'unreachable';
+export type ProbeResult =
+  'reachable' | 'session_ended' | 'room_unavailable' | 'unreachable';
 export interface SocketEvents {
   snapshot(snapshot: Snapshot): void;
   status(status: string): void;
   lease(active: boolean): void;
-  error(message: string, options?: { reload?: boolean; recheck?: boolean }): void;
+  error(
+    message: string,
+    options?: { reload?: boolean; recheck?: boolean }
+  ): void;
   uncertain(command: Command | undefined): void;
   ended(reason: EndReason): void;
 }
@@ -66,7 +70,7 @@ export class RoomSocket {
     private roomId: string,
     private events: SocketEvents,
     private probe: (signal: AbortSignal) => Promise<ProbeResult> = () =>
-      Promise.resolve('unreachable'),
+      Promise.resolve('unreachable')
   ) {}
   start(): void {
     this.stopped = false;
@@ -77,7 +81,10 @@ export class RoomSocket {
         this.connected = false;
         this.events.status('Connection uncertain. Playback paused.');
         this.socket?.close();
-      } else if (this.connected && performance.now() - this.lastCalibration >= 5000)
+      } else if (
+        this.connected &&
+        performance.now() - this.lastCalibration >= 5000
+      )
         this.calibrate(1);
     }, 250);
   }
@@ -99,7 +106,9 @@ export class RoomSocket {
         this.receive(parseFrame(event.data));
         this.lastMessage = performance.now();
       } catch {
-        this.events.error('The room connection returned invalid data. Reconnecting.');
+        this.events.error(
+          'The room connection returned invalid data. Reconnecting.'
+        );
         socket.close();
       }
     };
@@ -114,7 +123,8 @@ export class RoomSocket {
   }
   private schedule(): void {
     const delay =
-      Math.min(15000, 500 * 2 ** Math.min(this.attempts++, 5)) * (0.8 + Math.random() * 0.4);
+      Math.min(15000, 500 * 2 ** Math.min(this.attempts++, 5)) *
+      (0.8 + Math.random() * 0.4);
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
   // A refusal before welcome may be terminal. Only OVS answers can end retries; proxy and
@@ -136,7 +146,7 @@ export class RoomSocket {
     }
     if (result === 'reachable' && ++this.refusals === 3)
       this.events.error(
-        'The server is reachable, but the room connection is refused. The server may be full, or a proxy may not forward WebSockets for the configured public origin. Retrying.',
+        'The server is reachable, but the room connection is refused. The server may be full, or a proxy may not forward WebSockets for the configured public origin. Retrying.'
       );
     this.schedule();
   }
@@ -149,7 +159,9 @@ export class RoomSocket {
     this.events.lease(false);
     this.socket?.close();
     this.events.status(
-      reason === 'replaced' ? 'Playback is active in another page.' : 'Room connection ended.',
+      reason === 'replaced'
+        ? 'Playback is active in another page.'
+        : 'Room connection ended.'
     );
     this.events.ended(reason);
   }
@@ -167,7 +179,12 @@ export class RoomSocket {
         shape(p, ['reply']);
         if (typeof p.reply !== 'boolean') throw new Error('Invalid heartbeat.');
         if (!p.reply)
-          this.send({ v: 2, type: 'heartbeat', requestId: key, payload: { reply: true } });
+          this.send({
+            v: 2,
+            type: 'heartbeat',
+            requestId: key,
+            payload: { reply: true },
+          });
       } else {
         shape(p, ['clientSendMs', 'serverReceiveMs', 'serverSendMs']);
         const c0 = this.pings.get(key);
@@ -177,7 +194,7 @@ export class RoomSocket {
             c0,
             integer(p.serverReceiveMs),
             integer(p.serverSendMs),
-            Math.ceil(performance.now()),
+            Math.ceil(performance.now())
           );
       }
       return;
@@ -206,9 +223,11 @@ export class RoomSocket {
       this.events.status('Connected');
       this.acceptSnapshot(decodeSnapshot(p.snapshot), epoch);
       this.calibrate(5);
-    } else if (kind === 'room.snapshot') this.acceptSnapshot(decodeSnapshot(p), epoch);
+    } else if (kind === 'room.snapshot')
+      this.acceptSnapshot(decodeSnapshot(p), epoch);
     else if (kind === 'command.result') {
-      if (this.snapshot?.epoch !== epoch) throw new Error('Invalid result epoch.');
+      if (this.snapshot?.epoch !== epoch)
+        throw new Error('Invalid result epoch.');
       shape(p, ['commandId', 'accepted', 'revision', 'error']);
       const key = id(p.commandId);
       if (typeof p.accepted !== 'boolean') throw new Error('Invalid result.');
@@ -247,7 +266,7 @@ export class RoomSocket {
                 ? 'session_ended'
                 : result === 'room_unavailable'
                   ? 'removed'
-                  : 'revoked',
+                  : 'revoked'
             );
           });
       }
@@ -295,7 +314,7 @@ export class RoomSocket {
     } else
       this.events.error(
         'Update required. Reload after the server and browser assets use the same version.',
-        { reload: true },
+        { reload: true }
       );
   }
   private acceptSnapshot(snapshot: Snapshot, epoch: string): void {
@@ -312,7 +331,8 @@ export class RoomSocket {
     this.events.snapshot(snapshot);
   }
   private send(value: unknown): void {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(value));
+    if (this.socket?.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify(value));
   }
   calibrate(count = 5): void {
     if (!this.connected) return;
@@ -321,17 +341,25 @@ export class RoomSocket {
       const key = requestKey(),
         at = Math.floor(performance.now());
       this.pings.set(key, at);
-      this.send({ v: 2, type: 'clock.ping', requestId: key, payload: { clientSendMs: at } });
+      this.send({
+        v: 2,
+        type: 'clock.ping',
+        requestId: key,
+        payload: { clientSendMs: at },
+      });
     }
     if (this.pings.size > 20) this.pings = new Map([...this.pings].slice(-20));
   }
   command(payload: Command['payload']): void {
     const s = this.snapshot;
     if (!s || !this.connected || !this.active || this.pending) {
-      this.events.error('Controls need an active connection and a resolved previous command.');
+      this.events.error(
+        'Controls need an active connection and a resolved previous command.'
+      );
       return;
     }
-    const safePayload = 'media' in payload ? { media: decodeMedia(payload.media) } : payload;
+    const safePayload =
+      'media' in payload ? { media: decodeMedia(payload.media) } : payload;
     const command: Command = {
       v: 2,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',
@@ -346,12 +374,21 @@ export class RoomSocket {
     this.send(command);
   }
   resolveUncertain(): void {
-    if (this.connected && this.active && this.pending?.epoch === this.snapshot?.epoch)
+    if (
+      this.connected &&
+      this.active &&
+      this.pending?.epoch === this.snapshot?.epoch
+    )
       this.send(this.pending);
   }
   readiness(payload: unknown): void {
     if (this.connected && this.active && this.snapshot)
-      this.send({ v: 2, type: 'member.readiness', epoch: this.snapshot.epoch, payload });
+      this.send({
+        v: 2,
+        type: 'member.readiness',
+        epoch: this.snapshot.epoch,
+        payload,
+      });
   }
   resetClock(): void {
     this.clock.reset();

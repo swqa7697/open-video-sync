@@ -4,7 +4,9 @@ import PlayerPanel from './PlayerPanel.vue';
 import { decodeSnapshot } from '../../transport/api';
 import { FakeSocket, roomFixture } from '../../test-support/room';
 
-vi.mock('../../player/fingerprint', () => ({ localFingerprint: async () => 'f'.repeat(64) }));
+vi.mock('../../player/fingerprint', () => ({
+  localFingerprint: async () => 'f'.repeat(64),
+}));
 
 const self = 'e'.repeat(32);
 // The host selected a 9-byte local file; this page is a participant with the same file.
@@ -50,7 +52,13 @@ const room = (phase: 'playing' | 'paused' | 'waiting', revision: number) => ({
 // Settles play() as browsers do: at once with enough data; otherwise it fires waiting and stays
 // pending until pause() cancels it with AbortError. A seek leaves too little data to play.
 function fakeMedia(video: HTMLVideoElement) {
-  const media = { readyState: 4, paused: true, seeking: false, blocked: false, interrupted: 0 };
+  const media = {
+    readyState: 4,
+    paused: true,
+    seeking: false,
+    blocked: false,
+    interrupted: 0,
+  };
   let position = 0,
     pending: Array<(error: DOMException) => void> = [];
   Object.defineProperties(video, {
@@ -75,7 +83,8 @@ function fakeMedia(video: HTMLVideoElement) {
   });
   video.load = () => {};
   video.play = () => {
-    if (media.blocked) return Promise.reject(new DOMException('Blocked', 'NotAllowedError'));
+    if (media.blocked)
+      return Promise.reject(new DOMException('Blocked', 'NotAllowedError'));
     media.paused = false;
     if (media.readyState >= 3) return Promise.resolve();
     setTimeout(() => video.dispatchEvent(new Event('waiting')));
@@ -86,7 +95,8 @@ function fakeMedia(video: HTMLVideoElement) {
     const cancelled = pending;
     pending = [];
     setTimeout(() => {
-      for (const reject of cancelled) reject(new DOMException('Interrupted', 'AbortError'));
+      for (const reject of cancelled)
+        reject(new DOMException('Interrupted', 'AbortError'));
       media.interrupted += cancelled.length;
     });
   };
@@ -99,12 +109,18 @@ async function join(phase: 'playing' | 'waiting') {
   });
   const socket = FakeSocket.instances[0]!;
   socket.readyState = 1;
-  socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot: room(phase, 1) });
+  socket.frame('session.welcome', {
+    connectionId: 'c'.repeat(32),
+    snapshot: room(phase, 1),
+  });
   await flushPromises();
   const video = wrapper.get('video').element;
   return { wrapper, socket, video, ...fakeMedia(video) };
 }
-async function select(wrapper: VueWrapper, video: HTMLVideoElement): Promise<void> {
+async function select(
+  wrapper: VueWrapper,
+  video: HTMLVideoElement
+): Promise<void> {
   const input = wrapper.get('#local-video');
   Object.defineProperty(input.element, 'files', {
     value: [new File(['synthetic'], 'private.webm')],
@@ -115,7 +131,10 @@ async function select(wrapper: VueWrapper, video: HTMLVideoElement): Promise<voi
 }
 const reported = (socket: FakeSocket) =>
   socket.sent
-    .map((text) => JSON.parse(text) as { type: string; payload: { status?: string } })
+    .map(
+      (text) =>
+        JSON.parse(text) as { type: string; payload: { status?: string } }
+    )
     .filter((frame) => frame.type === 'member.readiness')
     .map((frame) => frame.payload.status);
 beforeEach(() => {
@@ -129,7 +148,7 @@ beforeEach(() => {
         return 'blob:fixture-panel';
       }
       static revokeObjectURL(): void {}
-    },
+    }
   );
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -138,7 +157,11 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   const { wrapper, socket, video, media, pending } = await join('playing');
   // Calibrate the clock with zero offset so the controller follows the playing room.
   for (const text of socket.sent) {
-    const ping = JSON.parse(text) as { type: string; requestId: string; payload: object };
+    const ping = JSON.parse(text) as {
+      type: string;
+      requestId: string;
+      payload: object;
+    };
     if (ping.type !== 'clock.ping') continue;
     const sent = (ping.payload as { clientSendMs: number }).clientSendMs;
     socket.onmessage?.({
@@ -146,7 +169,11 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
         v: 2,
         type: 'clock.pong',
         requestId: ping.requestId,
-        payload: { clientSendMs: sent, serverReceiveMs: sent, serverSendMs: sent },
+        payload: {
+          clientSendMs: sent,
+          serverReceiveMs: sent,
+          serverSendMs: sent,
+        },
       }),
     });
   }
@@ -157,7 +184,9 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   await vi.waitFor(() => expect(media.interrupted).toBe(1));
   await flushPromises();
   expect(wrapper.find('[role="alert"]').exists()).toBe(false);
-  expect(wrapper.get('[data-testid="media-status"]').attributes('data-state')).toBe('buffering');
+  expect(
+    wrapper.get('[data-testid="media-status"]').attributes('data-state')
+  ).toBe('buffering');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
 });
@@ -166,11 +195,13 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   media.blocked = true;
   await select(wrapper, video);
   await vi.waitFor(() =>
-    expect(wrapper.get('[data-testid="media-status"]').attributes('data-state')).toBe(
-      'gesture_required',
-    ),
+    expect(
+      wrapper.get('[data-testid="media-status"]').attributes('data-state')
+    ).toBe('gesture_required')
   );
-  const enable = wrapper.findAll('button').find((button) => button.text() === 'Enable playback')!;
+  const enable = wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Enable playback')!;
   // Permission arrives with the gesture, but the data no longer covers the wait position.
   media.blocked = false;
   media.readyState = 2;
@@ -180,7 +211,9 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   await vi.waitFor(() => expect(media.interrupted).toBe(1));
   await flushPromises();
   expect(wrapper.find('[role="alert"]').exists()).toBe(false);
-  expect(wrapper.get('[data-testid="media-status"]').attributes('data-state')).toBe('buffering');
+  expect(
+    wrapper.get('[data-testid="media-status"]').attributes('data-state')
+  ).toBe('buffering');
   expect(document.activeElement?.id).toBe('player-title');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();

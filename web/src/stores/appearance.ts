@@ -17,10 +17,12 @@ type Accent = (typeof appearanceAccents)[number]['value'];
 export const useAppearanceStore = defineStore('appearance', () => {
   const root = document.documentElement;
   const mode = ref<Mode>(
-    appearanceModes.find((option) => option.value === root.dataset.mode)?.value ?? 'system',
+    appearanceModes.find((option) => option.value === root.dataset.mode)
+      ?.value ?? 'system'
   );
   const accent = ref<Accent>(
-    appearanceAccents.find((option) => option.value === root.dataset.accent)?.value ?? 'slate',
+    appearanceAccents.find((option) => option.value === root.dataset.accent)
+      ?.value ?? 'slate'
   );
   const saved = ref(true);
 
@@ -30,7 +32,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
     try {
       localStorage.setItem(
         'ovs.appearance',
-        JSON.stringify({ mode: mode.value, accent: accent.value }),
+        JSON.stringify({ mode: mode.value, accent: accent.value })
       );
       saved.value = true;
     } catch {

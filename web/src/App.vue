@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watchEffect } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  watchEffect,
+} from 'vue';
 import { useConnectionStore } from './stores/connection';
 import { useIdentityStore } from './stores/identity';
 import {
@@ -53,8 +60,12 @@ const draftSettings = ref(defaultSettings()),
 const appearanceOpen = ref(false);
 const helperGeneration = ref(0);
 let initialFile: File | undefined;
-const safeName = computed(() => identity.session?.identity.displayName || 'Guest');
-const host = computed(() => room.value?.selfMemberId === room.value?.hostMemberId);
+const safeName = computed(
+  () => identity.session?.identity.displayName || 'Guest'
+);
+const host = computed(
+  () => room.value?.selfMemberId === room.value?.hostMemberId
+);
 // Retain uncertain create/redeem intent and its key in memory until its outcome is known.
 const attempt = ref<{
   path: string;
@@ -71,7 +82,7 @@ const serverText = computed(
       ready: 'Server: ready',
       not_ready: 'Server: online, but cannot save changes',
       unreachable: 'Server: unreachable',
-    })[connection.status],
+    })[connection.status]
 );
 // Room titles stay out of browser history; the room heading names the room.
 watchEffect(() => {
@@ -85,7 +96,13 @@ watchEffect(() => {
           : 'Watch together'
   } · Open Video Sync`;
 });
-const api = (path: string, method = 'GET', payload?: unknown, key?: string, replayOnly = false) =>
+const api = (
+  path: string,
+  method = 'GET',
+  payload?: unknown,
+  key?: string,
+  replayOnly = false
+) =>
   request(
     path,
     method,
@@ -93,7 +110,7 @@ const api = (path: string, method = 'GET', payload?: unknown, key?: string, repl
     payload,
     controller.signal,
     key,
-    replayOnly,
+    replayOnly
   );
 function recheck(): void {
   void connection.checkReadiness(controller.signal);
@@ -111,7 +128,7 @@ function reload(): void {
 
 async function perform(
   work: () => Promise<void>,
-  context: FailureContext = 'other',
+  context: FailureContext = 'other'
 ): Promise<void> {
   if (busy.value) return;
   busy.value = true;
@@ -156,7 +173,10 @@ async function open(id: string, moveFocus = false): Promise<void> {
     try {
       await share();
     } catch (reason) {
-      if (reason instanceof APIError && reason.code === 'invitation_reset_required')
+      if (
+        reason instanceof APIError &&
+        reason.code === 'invitation_reset_required'
+      )
         message.value = reason.message;
       else throw reason;
     }
@@ -184,7 +204,7 @@ async function submitAttempt(): Promise<void> {
     const replayOnly = pending.sent && pending.path === '/rooms';
     pending.sent = true;
     const value = decodeRoomResult(
-      await api(pending.path, 'POST', pending.payload, pending.key, replayOnly),
+      await api(pending.path, 'POST', pending.payload, pending.key, replayOnly)
     );
     attempt.value = undefined;
     pendingLink.value = undefined;
@@ -195,7 +215,10 @@ async function submitAttempt(): Promise<void> {
     message.value = 'Room ready.';
     void focus('room-title');
   } catch (reason) {
-    if (reason instanceof APIError && reason.code === 'request_outcome_unknown') {
+    if (
+      reason instanceof APIError &&
+      reason.code === 'request_outcome_unknown'
+    ) {
       attempt.value = undefined;
       try {
         await open(pending.key, true);
@@ -209,7 +232,10 @@ async function submitAttempt(): Promise<void> {
       return;
     }
     // Uncertain outcomes keep the original request for an explicit retry.
-    if (reason instanceof APIError && !['busy', 'storage_unavailable'].includes(reason.code))
+    if (
+      reason instanceof APIError &&
+      !['busy', 'storage_unavailable'].includes(reason.code)
+    )
       attempt.value = undefined;
     throw reason;
   }
@@ -273,12 +299,14 @@ const managed: Record<'settings' | 'rotate' | 'remove', string> = {
 async function manage(
   operation: 'settings' | 'rotate' | 'remove' | 'close' | 'leave',
   settings?: RoomSettings,
-  memberId?: string,
+  memberId?: string
 ): Promise<void> {
   const current = room.value;
   if (!current) return;
   const self =
-    operation === 'close' || operation === 'leave' || (operation === 'remove' && !memberId);
+    operation === 'close' ||
+    operation === 'leave' ||
+    (operation === 'remove' && !memberId);
   const suffix =
     operation === 'settings'
       ? '/settings'
@@ -303,7 +331,9 @@ async function manage(
   let response: Record<string, unknown>;
   if (self) departing.value = true;
   try {
-    response = object(await api(`/rooms/${current.roomId}${suffix}`, method, payload));
+    response = object(
+      await api(`/rooms/${current.roomId}${suffix}`, method, payload)
+    );
   } catch (reason) {
     if (reason instanceof APIError && reason.code === 'not_found') {
       // The room may still exist; only a missing room ends this view.
@@ -320,14 +350,19 @@ async function manage(
   }
   if (self) {
     message.value =
-      operation === 'close' ? `You closed “${current.title}”.` : `You left “${current.title}”.`;
+      operation === 'close'
+        ? `You closed “${current.title}”.`
+        : `You left “${current.title}”.`;
     await back();
     return;
   }
   room.value = decodeSnapshot(
-    operation === 'remove' ? await api(`/rooms/${current.roomId}`) : response.snapshot,
+    operation === 'remove'
+      ? await api(`/rooms/${current.roomId}`)
+      : response.snapshot
   );
-  if (operation === 'rotate') invitation.value = decodeInvitation(response.invitation);
+  if (operation === 'rotate')
+    invitation.value = decodeInvitation(response.invitation);
   if (operation === 'remove') {
     invitation.value = undefined;
     if (host.value) await share();
@@ -337,7 +372,7 @@ async function manage(
 async function share(): Promise<void> {
   if (!room.value || !host.value) return;
   invitation.value = decodeInvitation(
-    object(await api(`/rooms/${room.value.roomId}/invitations`)).invitation,
+    object(await api(`/rooms/${room.value.roomId}/invitations`)).invitation
   );
 }
 async function back(): Promise<void> {
@@ -352,7 +387,8 @@ async function back(): Promise<void> {
 async function ended(reason: EndReason): Promise<void> {
   const name = room.value?.title,
     active = document.activeElement,
-    focusInside = !active || active === document.body || !!active.closest('.room');
+    focusInside =
+      !active || active === document.body || !!active.closest('.room');
   room.value = undefined;
   invitation.value = undefined;
   history.replaceState(null, '', '/');
@@ -397,7 +433,8 @@ function connectionChanged(): void {
   recheck();
 }
 function visibility(): void {
-  if (document.visibilityState === 'visible' && connection.status !== 'ready') recheck();
+  if (document.visibilityState === 'visible' && connection.status !== 'ready')
+    recheck();
 }
 function navigate(): void {
   void perform(async () => {
@@ -443,7 +480,9 @@ onUnmounted(() => {
 
 <template>
   <div class="shell" :class="{ viewing: !!room }">
-    <a class="skip" href="#main" @click.prevent="focusMain">Skip to main content</a>
+    <a class="skip" href="#main" @click.prevent="focusMain"
+      >Skip to main content</a
+    >
     <header class="app-header">
       <button
         class="brand quiet"
@@ -451,8 +490,8 @@ onUnmounted(() => {
         :disabled="busy"
         @click="room && perform(() => manage('leave'))"
       >
-        <span class="brand-mark"><Icon name="play" :size="18" /></span><span>OVS</span
-        ><span class="brand-name">Open Video Sync</span>
+        <span class="brand-mark"><Icon name="play" :size="18" /></span
+        ><span>OVS</span><span class="brand-name">Open Video Sync</span>
       </button>
       <div class="header-end">
         <p class="server-status" role="status" :data-state="connection.status">
@@ -472,7 +511,9 @@ onUnmounted(() => {
           class="profile-button quiet"
           @click="profileOpen = true"
         >
-          <span class="avatar">{{ Array.from(safeName)[0]?.toUpperCase() }}</span
+          <span class="avatar">{{
+            Array.from(safeName)[0]?.toUpperCase()
+          }}</span
           ><span class="profile-name">{{ safeName }}</span
           ><Icon name="chevron" :size="16" />
         </button>
@@ -482,7 +523,12 @@ onUnmounted(() => {
     <main id="main" tabindex="-1">
       <div v-if="failure" id="app-alert" role="alert" class="notice error">
         <p><strong>Error:</strong> {{ failure.text }}</p>
-        <button v-if="failure.reload" id="app-reload" class="quiet" @click="reload">
+        <button
+          v-if="failure.reload"
+          id="app-reload"
+          class="quiet"
+          @click="reload"
+        >
           Reload page
         </button>
       </div>
@@ -492,16 +538,32 @@ onUnmounted(() => {
       <template v-if="!identity.session"
         ><div class="initializing">
           <Icon name="screen" :size="32" />
-          <h2>{{ busy ? 'Getting things ready…' : 'Your identity could not be restored.' }}</h2>
-          <button v-if="!busy" @click="perform(() => identity.bootstrap(controller.signal))">
+          <h2>
+            {{
+              busy
+                ? 'Getting things ready…'
+                : 'Your identity could not be restored.'
+            }}
+          </h2>
+          <button
+            v-if="!busy"
+            @click="perform(() => identity.bootstrap(controller.signal))"
+          >
             Retry connection
           </button>
         </div></template
       >
       <template v-else>
         <div v-if="attempt" class="notice">
-          <p>The request outcome is uncertain. Check the original request to recover its result.</p>
-          <button id="retry-attempt" :disabled="busy" @click="perform(submitAttempt)">
+          <p>
+            The request outcome is uncertain. Check the original request to
+            recover its result.
+          </p>
+          <button
+            id="retry-attempt"
+            :disabled="busy"
+            @click="perform(submitAttempt)"
+          >
             Retry original request
           </button>
         </div>
@@ -541,19 +603,28 @@ onUnmounted(() => {
         </RoomPanel>
         <div v-else class="home">
           <div class="home-heading">
-            <p class="eyebrow"><span class="status-dot" />A private place to press play</p>
+            <p class="eyebrow">
+              <span class="status-dot" />A private place to press play
+            </p>
             <h1>Good company.<br /><span>Perfectly in sync.</span></h1>
             <p>Pick a video. Invite your people. Watch together.</p>
           </div>
           <section class="create-card" aria-labelledby="create-title">
             <div class="card-heading">
               <h2 id="create-title" tabindex="-1">Start a watch party</h2>
-              <span class="private-badge"><Icon name="shield" :size="14" />Private room</span>
+              <span class="private-badge"
+                ><Icon name="shield" :size="14" />Private room</span
+              >
             </div>
             <form @submit.prevent="!attempt && perform(create, 'create')">
-              <MediaPicker ref="picker" :room-id="creationKey" :disabled="busy || !!attempt" />
+              <MediaPicker
+                ref="picker"
+                :room-id="creationKey"
+                :disabled="busy || !!attempt"
+              />
               <div class="room-draft">
-                <label for="room-name">Room name <span class="hint">optional</span></label
+                <label for="room-name"
+                  >Room name <span class="hint">optional</span></label
                 ><input
                   id="room-name"
                   v-model="title"
@@ -567,9 +638,15 @@ onUnmounted(() => {
               <div class="draft-settings">
                 <span
                   ><Icon name="users" :size="16" />{{
-                    draftSettings.controllers === 'host' ? 'Host controls' : 'Everyone controls'
+                    draftSettings.controllers === 'host'
+                      ? 'Host controls'
+                      : 'Everyone controls'
                   }}<span class="separator">·</span
-                  >{{ draftSettings.waitForAll ? 'Wait for everyone' : 'Join when ready' }}</span
+                  >{{
+                    draftSettings.waitForAll
+                      ? 'Wait for everyone'
+                      : 'Join when ready'
+                  }}</span
                 ><button
                   type="button"
                   class="quiet icon-button"
@@ -581,13 +658,17 @@ onUnmounted(() => {
                 </button>
               </div>
               <button class="create-submit" :disabled="busy || !!attempt">
-                {{ busy ? 'Preparing room…' : 'Create room' }}<Icon name="arrow" />
+                {{ busy ? 'Preparing room…' : 'Create room'
+                }}<Icon name="arrow" />
               </button>
             </form>
           </section>
           <section class="join-section" aria-labelledby="join-title">
             <h2 id="join-title">Already have an invitation?</h2>
-            <form class="input-action" @submit.prevent="!attempt && perform(join, 'join')">
+            <form
+              class="input-action"
+              @submit.prevent="!attempt && perform(join, 'join')"
+            >
               <input
                 id="join-code"
                 v-model="code"
@@ -599,13 +680,18 @@ onUnmounted(() => {
                 spellcheck="false"
                 :aria-invalid="invalidField === 'join-code' || undefined"
                 @input="invalidField = undefined"
-              /><button id="join-submit" class="quiet" :disabled="busy || !!attempt">
+              /><button
+                id="join-submit"
+                class="quiet"
+                :disabled="busy || !!attempt"
+              >
                 Join<Icon name="arrow" :size="16" />
               </button>
             </form>
           </section>
           <p class="privacy-note">
-            <Icon name="shield" :size="15" />Your media stays yours. Only playback stays in sync.
+            <Icon name="shield" :size="15" />Your media stays yours. Only
+            playback stays in sync.
           </p>
         </div>
       </template>
@@ -614,12 +700,21 @@ onUnmounted(() => {
       <span>OVS<span class="separator">/</span>Made for watching together</span
       ><span>Private rooms. Your own media.</span>
     </footer>
-    <Modal v-if="settingsOpen" title="Room settings" @close="settingsOpen = false"
+    <Modal
+      v-if="settingsOpen"
+      title="Room settings"
+      @close="settingsOpen = false"
       ><form @submit.prevent="settingsOpen = false">
-        <SettingsForm v-model="draftSettings" :disabled="busy" /><button>Apply settings</button>
+        <SettingsForm v-model="draftSettings" :disabled="busy" /><button>
+          Apply settings
+        </button>
       </form></Modal
     >
-    <Modal v-if="appearanceOpen" title="Appearance" @close="appearanceOpen = false">
+    <Modal
+      v-if="appearanceOpen"
+      title="Appearance"
+      @close="appearanceOpen = false"
+    >
       <AppearancePanel />
     </Modal>
     <Modal v-if="profileOpen" title="Your profile" @close="profileOpen = false"
