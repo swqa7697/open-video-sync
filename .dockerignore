@@ -18,5 +18,6 @@
 **/*_test.go
 web/node_modules
 web/.vitest
+**/*.tsbuildinfo
 web/src/**/*.test.ts
 internal/web/dist

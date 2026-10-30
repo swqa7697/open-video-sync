@@ -39,9 +39,14 @@ export default defineConfig({
   },
   fmt: { singleQuote: true, semi: true },
   lint: {
+    jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
     plugins: ['typescript', 'vue'],
     categories: { correctness: 'error' },
-    rules: { 'typescript/no-explicit-any': 'error' },
+    rules: {
+      'vite-plus/prefer-vite-plus-imports': 'error',
+      'typescript/no-explicit-any': 'error',
+    },
+    options: { typeAware: true, typeCheck: true },
   },
   test: {
     environment: 'jsdom',

@@ -167,8 +167,8 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(cookie?.sameSite).toBe('Lax');
     expect(cookie?.secure).toBe(false);
     expect(
-      await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } })),
-    ).toEqual({ local: {}, session: {} });
+      await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
+    ).toEqual({ local: 0, session: 0 });
     expect(failures).toEqual([]);
   } finally {
     await guest.close();

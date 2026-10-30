@@ -191,8 +191,8 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     expect(frames.join('')).not.toContain('blob:');
     for (const p of [other, tab])
       expect(
-        await p.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } })),
-      ).toEqual({ local: {}, session: {} });
+        await p.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
+      ).toEqual({ local: 0, session: 0 });
     if (baseURL && !['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname))
       expect(
         await page.evaluate(() => ({ secure: isSecureContext, subtle: !!crypto.subtle })),

@@ -59,10 +59,13 @@
 
 - Use `gofmt` for Go. Follow idiomatic Go naming, document exported contracts, return errors for operational failures, and wrap errors when callers need their cause.
 - Propagate `context.Context` through blocking operations. Every goroutine needs an owner and a termination path. Do not panic on malformed user input.
-- Prefer standard-library primitives where suitable. Pin third-party dependencies in manifests/lockfiles. Select container images and CI actions by tags. Use the latest stable Go compiler in CI and Docker; keep only the minimum Go version in `go.mod`.
+- Prefer standard-library primitives where suitable. Record resolved third-party versions in the ecosystem's dependency files. Select container images and CI actions by tags. Use the latest stable Go compiler in CI and Docker; keep only the minimum Go version in `go.mod`.
 - Use Vue Composition API with `<script setup lang="ts">`, strict TypeScript, typed adapter boundaries, and runtime validation for network/platform data. Do not use `any` to bypass contract checking.
 - During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Use pnpm with one lockfile; do not pin or require a specific pnpm version.
-- Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select and pin the formatter during scaffolding; avoid competing tools for the same rule.
+- Use pnpm for all frontend package operations: `pnpm add`, `pnpm remove`, and `pnpm update` for dependencies; `pnpm pkg` for package scripts and metadata. Do not mix npm or npx commands or create competing lockfiles. Never edit `package.json` manually.
+- Use pnpm's default `^` ranges for frontend dependencies. Exception: let official `vp create` or `vp migrate` commands pin Vite+ toolchain catalog entries and generate matching aliases, overrides, and peer rules. Do not hand-edit that pairing. Let pnpm generate and maintain `pnpm-lock.yaml` for reproducible installs.
+- Review skipped migration rules before removing lint tools. Keep required Vue template checks when Vite+ cannot replace them.
+- Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select one formatter during scaffolding; avoid competing tools for the same rule.
 - Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep reusable automation under `scripts/`.
 - Prefer Go for standalone repository automation when no existing tool fits. Keep native frontend tests in the frontend test framework.
 - Keep changes focused. Remove dead code and share helpers only when they represent the same responsibility. Do not add unrelated cleanup or future-source abstractions.

@@ -62,7 +62,7 @@ Playback starts muted. When autoplay is blocked, select **Enable playback** insi
 
 Every participant supplies their own local file. OVS exchanges only a room-specific sampled SHA-256 digest, size, and duration.
 Filenames, paths, handles, timestamps, object URLs, samples, and video bytes stay in the browser.
-A worker uses pinned `@noble/hashes` so matching works on ordinary HTTP without SubtleCrypto.
+A worker uses `@noble/hashes` so matching works on ordinary HTTP without SubtleCrypto.
 Equal size and digest, plus duration within 250 ms, permit matching. Sampled matching detects accidental differences; it does not prove identical content.
 
 A new page takes playback ownership from the same identity's previous page in that room. The old page disposes its player.
@@ -117,11 +117,18 @@ Install these prerequisites:
 - A C compiler for `make test-race`.
 - Docker Engine with Buildx and Compose for container work.
 
-Use your existing tool manager. When pnpm is absent, install it with `npm install --global pnpm`.
+Install pnpm with your existing tool manager or the [official standalone installer](https://pnpm.io/installation#using-a-standalone-script).
 No specific pnpm version is required. CI and Docker install the latest release.
 Docker activates pnpm through its bundled Corepack and disables automatic manifest pinning.
 Installation scripts check system tools. They do not change system packages or Git state.
 `make install` retains timestamped logs under ignored `.misc/install/`.
+
+Manage frontend dependencies with `pnpm --dir web add -w <package>`, `pnpm --dir web remove -w <package>`, and `pnpm --dir web update`.
+Use the default `^` version ranges. Let the official Vite+ CLI manage its toolchain catalog, including matching version pins and overrides.
+Reconcile that pairing with `pnpm --dir web exec vp migrate --no-interactive --no-agent --no-editor --no-hooks`.
+Keep the separate ESLint Vue template checks; a full migration can skip those rules and remove ESLint.
+Use `pnpm --dir web pkg` for package scripts and metadata. Do not edit `package.json` manually or mix npm/npx commands.
+Let pnpm maintain `web/pnpm-lock.yaml`; installation and CI use `--frozen-lockfile` for reproducible installs.
 
 CI selects the latest stable Go release. Docker uses `golang:latest`; Make and Compose builds pull current base images.
 Container images and CI actions use tags. The Go compiler has no fixed toolchain pin.

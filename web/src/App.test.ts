@@ -200,12 +200,12 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   expect(wrapper.text()).toContain('is no longer available to you');
   await wrapper.get('.profile-button').trigger('click');
   await wrapper.get('#display-name').setValue('bell\u0007');
-  await wrapper.get<HTMLInputElement>('#display-name').element.form?.requestSubmit();
+  wrapper.get<HTMLInputElement>('#display-name').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain('Use up to 48 characters');
   expect(document.activeElement?.id).toBe('display-name');
   await wrapper.get('#join-code').setValue('ABCD-EFGH-JKMN-PQRS');
-  await wrapper.get<HTMLInputElement>('#join-code').element.form?.requestSubmit();
+  wrapper.get<HTMLInputElement>('#join-code').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain('unexpected response');
   expect(wrapper.find('#app-reload').exists()).toBe(true);
@@ -213,7 +213,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   await wrapper.get('#retry-attempt').trigger('click');
   await flushPromises();
   expect(wrapper.find('#retry-attempt').exists()).toBe(false);
-  await wrapper.get<HTMLInputElement>('#join-code').element.form?.requestSubmit();
+  wrapper.get<HTMLInputElement>('#join-code').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain(
     'This invitation is unavailable or the room has closed.',
@@ -221,7 +221,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   expect(document.activeElement?.id).toBe('join-code');
   expect(wrapper.get('#join-code').attributes('aria-invalid')).toBe('true');
   await wrapper.get('#room-name').setValue('Proxy room');
-  await wrapper.get<HTMLInputElement>('#room-name').element.form?.requestSubmit();
+  wrapper.get<HTMLInputElement>('#room-name').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain('through its proxy (HTTP 502)');
   wrapper.unmount();

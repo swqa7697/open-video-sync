@@ -242,7 +242,7 @@ Use a normal file input and an object URL. The server receives only `{kind, fing
 Do not share filenames automatically. Never upload files, thumbnails, samples, subtitles, paths, or handles.
 
 Retain fingerprint version 1: up to three 1-MiB samples at the start, middle, and end; include room ID and size in the versioned SHA-256 encoding.
-The existing worker and shared vectors define the exact byte encoding. Keep the pinned incremental hash implementation for ordinary HTTP.
+The existing worker and shared vectors define the exact byte encoding. Keep the incremental hash implementation for ordinary HTTP.
 Match size and digest, with duration within 250 ms. This detects accidental differences; it is not proof of identical content or access rights.
 Probe codec support using the actual player. Do not transcode or promise untested formats.
 
