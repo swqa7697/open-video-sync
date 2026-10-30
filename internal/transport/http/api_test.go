@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -203,5 +205,58 @@ func TestStrictTransportAndAddressLimits(t *testing.T) {
 	}
 	if w := call(t, a, apiPeer{}, "POST", "/api/v2/session", "{}"); w.Code != 429 {
 		t.Fatal("forwarding headers bypassed address limit", w.Code)
+	}
+
+	// Only a trusted peer's header selects the client; spoofed left hops share the real client's bucket.
+	fixed := time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC)
+	b := NewAPI("http://watch.example", &identity.Service{Repository: store, Now: func() time.Time { return fixed }, Random: rand.Reader})
+	b.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}
+	probe := func(peer string, forwarded ...string) int {
+		r := httptest.NewRequest("POST", "http://watch.example/api/v2/session", strings.NewReader("{}"))
+		r.RemoteAddr = peer
+		r.Header.Set("Origin", b.Origin)
+		r.Header.Set("Content-Type", "text/plain")
+		for _, value := range forwarded {
+			r.Header.Add("X-Forwarded-For", value)
+		}
+		w := httptest.NewRecorder()
+		b.ServeHTTP(w, r)
+		return w.Code
+	}
+	const proxy = "192.0.2.1:1234"
+	for i := range 10 {
+		if code := probe(proxy, fmt.Sprintf("203.0.113.%d, 198.51.100.7", i)); code != 415 {
+			t.Fatalf("forwarded probe %d = %d", i, code)
+		}
+	}
+	malformed := make([]string, 10)
+	for i := range malformed {
+		malformed[i] = "198.51.100.1, not-an-address"
+	}
+	for _, tc := range []struct {
+		name      string
+		peer      string
+		forwarded []string
+		want      int
+	}{
+		{"mapped client form", proxy, []string{"::ffff:198.51.100.7"}, 429},
+		{"trusted hop skipped across lines", proxy, []string{"198.51.100.7", "192.0.2.9"}, 429},
+		{"untrusted peer header ignored", "198.51.100.7:1", []string{"198.51.100.99"}, 429},
+		{"distinct client bucket", proxy, []string{"198.51.100.8"}, 415},
+	} {
+		if code := probe(tc.peer, tc.forwarded...); code != tc.want {
+			t.Fatalf("%s = %d, want %d", tc.name, code, tc.want)
+		}
+	}
+	for _, value := range malformed {
+		if code := probe(proxy, value); code != 415 {
+			t.Fatalf("malformed header probe = %d", code)
+		}
+	}
+	if code := probe(proxy); code != 429 {
+		t.Fatalf("absent header did not share the proxy bucket with malformed headers: %d", code)
+	}
+	if code := probe(proxy, "192.0.2.50"); code != 415 {
+		t.Fatalf("all-trusted chain did not use its leftmost hop: %d", code)
 	}
 }

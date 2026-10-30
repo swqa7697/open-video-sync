@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,13 @@ func (p *peer) read(t *testing.T, kind string) json.RawMessage {
 		}
 		if err := json.Unmarshal(b, &f); err != nil {
 			t.Fatal(err)
+		}
+		// Liveness and clock frames are unsequenced.
+		if f.Type == "heartbeat" || f.Type == "clock.pong" {
+			if f.Type == kind {
+				return f.Payload
+			}
+			continue
 		}
 		if f.EventSeq != p.seq+1 {
 			t.Fatal("sequence gap", f.EventSeq, p.seq)
@@ -228,5 +236,50 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	}
 	if restored.Epoch == oldEpoch || restored.Playback.Phase != "paused" || restored.Playback.DesiredPlaying || restored.MediaGeneration != 1 || restored.Revision != 1 {
 		t.Fatal("restart extrapolated or lost accepted state", restored)
+	}
+}
+
+func TestHeartbeatsArriveWellInsideTheClientLivenessWindow(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}
+	service, err := rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { service.Close() }()
+	var clock atomic.Int64
+	service.Monotonic = clock.Load
+	host, token, _, err := identities.Bootstrap(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(ctx, host, testKey(), "Liveness", contracts.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handler http.Handler
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
+	defer server.Close()
+	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), ws.NewHandler(server.URL, identities, service))
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v2/rooms/" + created.Snapshot.RoomID
+	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {server.URL}, "Cookie": {"ovs_session=" + token}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	p := &peer{conn: conn}
+	p.read(t, "session.welcome")
+	// A client pauses after five seconds without server messages; two heartbeats must fit inside.
+	for range 2 {
+		clock.Add(2000)
+		var hb struct{ Reply bool }
+		if err := json.Unmarshal(p.read(t, "heartbeat"), &hb); err != nil || hb.Reply {
+			t.Fatal("expected a server-initiated heartbeat", err)
+		}
 	}
 }

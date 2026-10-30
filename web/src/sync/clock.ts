@@ -38,3 +38,20 @@ export class ClockEstimator {
     };
   }
 }
+export type SyncQuality = 'calibrating' | 'calibrated' | 'degraded';
+export interface SyncQualityState {
+  quality: SyncQuality;
+  degradedSince: number | undefined;
+}
+// Display state only. Improvements show at once; degradation must persist for three seconds,
+// so a brief uncertainty spike does not toggle the announced label every sample.
+export function nextSyncQuality(
+  previous: SyncQualityState,
+  estimate: Estimate | undefined,
+  now: number,
+): SyncQualityState {
+  if (!estimate) return { quality: 'calibrating', degradedSince: undefined };
+  if (estimate.uncertaintyMs <= 250) return { quality: 'calibrated', degradedSince: undefined };
+  const since = previous.degradedSince ?? now;
+  return { quality: now - since >= 3000 ? 'degraded' : previous.quality, degradedSince: since };
+}

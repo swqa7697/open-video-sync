@@ -1,6 +1,7 @@
 import type { Snapshot } from '../transport/api';
 import type { PlayerAdapter } from '../player/adapters/local';
 import type { Estimate } from './clock';
+import type { ReadinessStatus } from '../transport/protocol-values';
 
 export type Correction =
   | { kind: 'none' }
@@ -161,4 +162,19 @@ export class SyncController {
       if (current()) this.applying = false;
     }
   }
+}
+// The readiness a participant reports for waits. A usable clock estimate is required; a degraded
+// one (uncertainty above 250 ms) only suspends small corrections, so high-latency participants
+// can still release a wait and use explicit controls (DESIGN 6.2).
+export function reportedReadiness(input: {
+  pending: boolean;
+  matched: boolean;
+  estimate: Estimate | undefined;
+  seeking: boolean;
+  status: ReadinessStatus;
+}): ReadinessStatus {
+  if (input.pending) return 'loading';
+  if (!input.matched) return 'mismatch';
+  if (!input.estimate || input.seeking) return 'loading';
+  return input.status;
 }

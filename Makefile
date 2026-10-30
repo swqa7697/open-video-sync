@@ -6,9 +6,10 @@ CHANNEL ?= dev
 VERBOSE ?= 0
 CLEAN ?= 0
 IMAGE ?= ovs:dev
-export VERSION CHANNEL VERBOSE CLEAN IMAGE
+CADDY_IMAGE ?= caddy:2
+export VERSION CHANNEL VERBOSE CLEAN IMAGE CADDY_IMAGE
 
-.PHONY: help install setup uninstall clean deps format tidy check test test-race web-build build dev dev-web test-e2e browser-install image image-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: help install setup uninstall clean deps format tidy check test test-race web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -74,6 +75,9 @@ image: ## Build the single non-root application image
 
 image-smoke: ## Check image startup, HTTP routing, ownership, and persisted schema
 	go run ./scripts/image-smoke -image "$(IMAGE)"
+
+proxy-smoke: ## Check HTTPS through containerized Caddy, proxy client addresses, and reconnect after reload
+	go run ./scripts/proxy-smoke -image "$(IMAGE)" -caddy "$(CADDY_IMAGE)"
 
 bump-major: ## Bump VERSION major (X.0.0); no Git mutations
 	go run ./scripts/release bump major

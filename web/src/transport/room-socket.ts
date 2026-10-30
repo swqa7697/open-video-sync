@@ -25,26 +25,35 @@ export interface Command {
     | { action: 'seek'; positionMs: number }
     | { media: MediaDescriptor };
 }
+// Why a room connection ended for good. Other closures reconnect with backoff.
+export type EndReason =
+  | 'replaced'
+  | 'closed'
+  | 'removed'
+  | 'session_ended'
+  | 'room_unavailable'
+  | 'revoked';
+// The browser cannot read HTTP statuses of refused WebSocket upgrades; an HTTP probe can.
+export type ProbeResult = 'reachable' | 'session_ended' | 'room_unavailable' | 'unreachable';
 export interface SocketEvents {
   snapshot(snapshot: Snapshot): void;
   status(status: string): void;
   lease(active: boolean): void;
-  error(message: string): void;
+  error(message: string, options?: { reload?: boolean; recheck?: boolean }): void;
   uncertain(command: Command | undefined): void;
+  ended(reason: EndReason): void;
 }
 export class RoomSocket {
   readonly clock = new ClockEstimator();
   snapshot?: Snapshot;
   active = false;
-  replaced = false;
   connected = false;
   private socket?: WebSocket;
   private stopped = false;
   private terminal = false;
-  private closedRoom = false;
-  get roomClosed(): boolean {
-    return this.closedRoom;
-  }
+  private welcomed = false;
+  private refusals = 0;
+  private probing: AbortController | undefined;
   private sequence = 0;
   private attempts = 0;
   private lastMessage = 0;
@@ -56,6 +65,8 @@ export class RoomSocket {
   constructor(
     private roomId: string,
     private events: SocketEvents,
+    private probe: (signal: AbortSignal) => Promise<ProbeResult> = () =>
+      Promise.resolve('unreachable'),
   ) {}
   start(): void {
     this.stopped = false;
@@ -80,6 +91,7 @@ export class RoomSocket {
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
+    this.welcomed = false;
     socket.onmessage = (event: MessageEvent<unknown>) => {
       if (this.socket !== socket || this.stopped) return;
       try {
@@ -92,24 +104,54 @@ export class RoomSocket {
       }
     };
     socket.onclose = () => {
-      if (this.socket !== socket || this.stopped) return;
+      if (this.socket !== socket || this.stopped || this.terminal) return;
       this.connected = false;
       this.clock.reset();
-      this.events.status(
-        this.closedRoom
-          ? 'Room closed.'
-          : this.terminal
-            ? this.replaced
-              ? 'Room open elsewhere. Reload to use this page.'
-              : 'Your room session ended.'
-            : 'Disconnected. Playback paused.',
-      );
-      if (!this.terminal) {
-        const delay =
-          Math.min(15000, 500 * 2 ** Math.min(this.attempts++, 5)) * (0.8 + Math.random() * 0.4);
-        this.reconnectTimer = setTimeout(() => this.connect(), delay);
-      }
+      this.events.status('Disconnected. Playback paused.');
+      if (this.welcomed) this.schedule();
+      else void this.diagnose();
     };
+  }
+  private schedule(): void {
+    const delay =
+      Math.min(15000, 500 * 2 ** Math.min(this.attempts++, 5)) * (0.8 + Math.random() * 0.4);
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+  }
+  // A refusal before welcome may be terminal. Only OVS answers can end retries; proxy and
+  // network failures keep the backoff.
+  private async diagnose(): Promise<void> {
+    const probing = new AbortController();
+    this.probing = probing;
+    let result: ProbeResult;
+    try {
+      result = await this.probe(probing.signal);
+    } catch {
+      result = 'unreachable';
+    }
+    if (this.probing !== probing || this.stopped || this.terminal) return;
+    this.probing = undefined;
+    if (result === 'session_ended' || result === 'room_unavailable') {
+      this.end(result);
+      return;
+    }
+    if (result === 'reachable' && ++this.refusals === 3)
+      this.events.error(
+        'The server is reachable, but the room connection is refused. The server may be full, or a proxy may not forward WebSockets for the configured public origin. Retrying.',
+      );
+    this.schedule();
+  }
+  private end(reason: EndReason): void {
+    this.terminal = true;
+    this.connected = false;
+    this.active = false;
+    this.pending = undefined;
+    this.events.uncertain(undefined);
+    this.events.lease(false);
+    this.socket?.close();
+    this.events.status(
+      reason === 'replaced' ? 'Playback is active in another page.' : 'Room connection ended.',
+    );
+    this.events.ended(reason);
   }
   private receive(f: Record<string, unknown>): void {
     if (f.v !== 2) {
@@ -155,7 +197,11 @@ export class RoomSocket {
       this.active = true;
       this.events.lease(true);
       this.connected = true;
+      this.welcomed = true;
       this.attempts = 0;
+      // A refusal explanation no longer applies once the room admits this page.
+      if (this.refusals >= 3) this.events.error('');
+      this.refusals = 0;
       sessionStorage.removeItem('ovs-protocol-reload');
       this.events.status('Connected');
       this.acceptSnapshot(decodeSnapshot(p.snapshot), epoch);
@@ -181,17 +227,30 @@ export class RoomSocket {
       shape(p, ['reason']);
       if (!['connection_replaced', 'session_revoked'].includes(text(p.reason)))
         throw new Error('Invalid lifecycle.');
-      this.replaced = p.reason === 'connection_replaced';
-      this.active = false;
-      this.events.lease(false);
-      this.terminal = true;
-      this.connected = false;
-      this.socket?.close();
-      this.events.status(
-        p.reason === 'connection_replaced'
-          ? 'Playback is active in another tab.'
-          : 'Your room session ended.',
-      );
+      if (p.reason === 'connection_replaced') this.end('replaced');
+      else {
+        // Removal, a forgotten identity, and session expiry share one frame; HTTP tells them apart.
+        this.terminal = true;
+        this.connected = false;
+        this.active = false;
+        this.events.lease(false);
+        this.socket?.close();
+        const probing = new AbortController();
+        this.probing = probing;
+        void this.probe(probing.signal)
+          .catch((): ProbeResult => 'unreachable')
+          .then((result) => {
+            if (this.probing !== probing || this.stopped) return;
+            this.probing = undefined;
+            this.end(
+              result === 'session_ended'
+                ? 'session_ended'
+                : result === 'room_unavailable'
+                  ? 'removed'
+                  : 'revoked',
+            );
+          });
+      }
     } else if (kind === 'server.stopping') {
       shape(p, ['reason']);
       if (p.reason !== 'shutdown') throw new Error('Invalid shutdown.');
@@ -202,13 +261,7 @@ export class RoomSocket {
       shape(p, ['roomId', 'revision']);
       id(p.roomId);
       integer(p.revision);
-      this.terminal = true;
-      this.connected = false;
-      this.closedRoom = true;
-      this.active = false;
-      this.events.lease(false);
-      this.events.status('Room closed.');
-      this.socket?.close();
+      this.end('closed');
     } else throw new Error('Unknown event.');
   }
   private publicError(p: Record<string, unknown>): void {
@@ -221,7 +274,17 @@ export class RoomSocket {
       this.upgrade();
       return;
     }
-    this.events.error(new APIError(code).message);
+    const message =
+      code === 'forbidden'
+        ? 'Only the host can do that in this room.'
+        : code === 'stale_state'
+          ? 'The room changed before your command arrived. Check the current state and try again.'
+          : code === 'storage_unavailable'
+            ? 'The server could not save this change. Current playback continues.'
+            : p.retryable
+              ? 'The server could not apply this command now. Try again in a few seconds.'
+              : new APIError(code).message;
+    this.events.error(message, { recheck: code === 'storage_unavailable' });
   }
   private upgrade(): void {
     this.terminal = true;
@@ -232,6 +295,7 @@ export class RoomSocket {
     } else
       this.events.error(
         'Update required. Reload after the server and browser assets use the same version.',
+        { reload: true },
       );
   }
   private acceptSnapshot(snapshot: Snapshot, epoch: string): void {
@@ -295,6 +359,8 @@ export class RoomSocket {
   }
   dispose(): void {
     this.stopped = true;
+    this.probing?.abort();
+    this.probing = undefined;
     clearInterval(this.timer);
     clearTimeout(this.reconnectTimer);
     this.socket?.close();

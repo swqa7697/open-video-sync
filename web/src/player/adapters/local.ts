@@ -38,7 +38,6 @@ export class LocalAdapter implements PlayerAdapter {
       'canplay',
       'playing',
       'waiting',
-      'stalled',
       'error',
       'pause',
       'seeked',
@@ -50,7 +49,9 @@ export class LocalAdapter implements PlayerAdapter {
         () => {
           if (this.disposed) return;
           if (event === 'error') this.status = 'unsupported';
-          else if (event === 'waiting' || event === 'stalled') this.status = 'buffering';
+          // Only waiting means playback lacks data. Firefox fires stalled for MediaSource when
+          // appends pause with enough data buffered, and no event would clear that state.
+          else if (event === 'waiting') this.status = 'buffering';
           else if (['canplay', 'playing', 'seeked', 'loadeddata'].includes(event))
             this.status = 'ready';
           for (const listener of this.listeners) listener();

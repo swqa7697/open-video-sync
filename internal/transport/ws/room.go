@@ -219,6 +219,12 @@ func NewHandler(origin string, identities *identity.Service, service *rooms.Serv
 	return h
 }
 func serviceTime(s *rooms.Service) int64 { return s.ServerTimeMs() }
+
+// heartbeatIntervalMs keeps server messages well inside the client's five-second liveness
+// window. A five-second interval left no margin: a few milliseconds of jitter or main-thread
+// delay made a client drop its socket, and a single-member room then paused while empty.
+const heartbeatIntervalMs = 2000
+
 func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int64, clock func() int64) {
 	timer := time.NewTicker(250 * time.Millisecond)
 	defer timer.Stop()
@@ -271,7 +277,7 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 			if clock()-last.Load() >= 15000 {
 				return
 			}
-			if clock()-heartbeatAt < 5000 {
+			if clock()-heartbeatAt < heartbeatIntervalMs {
 				continue
 			}
 			heartbeatAt = clock()

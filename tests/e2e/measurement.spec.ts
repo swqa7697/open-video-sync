@@ -126,9 +126,9 @@ test('three independent nearby trials observe decoded frames separately from con
       await host.getByRole('button', { name: 'Save preferences', exact: true }).click();
       const file = { name: 'generated-timecode.webm', mimeType: 'video/webm', buffer: fixture };
       await host.locator('#local-video').setInputFiles(file);
-      await expect(host.getByTestId('media-status')).toHaveText('ready');
+      await expect(host.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
       await guest.locator('#local-video').setInputFiles(file);
-      await expect(guest.getByTestId('media-status')).toHaveText('ready');
+      await expect(guest.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
       expect(await host.evaluate(() => document.visibilityState)).toBe('visible');
       expect(await guest.evaluate(() => document.visibilityState)).toBe('visible');
       await Promise.all([observe(host), observe(guest)]);

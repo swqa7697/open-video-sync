@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConfigValidation(t *testing.T) {
 	for _, origin := range []string{"http://localhost:8080", "https://watch.example.com", "http://[::1]:8080"} {
@@ -28,20 +31,41 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
-	for key, invalid := range map[string]string{"OVS_LISTEN_ADDR": "127.0.0.1:0", "OVS_LOG_LEVEL": "info+4"} {
-		t.Run(key, func(t *testing.T) {
-			_, err := loadConfig(func(name string) string {
-				if name == "OVS_PUBLIC_ORIGIN" {
-					return "http://localhost:8080"
-				}
-				if name == key {
-					return invalid
-				}
-				return ""
-			})
-			if err == nil {
+	load := func(key, value string) (config, error) {
+		return loadConfig(func(name string) string {
+			if name == "OVS_PUBLIC_ORIGIN" {
+				return "http://localhost:8080"
+			}
+			if name == key {
+				return value
+			}
+			return ""
+		})
+	}
+	for _, invalid := range []struct{ key, value string }{
+		{"OVS_LISTEN_ADDR", "127.0.0.1:0"},
+		{"OVS_LOG_LEVEL", "info+4"},
+		{"OVS_TRUSTED_PROXIES", "10.0.0.1/8"},
+		{"OVS_TRUSTED_PROXIES", "0.0.0.0/0"},
+		{"OVS_TRUSTED_PROXIES", "::/0"},
+		{"OVS_TRUSTED_PROXIES", "10.0.0.0/8,"},
+		{"OVS_TRUSTED_PROXIES", "10.0.0.1"},
+		{"OVS_TRUSTED_PROXIES", "::ffff:10.0.0.0/104"},
+		{"OVS_TRUSTED_PROXIES", "fe80::1%eth0/128"},
+		{"OVS_TRUSTED_PROXIES", "proxy.example"},
+		{"OVS_TRUSTED_PROXIES", strings.Repeat("10.0.0.0/8,", 64) + "10.0.0.0/8"},
+	} {
+		t.Run(invalid.key+"="+invalid.value, func(t *testing.T) {
+			if _, err := load(invalid.key, invalid.value); err == nil {
 				t.Fatal("invalid deployment configuration accepted")
 			}
 		})
+	}
+	if cfg, err := load("OVS_TRUSTED_PROXIES", ""); err != nil || cfg.trustedProxies != nil {
+		t.Fatalf("unset proxy trust = %v, %v", cfg.trustedProxies, err)
+	}
+	cfg, err := load("OVS_TRUSTED_PROXIES", "172.30.0.2/32, ::1/128")
+	if err != nil || len(cfg.trustedProxies) != 2 || cfg.trustedProxies[0].String() != "172.30.0.2/32" || cfg.trustedProxies[1].String() != "::1/128" {
+		t.Fatalf("valid proxy trust = %v, %v", cfg.trustedProxies, err)
 	}
 }

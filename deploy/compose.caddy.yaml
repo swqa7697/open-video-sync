@@ -1,0 +1,14 @@
+# Overlay for Caddy in another container. Create the shared network once with a fixed subnet
+# and a dynamic range that excludes Caddy's static address:
+#   docker network create --subnet 172.30.0.0/24 --ip-range 172.30.0.128/25 ovs-proxy
+# Run Caddy on that network with the static address 172.30.0.2, and set
+# OVS_TRUSTED_PROXIES=172.30.0.2/32. OVS publishes no host port in this arrangement.
+services:
+  ovs:
+    ports: !reset []
+    networks: [proxy]
+
+networks:
+  proxy:
+    name: ovs-proxy
+    external: true

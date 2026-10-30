@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -12,11 +14,12 @@ import (
 )
 
 type config struct {
-	listenAddr string
-	dataDir    string
-	origin     *url.URL
-	logLevel   slog.Level
-	roomLimits rooms.Limits
+	listenAddr     string
+	dataDir        string
+	origin         *url.URL
+	logLevel       slog.Level
+	roomLimits     rooms.Limits
+	trustedProxies []netip.Prefix
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -67,7 +70,31 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if err := c.logLevel.UnmarshalText([]byte(level)); err != nil {
 		return config{}, fmt.Errorf("parse log level: %w", err)
 	}
+	if c.trustedProxies, err = parseTrustedProxies(getenv("OVS_TRUSTED_PROXIES")); err != nil {
+		return config{}, err
+	}
 	return c, nil
+}
+
+// parseTrustedProxies accepts comma-separated masked CIDRs. Empty input trusts no forwarding headers.
+func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	invalid := errors.New("OVS_TRUSTED_PROXIES must list at most 64 comma-separated masked CIDRs, such as 172.30.0.2/32, without /0 or IPv4-mapped prefixes")
+	parts := strings.Split(raw, ",")
+	if len(parts) > 64 {
+		return nil, invalid
+	}
+	prefixes := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(part))
+		if err != nil || prefix != prefix.Masked() || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
+			return nil, invalid
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 func environmentConfig() (config, error) {

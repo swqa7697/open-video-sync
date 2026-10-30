@@ -5,23 +5,21 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/coder/websocket"
-	"github.com/swqa7697/open-video-sync/internal/contracts"
-	"github.com/swqa7697/open-video-sync/internal/rooms"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/swqa7697/open-video-sync/internal/contracts"
+	"github.com/swqa7697/open-video-sync/internal/rooms"
+	"github.com/swqa7697/open-video-sync/scripts/internal/smoke"
 	_ "modernc.org/sqlite"
 )
 
@@ -34,13 +32,7 @@ func main() {
 	}
 }
 
-func docker(ctx context.Context, args ...string) (string, error) {
-	output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("docker %s: %w: %s", args[0], err, output)
-	}
-	return strings.TrimSpace(string(output)), nil
-}
+var docker = smoke.Docker
 
 func run(image string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -111,7 +103,7 @@ func run(image string) error {
 			return err
 		}
 	}
-	fmt.Println("Image passed: non-root/read-only startup, embedded UI and scoped helper, reserved routes, ownership, clean stop, and identity/room persistence across replacement.")
+	fmt.Println("Image passed: non-root/read-only startup, embedded UI and scoped helper, reserved routes, ownership, clean stop, and identity/name/room/membership persistence across replacement.")
 	fmt.Printf("Isolated database copies: %s\n", directory)
 	return nil
 }
@@ -191,112 +183,98 @@ func inspectDatabase(ctx context.Context, path string) (string, error) {
 }
 
 // State uses only isolated test credentials. Do not print bearer or invitation values.
-type applicationState struct{ token, csrf, identityID, roomID, epoch, invitation string }
+type applicationState struct {
+	host, guest                    smoke.Client
+	hostID, guestID, guestMemberID string
+	roomID, epoch, invitation      string
+}
+
+const (
+	roomTitle = "Container persistence"
+	hostName  = "Container host"
+	guestName = "Container guest"
+)
 
 func checkApplication(ctx context.Context, name string, previous applicationState) (applicationState, error) {
 	port, err := docker(ctx, "port", name, "8080/tcp")
 	if err != nil {
 		return previous, err
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	defer client.CloseIdleConnections()
-	call := func(method, path string, payload any) (map[string]json.RawMessage, error) {
-		b, err := json.Marshal(payload)
+	httpClient := &http.Client{}
+	defer httpClient.CloseIdleConnections()
+	for _, client := range []*smoke.Client{&previous.host, &previous.guest} {
+		client.HTTP, client.Base, client.Host, client.Origin = httpClient, "http://"+port, "ovs.example", "http://ovs.example"
+	}
+	initial := previous.hostID == ""
+	if initial {
+		if previous.hostID, err = previous.host.Bootstrap(ctx); err != nil {
+			return previous, err
+		}
+		if _, err := previous.host.Call(ctx, "PATCH", "/me", map[string]any{"displayName": hostName}); err != nil {
+			return previous, err
+		}
+		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
 		if err != nil {
-			return nil, err
+			return previous, err
 		}
-		r, err := http.NewRequestWithContext(ctx, method, "http://"+port+"/api/v2"+path, strings.NewReader(string(b)))
+		var created rooms.Result
+		raw, _ := json.Marshal(value)
+		if err := json.Unmarshal(raw, &created); err != nil || created.Invitation == nil {
+			return previous, errors.New("room creation returned no host invitation")
+		}
+		previous.roomID = created.Snapshot.RoomID
+		if previous.guestID, err = previous.guest.Bootstrap(ctx); err != nil {
+			return previous, err
+		}
+		if _, err := previous.guest.Call(ctx, "PATCH", "/me", map[string]any{"displayName": guestName}); err != nil {
+			return previous, err
+		}
+		value, err = previous.guest.Call(ctx, "POST", "/invitations/redeem", map[string]any{"code": created.Invitation.Code})
 		if err != nil {
-			return nil, err
+			return previous, err
 		}
-		r.Host = "ovs.example"
-		r.Header.Set("Origin", "http://ovs.example")
-		r.Header.Set("Content-Type", "application/json")
-		r.Header.Set("X-OVS-CSRF", previous.csrf)
-		if previous.token != "" {
-			r.AddCookie(&http.Cookie{Name: "ovs_session", Value: previous.token})
+		var joined rooms.Result
+		raw, _ = json.Marshal(value)
+		if err := json.Unmarshal(raw, &joined); err != nil || joined.Snapshot.SelfMemberID == "" {
+			return previous, errors.New("guest redemption returned no membership")
 		}
-		random := make([]byte, 16)
-		if _, err := rand.Read(random); err != nil {
-			return nil, err
-		}
-		r.Header.Set("Idempotency-Key", hex.EncodeToString(random))
-		response, err := client.Do(r)
-		if err != nil {
-			return nil, err
-		}
-		defer response.Body.Close()
-		if response.StatusCode != 200 {
-			return nil, fmt.Errorf("application %s %s returned %d", method, path, response.StatusCode)
-		}
-		for _, cookie := range response.Cookies() {
-			if cookie.Name == "ovs_session" {
-				previous.token = cookie.Value
+		previous.guestMemberID = joined.Snapshot.SelfMemberID
+	} else {
+		for _, profile := range []struct {
+			client   *smoke.Client
+			id, name string
+		}{{&previous.host, previous.hostID, hostName}, {&previous.guest, previous.guestID, guestName}} {
+			id, displayName, err := profile.client.Me(ctx)
+			if err != nil {
+				return previous, err
+			}
+			if id != profile.id || displayName != profile.name {
+				return previous, errors.New("container replacement lost identity or display name")
 			}
 		}
-		var value map[string]json.RawMessage
-		err = json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&value)
-		return value, err
-	}
-	initial := previous.identityID == ""
-	if initial {
-		value, err := call("POST", "/session", struct{}{})
-		if err != nil {
-			return previous, err
-		}
-		var profile struct{ IdentityID string }
-		if err := json.Unmarshal(value["identity"], &profile); err != nil {
-			return previous, err
-		}
-		previous.identityID = profile.IdentityID
-		if err := json.Unmarshal(value["csrfToken"], &previous.csrf); err != nil {
-			return previous, err
-		}
-		value, err = call("POST", "/rooms", map[string]any{"title": "Container persistence", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}})
-		if err != nil {
-			return previous, err
-		}
-		var snapshot struct{ RoomID string }
-		if err := json.Unmarshal(value["snapshot"], &snapshot); err != nil {
-			return previous, err
-		}
-		previous.roomID = snapshot.RoomID
-	} else {
-		value, err := call("GET", "/me", nil)
-		if err != nil {
-			return previous, err
-		}
-		var profile struct{ IdentityID string }
-		if err := json.Unmarshal(value["identity"], &profile); err != nil {
-			return previous, err
-		}
-		if profile.IdentityID != previous.identityID {
-			return previous, errors.New("container replacement lost identity")
-		}
-		value, err = call("GET", "/rooms/"+previous.roomID, nil)
-		if err != nil {
-			return previous, err
-		}
-		var id, title string
-		_ = json.Unmarshal(value["roomId"], &id)
-		_ = json.Unmarshal(value["title"], &title)
-		if id != previous.roomID || title != "Container persistence" {
-			return previous, errors.New("container replacement lost room")
+		guestView, err := previous.guest.Snapshot(ctx, previous.roomID)
+		if err != nil || guestView.SelfMemberID != previous.guestMemberID {
+			return previous, fmt.Errorf("container replacement lost guest membership: %v", err)
 		}
 	}
-	value, err := call("GET", "/rooms/"+previous.roomID, nil)
+	snap, err := previous.host.Snapshot(ctx, previous.roomID)
 	if err != nil {
 		return previous, err
 	}
-	raw, _ := json.Marshal(value)
-	var snap rooms.Snapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return previous, err
+	if snap.RoomID != previous.roomID || snap.Title != roomTitle {
+		return previous, errors.New("container replacement lost room")
 	}
 	if snap.Settings.Controllers != "everyone" || snap.Settings.WaitForAll {
 		return previous, errors.New("container lost settings")
 	}
-	inv, err := call("GET", "/rooms/"+previous.roomID+"/invitations", nil)
+	names := map[string]string{}
+	for _, member := range snap.Members {
+		names[member.MemberID] = member.DisplayName
+	}
+	if len(snap.Members) != 2 || names[previous.guestMemberID] != guestName || names[snap.HostMemberID] != hostName {
+		return previous, errors.New("container lost membership or roster names")
+	}
+	inv, err := previous.host.Call(ctx, "GET", "/rooms/"+previous.roomID+"/invitations", nil)
 	if err != nil {
 		return previous, err
 	}
@@ -307,52 +285,27 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 	if initial {
 		previous.epoch = snap.Epoch
 		previous.invitation = invitation.LinkSecret
-		address := "ws://" + port + "/ws/v2/rooms/" + previous.roomID
-		conn, _, err := websocket.Dial(ctx, address, &websocket.DialOptions{Host: "ovs.example", HTTPHeader: http.Header{"Origin": {"http://ovs.example"}, "Cookie": {"ovs_session=" + previous.token}}})
+		conn, err := previous.host.Dial(ctx, previous.roomID)
 		if err != nil {
 			return previous, err
 		}
 		defer conn.CloseNow()
-		for _, intent := range []contracts.ClientFrame{{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}, {Type: "playback.command", Action: "seek", PositionMs: 12000}, {Type: "playback.command", Action: "play"}} {
-			key, _ := contracts.RandomID(rand.Reader)
-			payload := map[string]any{"action": intent.Action}
-			if intent.Type == "media.select" {
-				payload = map[string]any{"media": intent.Media}
-			} else if intent.Action == "seek" {
-				payload["positionMs"] = intent.PositionMs
-			}
-			frame := map[string]any{"v": 2, "type": intent.Type, "commandId": key, "epoch": snap.Epoch, "expectedRevision": snap.Revision, "mediaGeneration": snap.MediaGeneration, "payload": payload}
-			b, _ := json.Marshal(frame)
-			if err := conn.Write(ctx, websocket.MessageText, b); err != nil {
-				return previous, err
-			}
-			for {
-				_, b, err := conn.Read(ctx)
-				if err != nil {
-					return previous, err
-				}
-				var f struct {
-					Type    string
-					Payload json.RawMessage
-				}
-				if json.Unmarshal(b, &f) != nil {
-					return previous, errors.New("invalid socket frame")
-				}
-				if f.Type == "command.result" {
-					var result rooms.CommandResult
-					json.Unmarshal(f.Payload, &result)
-					if !result.Accepted {
-						return previous, errors.New("image socket rejected control")
-					}
-					break
-				}
-			}
-			value, err = call("GET", "/rooms/"+previous.roomID, nil)
+		for _, intent := range []struct {
+			kind    string
+			payload map[string]any
+		}{
+			{"media.select", map[string]any{"media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}},
+			{"playback.command", map[string]any{"action": "seek", "positionMs": 12000}},
+			{"playback.command", map[string]any{"action": "play"}},
+		} {
+			result, err := smoke.Command(ctx, conn, snap, intent.kind, intent.payload)
 			if err != nil {
 				return previous, err
 			}
-			raw, _ = json.Marshal(value)
-			if err := json.Unmarshal(raw, &snap); err != nil {
+			if !result.Accepted {
+				return previous, errors.New("image socket rejected control")
+			}
+			if snap, err = previous.host.Snapshot(ctx, previous.roomID); err != nil {
 				return previous, err
 			}
 		}
@@ -364,7 +317,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 			return previous, errors.New("replacement lost selection/invitation or retained playback runtime")
 		}
 	}
-	if previous.identityID == "" || previous.roomID == "" || previous.token == "" {
+	if previous.hostID == "" || previous.guestID == "" || previous.roomID == "" || previous.host.Token == "" || previous.guest.Token == "" {
 		return previous, errors.New("application persistence setup incomplete")
 	}
 	return previous, nil

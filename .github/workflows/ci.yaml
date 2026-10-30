@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -36,5 +36,5 @@ jobs:
       - run: make build
       - run: pnpm --dir web exec playwright install --with-deps chromium firefox
       - run: make test-e2e
-      - run: make image image-smoke
+      - run: make image image-smoke proxy-smoke
       - run: git diff --exit-code

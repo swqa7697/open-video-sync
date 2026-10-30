@@ -55,28 +55,37 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .getByRole('combobox', { name: 'Playback controls', exact: true })
       .selectOption('everyone');
     await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Room updated.' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Preferences saved.' })).toBeVisible();
     await page.getByLabel('Shared media label (optional)').fill('Synthetic video');
     await page.locator('#local-video').setInputFiles(file);
-    await expect(page.getByTestId('media-status')).toHaveText('ready');
+    await expect(page.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     const changed = Buffer.from(fixture);
     changed[changed.length - 1]! ^= 1;
     await other.locator('#local-video').setInputFiles({ ...file, buffer: changed });
-    await expect(other.getByTestId('media-status')).toHaveText('mismatch');
+    await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'mismatch');
+    await expect(other.getByTestId('media-status')).toHaveText('Different video from the room');
     await other.locator('#local-video').setInputFiles({
       name: 'unsupported-codec.webm',
       mimeType: 'video/webm',
       buffer: Buffer.from('not a video'),
     });
-    await expect(other.getByTestId('media-status')).toHaveText('unsupported');
+    await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'unsupported');
     await expect(other.getByRole('alert')).toContainText('cannot decode');
     await other.locator('#local-video').setInputFiles({ ...file, buffer: changed });
     await other.locator('#local-video').setInputFiles(file);
-    await expect(other.getByTestId('media-status')).toHaveText('ready');
+    await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await page.setViewportSize({ width: 375, height: 1000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    // Narrow screens reach the room heading and navigation before the player.
+    expect(
+      await page.evaluate(() => {
+        const heading = document.getElementById('room-title'),
+          video = document.querySelector('video');
+        return !!heading && !!video && !!(heading.compareDocumentPosition(video) & 4);
+      }),
+    ).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('player-375.png'), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.getByRole('button', { name: 'Play together', exact: true }).click();
@@ -173,7 +182,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .toBe(true);
     await tab.getByRole('button', { name: 'Pause together', exact: true }).click();
     await other.reload();
-    await expect(other.getByTestId('media-status')).toHaveText('no_media');
+    await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'no_media');
     expect(await other.locator('video').getAttribute('src')).toBeNull();
     expect(frames.join('')).not.toContain(file.name);
     expect(frames.join('')).not.toContain('blob:');

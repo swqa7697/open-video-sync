@@ -54,7 +54,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 			fail(w, err)
 			return
 		}
-		if !a.limits.allow("create-id:"+p.IdentityID, 5, 5) || !a.limits.allow("create-address:"+address(r), 5, 5) {
+		if !a.limits.allow("create-id:"+p.IdentityID, 5, 5) || !a.limits.allow("create-address:"+a.address(r), 5, 5) {
 			fail(w, contracts.Failure("rate_limited"))
 			return
 		}
@@ -92,7 +92,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 			fail(w, err)
 			return
 		}
-		if !a.limits.allow("redeem-id:"+p.IdentityID, 10, 10) || !a.limits.allow("redeem-address:"+address(r), 10, 10) {
+		if !a.limits.allow("redeem-id:"+p.IdentityID, 10, 10) || !a.limits.allow("redeem-address:"+a.address(r), 10, 10) {
 			fail(w, contracts.Failure("rate_limited"))
 			return
 		}

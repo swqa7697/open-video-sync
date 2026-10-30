@@ -7,8 +7,8 @@ import (
 	"errors"
 	"io"
 	"mime"
-	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -21,8 +21,11 @@ import (
 type API struct {
 	Origin   string
 	Identity *identity.Service
-	mux      *http.ServeMux
-	limits   *limiter
+	// TrustedProxies lists direct peers whose X-Forwarded-For header selects the client address
+	// for address rate limits. Set it before serving; empty trusts no forwarding headers.
+	TrustedProxies []netip.Prefix
+	mux            *http.ServeMux
+	limits         *limiter
 }
 
 // NewAPI constructs the identity routes. Room routes are installed by WithRooms.
@@ -51,6 +54,8 @@ func fail(w http.ResponseWriter, err error) {
 	var failure contracts.Failure
 	if errors.As(err, &failure) {
 		code = string(failure)
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		code = "busy"
 	}
 	status := 503
 	message := "Storage unavailable."
@@ -174,16 +179,39 @@ func sessionResponse(s identity.Session) any {
 		DisplayName string `json:"displayName"`
 	}{s.IdentityID, s.DisplayName}, CSRF: s.CSRF, Expires: s.ExpiresAtMs}
 }
-func address(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+
+// address returns the rate-limit client address. Behind a trusted proxy it is the rightmost
+// untrusted X-Forwarded-For hop; an absent or malformed header falls back to the proxy itself.
+func (a *API) address(r *http.Request) string {
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return "invalid"
 	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return "invalid"
+	proxy := peer.Addr().WithZone("").Unmap()
+	if !a.trusted(proxy) {
+		return proxy.String()
 	}
-	return ip.String()
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	client := proxy
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil || hop.Zone() != "" {
+			return proxy.String()
+		}
+		client = hop.Unmap()
+		if !a.trusted(client) {
+			return client.String()
+		}
+	}
+	return client.String()
+}
+func (a *API) trusted(addr netip.Addr) bool {
+	for _, prefix := range a.TrustedProxies {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 func (a *API) origin(r *http.Request) error {
 	if r.Header.Get("Origin") != a.Origin {
@@ -211,7 +239,7 @@ func (a *API) bootstrap(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	if !a.limits.allow("bootstrap:"+address(r), 30, 10) {
+	if !a.limits.allow("bootstrap:"+a.address(r), 30, 10) {
 		fail(w, contracts.Failure("rate_limited"))
 		return
 	}

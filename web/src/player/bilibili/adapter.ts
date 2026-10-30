@@ -25,13 +25,13 @@ export class BilibiliAdapter implements PlayerAdapter {
   private dmRequest = 0;
   private disposed = false;
   private loading = true;
-  private failed = false;
+  private failure: HelperError | undefined;
   private readonly generation = 1;
   constructor(
     private video: HTMLVideoElement,
     overlay: HTMLElement,
     private onDanmaku: (status: string) => void,
-    private onError: (message: string) => void,
+    private onError: (failure: HelperError) => void,
   ) {
     this.native = new LocalAdapter(video);
     this.capabilities = { ...this.native.capabilities, canShowDanmaku: true };
@@ -123,13 +123,11 @@ export class BilibiliAdapter implements PlayerAdapter {
   }
   private fail(error: unknown): void {
     if (this.disposed || (error instanceof DOMException && error.name === 'AbortError')) return;
-    this.failed = true;
+    this.failure = error instanceof HelperError ? error : new HelperError('invalid-media');
     this.loading = false;
     this.video.pause();
     clearInterval(this.timer);
-    this.onError(
-      error instanceof HelperError ? error.message : new HelperError('invalid-media').message,
-    );
+    this.onError(this.failure);
     this.dispose();
   }
   private async bytes(
@@ -241,7 +239,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     return false;
   }
   private async pump(): Promise<void> {
-    if (this.pumping || this.disposed || this.failed || !this.tracks.length) return;
+    if (this.pumping || this.disposed || this.failure || !this.tracks.length) return;
     this.pumping = true;
     try {
       const target = this.video.currentTime,
@@ -335,8 +333,8 @@ export class BilibiliAdapter implements PlayerAdapter {
       ...this.native.getState(),
       ...(this.loading
         ? { status: 'loading' as const }
-        : this.failed
-          ? { status: 'error' as const }
+        : this.failure
+          ? { status: this.failure.status }
           : {}),
     };
   }

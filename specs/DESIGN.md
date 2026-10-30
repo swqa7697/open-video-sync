@@ -5,9 +5,10 @@
 The [PRD](PRD.md) defines the product. This document defines the simplified target architecture approved on 2026-10-29.
 [AGENTS.md](../AGENTS.md) defines development rules. [Version 2](wire-v2.md) defines the target application protocol.
 
-The existing application implements identity, rooms, local synchronization, waiting policies, and Bilibili playback with danmaku.
+The application implements identity, rooms, local synchronization, waiting policies, and Bilibili playback with danmaku.
 Stage 4a / P8a implements application protocol v2, the memory-owned runtime, and the simplified persistent schema.
-The retained stage tracker records validation and remaining release gates. Earlier stage evidence describes the previous behavior.
+Stage 5 adds the deployment support in §12 and passes the release acceptance in §13. A successful hosted CI run is still required before a release claim.
+The retained stage tracker records validation. Earlier stage evidence describes the previous behavior.
 
 ### 1.1 Core product
 
@@ -203,6 +204,7 @@ A new epoch requires new user intent. Never persist command receipts or queue co
 
 Use browser `performance.now()` and server monotonic time. Keep the existing four-timestamp clock exchange and bounded low-RTT sample window.
 Reset estimates on reconnect, epoch change, and resume from suspension. Track uncertainty without claiming it bounds actual playback skew.
+A client may show the room while calibrating, but reports readiness as loading until it has a usable estimate and is not seeking.
 Sample player position locally every 250 ms while visible and playing. No diagnostic observation message goes to the server.
 
 Use internal defaults: 100-ms soft drift, 750-ms hard drift, sustained-error filtering, and rate correction between 0.95 and 1.05 when supported.
@@ -375,7 +377,7 @@ Show actionable errors such as Choose the same file, Enable playback, Waiting fo
 Keep keyboard operation, visible focus, text labels, responsive layouts, and reduced-motion support.
 
 Build the frontend before Go embedding. Ship one non-root application container with writable `/data`, without Node or an external database.
-Keep `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`; add optional trusted-proxy CIDRs only for proxy address handling.
+Keep `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`; add optional trusted-proxy CIDRs (`OVS_TRUSTED_PROXIES`) only for proxy address handling.
 Use internal room/socket limits. Do not expose retention, synchronization, or recovery settings.
 
 Keep direct HTTP and concise host/container/existing Caddy examples. OVS does not manage certificates or alter an operator's proxy installation.
@@ -405,11 +407,10 @@ Follow the regression-first ladder in AGENTS.md. Keep relevant evidence under `.
 
 ## 14. Implementation sequence
 
-Stages 0–4 and B0 retain their historical completion records. Their obsolete policies and database behavior must be revised before release.
+Stages 0–4 and B0 retain their historical completion records. Stage 4a revised their obsolete policies and database behavior.
 
 1. Stage 4a / P8a: update contracts, move runtime ownership to memory, migrate persistent data, simplify UI/policies, and validate affected completed work.
 2. Stage 5 / P9: finish minimal deployment, proxy support, accessibility, packaging, and accurate usage documentation.
 3. Stage 5 / P10: validate the resulting core product, actual synchronization, supported browsers, and live Bilibili behavior.
 
-The retained `.misc/implementation-plan.md` and `.misc/implementation-stages.md` define execution details and status.
-Do not mark P8a complete from document changes. Do not implement removed P9/P10 work while P8a is pending.
+The retained `.misc/implementation-plan.md` and `.misc/implementation-stages.md` define execution details and status. All three steps are complete.

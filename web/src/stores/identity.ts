@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { decodeSession, request, type Session } from '../transport/api';
 import { decodeProfilePatch } from '../transport/contracts';
+import { InputError } from '../features/failures';
 
 // Credentials stay in memory; the bearer cookie remains inaccessible to JavaScript.
 export const useIdentityStore = defineStore('identity', () => {
@@ -11,14 +12,14 @@ export const useIdentityStore = defineStore('identity', () => {
     if (!signal.aborted) session.value = value;
   }
   async function rename(displayName: string, signal: AbortSignal): Promise<void> {
+    let patch: ReturnType<typeof decodeProfilePatch>;
+    try {
+      patch = decodeProfilePatch({ displayName });
+    } catch {
+      throw new InputError('invalid display name');
+    }
     const value = decodeSession(
-      await request(
-        '/me',
-        'PATCH',
-        session.value?.csrfToken ?? '',
-        decodeProfilePatch({ displayName }),
-        signal,
-      ),
+      await request('/me', 'PATCH', session.value?.csrfToken ?? '', patch, signal),
     );
     if (!signal.aborted) session.value = value;
   }

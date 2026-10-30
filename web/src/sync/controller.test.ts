@@ -1,6 +1,6 @@
 import { expect, test } from 'vite-plus/test';
-import { ClockEstimator } from './clock';
-import { DriftController, SyncController } from './controller';
+import { ClockEstimator, nextSyncQuality } from './clock';
+import { DriftController, reportedReadiness, SyncController } from './controller';
 import { defaultSettings, type Snapshot } from '../transport/api';
 import type { PlayerAdapter, PlayerObservation } from '../player/adapters/local';
 
@@ -16,6 +16,20 @@ test('four-timestamp calibration rejects invalid samples and expires after suspe
   expect(clock.estimate(31000)).toBeUndefined();
   clock.reset();
   expect(clock.estimate(500)).toBeUndefined();
+  // The displayed quality ignores brief spikes, shows sustained degradation, and recovers at once.
+  const good = { offsetMs: 0, uncertaintyMs: 40 },
+    poor = { offsetMs: 0, uncertaintyMs: 400 };
+  let quality = nextSyncQuality({ quality: 'calibrating', degradedSince: undefined }, good, 100);
+  expect(quality.quality).toBe('calibrated');
+  quality = nextSyncQuality(quality, poor, 200);
+  quality = nextSyncQuality(quality, good, 300);
+  quality = nextSyncQuality(quality, poor, 400);
+  expect(nextSyncQuality(quality, poor, 3399).quality).toBe('calibrated');
+  quality = nextSyncQuality(quality, poor, 3400);
+  expect(quality.quality).toBe('degraded');
+  quality = nextSyncQuality(quality, good, 3500);
+  expect(quality.quality).toBe('calibrated');
+  expect(nextSyncQuality(quality, undefined, 3600).quality).toBe('calibrating');
 });
 test('drift correction persists soft error, clamps rates, and bounds corrective seeks', () => {
   const c = new DriftController();
@@ -171,4 +185,19 @@ test('a late local player waits for playable media before catching up', async ()
   await c.reconcile(p, snapshot, { offsetMs: 0, uncertaintyMs: 1 }, 1000, true);
   expect(p.getState().paused).toBe(false);
   expect(p.getState().positionMs).toBe(2000);
+});
+test('readiness needs a usable clock estimate, and a degraded one does not block waits', () => {
+  const base = { pending: false, matched: true, seeking: false, status: 'ready' as const };
+  expect(reportedReadiness({ ...base, estimate: undefined })).toBe('loading');
+  // Cross-region links can keep uncertainty above 250 ms; the participant is still ready.
+  expect(reportedReadiness({ ...base, estimate: { offsetMs: 0, uncertaintyMs: 400 } })).toBe(
+    'ready',
+  );
+  expect(
+    reportedReadiness({ ...base, estimate: { offsetMs: 0, uncertaintyMs: 40 }, seeking: true }),
+  ).toBe('loading');
+  expect(
+    reportedReadiness({ ...base, estimate: { offsetMs: 0, uncertaintyMs: 40 }, matched: false }),
+  ).toBe('mismatch');
+  expect(reportedReadiness({ ...base, estimate: undefined, pending: true })).toBe('loading');
 });

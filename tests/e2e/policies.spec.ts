@@ -23,53 +23,55 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
     await other.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(other.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await page.locator('#local-video').setInputFiles(file);
-    await expect(page.getByTestId('media-status')).toHaveText('ready');
+    await expect(page.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await page.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(page.getByTestId('playback-phase')).toHaveText('waiting');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'waiting');
     await page.getByLabel('Seek to seconds').fill('5');
     await page.getByRole('button', { name: 'Seek together', exact: true }).click();
     await expect(
-      page.getByRole('status').filter({ hasText: 'Waiting for participants at 5.0' }),
+      page
+        .getByRole('status')
+        .filter({ hasText: /Waiting at 5\.0 seconds for .*Guest [0-9a-f]+\./ }),
     ).toBeVisible();
     await expect(page.getByText('Waiting timed out.', { exact: false })).toBeVisible({
       timeout: 33000,
     });
-    await expect(page.getByTestId('playback-phase')).toHaveText('paused');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'paused');
     // A participant with control permission can explicitly retry after timeout.
     await other.locator('#local-video').setInputFiles(file);
-    await expect(other.getByTestId('media-status')).toHaveText('ready');
+    await expect(other.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await other.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(page.getByTestId('playback-phase')).toHaveText('playing');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     // Inject adapter events to test the browser-to-server policy path; this is not a network starvation measurement.
     await other.locator('video').evaluate((v) => v.dispatchEvent(new Event('waiting')));
-    await expect(page.getByTestId('playback-phase')).toHaveText('waiting');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'waiting');
     await other.locator('video').evaluate((v) => v.dispatchEvent(new Event('canplay')));
-    await expect(page.getByTestId('playback-phase')).toHaveText('playing');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     await page.getByRole('button', { name: 'Pause together', exact: true }).click();
-    await expect(page.getByTestId('playback-phase')).toHaveText('paused');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'paused');
     // Reconnect while paused, then close the guest before the next play cohort is frozen.
     await other.close();
     await page.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(page.getByTestId('playback-phase')).toHaveText('playing');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     const late = await guest.newPage();
     await late.goto(roomURL);
     await expect(late.getByRole('status').filter({ hasText: 'Clock calibrated' })).toBeVisible();
     await late.locator('#local-video').setInputFiles(file);
-    await expect(late.getByTestId('media-status')).toHaveText('ready');
+    await expect(late.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await expect
       .poll(() => late.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
       .toBe(true);
     await page.close();
     await late.getByRole('button', { name: 'Pause together', exact: true }).click();
-    await expect(late.getByTestId('playback-phase')).toHaveText('paused');
+    await expect(late.getByTestId('playback-phase')).toHaveAttribute('data-state', 'paused');
     await late.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(late.getByTestId('playback-phase')).toHaveText('playing');
+    await expect(late.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     const returned = await page.context().newPage();
     await returned.goto(roomURL);
     await returned.locator('#local-video').setInputFiles(file);
-    await expect(returned.getByTestId('media-status')).toHaveText('ready');
+    await expect(returned.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
     await returned.getByRole('button', { name: 'Play together', exact: true }).click();
-    await expect(late.getByTestId('playback-phase')).toHaveText('playing');
+    await expect(late.getByTestId('playback-phase')).toHaveAttribute('data-state', 'playing');
     await returned.screenshot({ path: testInfo.outputPath('policies.png'), fullPage: true });
     await returned.close();
   } finally {

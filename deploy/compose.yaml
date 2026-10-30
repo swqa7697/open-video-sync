@@ -6,6 +6,8 @@ services:
       pull: true
     environment:
       OVS_PUBLIC_ORIGIN: ${OVS_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+      OVS_LOG_LEVEL: ${OVS_LOG_LEVEL:-info}
+      OVS_TRUSTED_PROXIES: ${OVS_TRUSTED_PROXIES:-}
     ports:
       - "${OVS_BIND_ADDR:-127.0.0.1}:8080:8080"
     volumes:

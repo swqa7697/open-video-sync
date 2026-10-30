@@ -3,7 +3,7 @@
 ## Scope and sources of truth
 
 - OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository implements identity, rooms, local synchronization, waiting policies, and Bilibili/danmaku. Stage 4a / P8a must align this implementation with the simplified design and memory-owned runtime before P9/P10. Do not describe target contracts as implemented or earlier evidence as verification of the revised design.
+- The repository implements identity, rooms, local synchronization, waiting policies, and Bilibili/danmaku on the simplified design and memory-owned runtime. Stage 5 deployment and release acceptance passed locally; hosted CI has not run. Do not describe target contracts as implemented or earlier evidence as verification of the revised design.
 - Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.

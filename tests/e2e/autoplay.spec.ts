@@ -50,7 +50,7 @@ test.describe('autoplay permission', () => {
       await h
         .locator('#local-video')
         .setInputFiles({ name: 'opus-vp8.webm', mimeType: 'video/webm', buffer: fixture });
-      await expect(h.getByTestId('media-status')).toHaveText('ready');
+      await expect(h.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
       let ready: () => void = () => {},
         blocked: () => void = () => {};
       const readyPromise = new Promise<void>((resolve) => {
@@ -65,12 +65,11 @@ test.describe('autoplay permission', () => {
             last = '';
           const timer = setInterval(() => {
             const input = document.querySelector<HTMLInputElement>('#local-video'),
-              status = document.querySelector('[data-testid=media-status]')?.textContent;
+              status = document.querySelector<HTMLElement>('[data-testid=media-status]')?.dataset
+                .state;
             if (input && !input.disabled && !selected) {
               selected = true;
-              const checkbox = document.querySelector<HTMLInputElement>(
-                '.player-panel input[type=checkbox]',
-              )!;
+              const checkbox = document.querySelector<HTMLInputElement>('#local-mute')!;
               checkbox.checked = false;
               checkbox.dispatchEvent(new Event('change', { bubbles: true }));
               const transfer = new DataTransfer();
@@ -99,12 +98,15 @@ test.describe('autoplay permission', () => {
       await readyPromise;
       await h.getByRole('button', { name: 'Play together', exact: true }).click();
       await blockedPromise;
-      await expect(h.getByTestId('playback-phase')).toHaveText('waiting');
-      await p.getByRole('button', { name: 'Enable playback', exact: true }).click();
+      await expect(h.getByTestId('playback-phase')).toHaveAttribute('data-state', 'waiting');
+      // Keyboard activation is a user gesture; focus stays in the player afterwards.
+      await p.getByRole('button', { name: 'Enable playback', exact: true }).focus();
+      await p.keyboard.press('Enter');
+      await expect(p.getByRole('heading', { name: 'Watch together' })).toBeFocused();
       await expect
         .poll(() => p.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused))
         .toBe(true);
-      await expect(p.getByTestId('media-status')).toHaveText('ready');
+      await expect(p.getByTestId('media-status')).toHaveAttribute('data-state', 'ready');
       await writeFile(
         testInfo.outputPath('autoplay-result.json'),
         JSON.stringify({

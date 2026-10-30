@@ -408,6 +408,8 @@ func (s *Service) publicError(err error) *contracts.PublicError {
 	var f contracts.Failure
 	if errors.As(err, &f) {
 		code = string(f)
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		code = "busy"
 	}
 	id, _ := contracts.RandomID(s.Random)
 	return &contracts.PublicError{Code: code, Message: "The room request could not complete.", RequestID: id, Retryable: code == "busy" || code == "storage_unavailable" || code == "rate_limited"}

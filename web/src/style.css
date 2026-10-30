@@ -8,6 +8,7 @@
   --border: #75829a;
   --notice: #e7edfc;
   --danger: #a01826;
+  --danger-surface: #fdecee;
   color: var(--text);
   background: var(--background);
   font-family: system-ui, sans-serif;
@@ -25,6 +26,7 @@
     --border: #8190ab;
     --notice: #29364f;
     --danger: #ffb2b9;
+    --danger-surface: #3d1f26;
   }
 }
 * {
@@ -33,10 +35,15 @@
 body {
   margin: 0;
 }
-main {
+.shell {
   max-width: 64rem;
   margin: 3vh auto;
   padding: clamp(1rem, 3vw, 2rem);
+}
+/* Programmatic focus targets show a ring only for keyboard users. */
+main:focus:not(:focus-visible),
+[tabindex='-1']:focus:not(:focus-visible) {
+  outline: none;
 }
 h1 {
   font-size: clamp(2rem, 6vw, 3.5rem);
@@ -49,7 +56,15 @@ h2 {
 h3 {
   font-size: 1.125rem;
 }
-p {
+p,
+h1,
+h2,
+h3,
+li,
+label,
+legend,
+button,
+small {
   overflow-wrap: anywhere;
 }
 section {
@@ -92,11 +107,14 @@ button {
   padding: 0.5rem 1rem;
   margin-top: 0.75rem;
 }
-button:hover {
-  filter: brightness(0.93);
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled, [aria-disabled='true']):hover {
+    filter: brightness(0.93);
+  }
 }
-button:disabled {
-  cursor: wait;
+button:disabled,
+button[aria-disabled='true'] {
+  cursor: not-allowed;
   opacity: 0.65;
 }
 button.quiet {
@@ -108,8 +126,14 @@ button.danger {
   background: transparent;
   border-color: var(--danger);
 }
-button + button {
-  margin-left: 0.5rem;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+}
+.actions > button {
+  margin: 0;
 }
 :focus-visible {
   outline: 3px solid var(--primary);
@@ -139,16 +163,29 @@ footer {
 .notice {
   padding: 1rem;
   background: var(--notice);
+  border-left: 4px solid var(--primary);
   border-radius: 0.75rem;
   overflow-wrap: anywhere;
 }
-.error {
+.notice > :first-child {
+  margin-top: 0;
+}
+.notice > :last-child {
+  margin-bottom: 0;
+}
+/* Errors differ by text prefix, surface, and border, not by color alone. */
+.notice.error {
+  background: var(--danger-surface);
   border: 2px solid var(--danger);
+  border-left-width: 6px;
 }
 .roster,
 .room-list {
   padding: 0;
   list-style: none;
+}
+.roster li > span {
+  min-width: 0;
 }
 .roster li,
 .room-list li {
@@ -199,14 +236,31 @@ footer {
   top: 1rem;
 }
 @media (min-width: 700px) {
-  .rooms-grid,
-  .settings-grid {
+  .rooms-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
 }
 
+/* The player sits inside the room card; avoid a doubled card. */
+.room .player-panel {
+  margin-top: 1.5rem;
+  padding: 1.5rem 0 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.player-notices {
+  display: grid;
+  gap: 0.75rem;
+}
+.waiting-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+}
 .player-panel video {
   width: 100%;
   max-height: 60vh;
@@ -252,4 +306,8 @@ footer {
   display: grid;
   gap: 0.5rem;
   margin-block: 1rem;
+}
+.media-choice {
+  margin: 2rem 0 0;
+  font-size: 1rem;
 }

@@ -51,6 +51,7 @@ func main() {
 		return
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.logLevel}))
+	slog.SetDefault(logger)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if err := run(ctx, cfg, logger); err != nil {
@@ -99,10 +100,9 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	cleanupDone := make(chan struct{})
 	go func() { defer close(cleanupDone); identities.RunCleanup(cleanupCtx) }()
 	defer func() { stopCleanup(); <-cleanupDone }()
-	roomService.SessionValid = identities.Validate
-	identities.OnRevoked = roomService.RevokeSession
-	identities.OnRenamed = roomService.RenameIdentity
-	api := transport.NewAPI(cfg.origin.String(), identities).WithRooms(roomService)
+	api := transport.NewAPI(cfg.origin.String(), identities)
+	api.TrustedProxies = cfg.trustedProxies
+	api.WithRooms(roomService)
 	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)
 	server := &http.Server{
 		Handler:           transport.NewHandler(cfg.origin.Host, ready, frontend, api, sockets, helper),
@@ -111,6 +111,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       time.Minute,
 		MaxHeaderBytes:    16 << 10,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 	listener, err := net.Listen("tcp", cfg.listenAddr)
 	if err != nil {

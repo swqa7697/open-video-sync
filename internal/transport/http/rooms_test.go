@@ -90,6 +90,20 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 	w := call(t, a, host, "GET", "/api/v2/rooms/"+id, "")
 	_ = json.Unmarshal(w.Body.Bytes(), &snap)
 	preconditions := fmt.Sprintf(`{"epoch":%q,"expectedRevision":%d}`, snap.Epoch, snap.Revision)
+	// A request that times out is retryable busy work, not a storage failure, and has no effect.
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	patch, _ = json.Marshal(map[string]any{"epoch": snap.Epoch, "expectedRevision": snap.Revision, "settings": contracts.DefaultSettings()})
+	r := httptest.NewRequestWithContext(expired, "PATCH", "http://watch.example/api/v2/rooms/"+id+"/settings", strings.NewReader(string(patch)))
+	r.Header.Set("Origin", "http://watch.example")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-OVS-CSRF", host.csrf)
+	r.AddCookie(&http.Cookie{Name: "ovs_session", Value: host.token})
+	timedOut := httptest.NewRecorder()
+	a.ServeHTTP(timedOut, r)
+	if timedOut.Code != 503 || !strings.Contains(timedOut.Body.String(), `"code":"busy"`) {
+		t.Fatalf("timed-out request: %d %s", timedOut.Code, timedOut.Body)
+	}
 	if w := call(t, a, host, "DELETE", "/api/v2/rooms/"+id, preconditions); w.Code != 200 {
 		t.Fatal("close failed", w.Body)
 	}

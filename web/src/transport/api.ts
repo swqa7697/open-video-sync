@@ -285,22 +285,54 @@ const errors: Record<string, string> = {
   invalid_command: 'This playback action is unavailable. Check room state and choose a new action.',
   session_required: 'Your identity session ended. Reload to start a new identity.',
   forbidden: 'You do not have permission for this action.',
-  not_found: 'This room is unavailable.',
-  invalid_invitation: 'This invitation is unavailable.',
-  invitation_reset_required: 'Replace this legacy invitation before sharing.',
-  upgrade_required: 'Reload to use the updated application.',
-  stale_state: 'The room changed. Refresh the room, then choose your action again.',
-  idempotency_conflict: 'This request key was already used.',
+  not_found: 'This room is no longer available to you.',
+  invalid_invitation:
+    'This invitation is unavailable. Check the code, or ask the host for a current link or code.',
+  invitation_reset_required:
+    'This older invitation needs replacement. Select Replace invitation to create new sharing details.',
+  upgrade_required: 'This page is out of date. Reload to use the updated application.',
+  stale_state: 'The room changed before your change was saved. Review the room and try again.',
+  idempotency_conflict: 'This request was already sent with different details. Reload and retry.',
   message_too_large: 'The request is too large.',
-  unsupported_content_type: 'The request needs JSON.',
-  rate_limited: 'Too many requests. Try again later.',
-  capacity_reached: 'Capacity reached. Try again later.',
-  busy: 'The server is busy. Try again.',
-  storage_unavailable: 'Storage is unavailable. Try again later.',
+  unsupported_content_type: 'The page sent an unsupported request. Reload and try again.',
+  rate_limited: 'Too many requests from this browser or network. Wait a minute, then try again.',
+  capacity_reached: 'This server or room is full. Try again later or ask the host.',
+  busy: 'The server is busy. Try again in a few seconds.',
+  storage_unavailable:
+    'The server cannot save changes right now. Existing playback can continue. Try again later or ask the operator to check storage.',
 };
+// Codes whose recovery needs a fresh page: the page state or session is no longer usable.
+const reloadCodes = new Set([
+  'session_required',
+  'upgrade_required',
+  'idempotency_conflict',
+  'unsupported_content_type',
+  'unknown',
+]);
 export class APIError extends Error {
+  readonly reload: boolean;
   constructor(public code: string) {
-    super(errors[code] ?? 'The request failed.');
+    super(errors[code] ?? 'The request failed. Reload the page and try again.');
+    this.reload = reloadCodes.has(code);
+  }
+}
+// NetworkError means OVS did not answer: the connection failed or a proxy returned its own page.
+export class NetworkError extends Error {
+  constructor(readonly status?: number) {
+    super(
+      status === undefined
+        ? 'Cannot reach the server. Check your connection and try again.'
+        : `The server is unreachable through its proxy (HTTP ${status}). Try again shortly.`,
+    );
+  }
+}
+// ResponseError means OVS answered with data this page cannot use.
+export class ResponseError extends Error {
+  readonly reload = true;
+  constructor() {
+    super(
+      'The server sent an unexpected response. Reload the page; if this continues, check the server or proxy.',
+    );
   }
 }
 export async function request(
@@ -319,16 +351,22 @@ export async function request(
   }
   if (key) headers['Idempotency-Key'] = key;
   if (replayOnly) headers['Idempotency-Replay-Only'] = 'true';
-  const response = await fetch(`/api/v2${path}`, {
-    method,
-    headers,
-    credentials: 'same-origin',
-    signal,
-    ...(method !== 'GET' ? { body: JSON.stringify(payload) } : {}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/v2${path}`, {
+      method,
+      headers,
+      credentials: 'same-origin',
+      signal,
+      ...(method !== 'GET' ? { body: JSON.stringify(payload) } : {}),
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new NetworkError();
+  }
   // Bound decoded data even when a proxy produces an unexpected response.
   const reader = response.body?.getReader();
-  if (!reader) throw new Error('The server returned an empty response.');
+  if (!reader) throw response.ok ? new ResponseError() : new NetworkError(response.status);
   const chunks: Uint8Array[] = [];
   let length = 0;
   try {
@@ -336,12 +374,14 @@ export async function request(
       const chunk = await reader.read();
       if (chunk.done) break;
       length += chunk.value.byteLength;
-      if (length > 65536) throw new Error('The server response is too large.');
+      if (length > 65536) throw new ResponseError();
       chunks.push(chunk.value);
     }
   } catch (error) {
-    await reader.cancel();
-    throw error;
+    // An errored stream rejects cancel with the same failure; classify the original error.
+    await reader.cancel().catch(() => {});
+    if (signal.aborted || error instanceof ResponseError) throw error;
+    throw new NetworkError();
   } finally {
     reader.releaseLock();
   }
@@ -351,12 +391,18 @@ export async function request(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    // A proxy error page is not an OVS answer; an OK non-JSON body is an unusable answer.
+    throw response.ok ? new ResponseError() : new NetworkError(response.status);
+  }
   if (!response.ok) {
-    const error = object(value);
-    throw new APIError(
-      typeof error.code === 'string' && Object.hasOwn(errors, error.code) ? error.code : 'unknown',
-    );
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new NetworkError(response.status);
+    const code = (value as Record<string, unknown>).code;
+    throw new APIError(typeof code === 'string' && Object.hasOwn(errors, code) ? code : 'unknown');
   }
   return value;
 }

@@ -41,6 +41,25 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   expect(settled).toBe(false);
   deliver(reply);
   await expect(pending).resolves.toEqual({ loggedIn: true });
+  // Failure replies become a few actionable groups; access failures report access_denied.
+  for (const [code, status, reload, text] of [
+    ['login-required', 'access_denied', false, 'Sign in to Bilibili'],
+    ['access-expired', 'access_denied', false, 'refused access'],
+    ['unsupported-codec', 'unsupported', false, 'cannot decode'],
+    ['http-503', 'error', false, 'Could not reach Bilibili'],
+    ['helper-incompatible', 'error', true, 'Update the OVS Bilibili helper'],
+    ['segment-limit', 'error', false, 'cannot use'],
+  ] as const) {
+    const failing = bridge.call('session'),
+      sent = posted.at(-1)!;
+    deliver({ channel: reply.channel, client: sent.client, id: sent.id, ok: false, error: code });
+    await expect(failing).rejects.toMatchObject({
+      code,
+      status,
+      reload,
+      message: expect.stringContaining(text),
+    });
+  }
   const pendingCalls = Array.from({ length: 4 }, () => bridge.call('session'));
   const rejected = pendingCalls.map((call) =>
     expect(call).rejects.toMatchObject({ name: 'AbortError' }),
