@@ -1,4 +1,4 @@
-FROM node:24.19.0-bookworm-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:24.19.0-bookworm-slim AS frontend
 WORKDIR /src/web
 ENV COREPACK_ENABLE_AUTO_PIN=0
 RUN corepack enable pnpm && corepack install --global pnpm@latest
@@ -8,7 +8,7 @@ COPY web/ ./
 COPY userscripts/ /src/userscripts/
 RUN pnpm run build && pnpm prune --prod && pnpm licenses list --prod --json > /src/frontend-licenses.json
 
-FROM golang:latest AS backend
+FROM --platform=$BUILDPLATFORM golang:latest AS backend
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -22,7 +22,9 @@ COPY --from=frontend /src/web/node_modules/ web/node_modules/
 COPY --from=frontend /src/frontend-licenses.json frontend-licenses.json
 ARG VERSION=0.0.0-dev
 ARG CHANNEL=dev
-RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION} -X main.channel=${CHANNEL}" -o /out/ovs ./cmd/ovs \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION} -X main.channel=${CHANNEL}" -o /out/ovs ./cmd/ovs \
     && go run ./scripts/notices -frontend frontend-licenses.json > /out/THIRD_PARTY_NOTICES.txt \
     && mkdir -p /out/data \
     && chown 10001:10001 /out/data \

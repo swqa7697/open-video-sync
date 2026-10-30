@@ -38,6 +38,7 @@ Keep the product small: create a room, share an invitation, select a video, and 
 - Persistent Storage: Store SQLite data in a persistent local volume mounted at /data, independent of the container lifecycle
 - HTTPS: Let an optional external reverse proxy manage certificates and TLS
   - Support Caddy installed directly on the host or running in a separate container, including an existing Caddy installation
+  - Provide SSH deployment and management from the development machine to a Linux server with Docker. Prepare Compose and optional containerized Caddy automatically. Support public IP or domain HTTPS with automatic certificate renewal and strict public endpoint verification.
 - Transport: Use WebSocket for the initial release
   - Validate control-response latency and playback skew separately under cross-region latency, jitter, and packet loss
 

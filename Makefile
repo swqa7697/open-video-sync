@@ -8,8 +8,10 @@ CLEAN ?= 0
 IMAGE ?= ovs:dev
 CADDY_IMAGE ?= caddy:2
 export VERSION CHANNEL VERBOSE CLEAN IMAGE CADDY_IMAGE
+export HOST URL DEPLOY_DIR PROXY PROXY_NETWORK TRUSTED_PROXIES PROXY_SUBNET
 
 .PHONY: help install setup uninstall clean deps format tidy check test test-race web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -78,6 +80,24 @@ image-smoke: ## Check image startup, HTTP routing, ownership, and persisted sche
 
 proxy-smoke: ## Check HTTPS through containerized Caddy, proxy client addresses, and reconnect after reload
 	go run ./scripts/proxy-smoke -image "$(IMAGE)" -caddy "$(CADDY_IMAGE)"
+
+deploy: ## Build and deploy over SSH (HOST required; URL required on first deployment)
+	go run ./scripts/deploy deploy
+
+deploy-status: ## Check the remote deployment and public HTTP/HTTPS endpoint
+	go run ./scripts/deploy status
+
+deploy-logs: ## Follow the last 100 log lines from managed remote services
+	go run ./scripts/deploy logs
+
+deploy-restart: ## Restart remote OVS without rebuilding or restarting Caddy
+	go run ./scripts/deploy restart
+
+deploy-stop: ## Stop managed remote services and preserve persistent volumes
+	go run ./scripts/deploy stop
+
+deploy-smoke: ## Exercise deployment through isolated SSH and Docker (requires privileged Docker and SSH tools)
+	OVS_DEPLOY_SMOKE=1 go test -count=1 -timeout=10m ./scripts/deploy -run TestDeploymentSmoke -v
 
 bump-major: ## Bump VERSION major (X.0.0); no Git mutations
 	go run ./scripts/release bump major

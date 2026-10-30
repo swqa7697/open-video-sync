@@ -218,7 +218,36 @@ Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA 
 
 ## Deploy and operate
 
-Build the image and start the Compose application from the repository root:
+For remote deployment, the server needs Linux, Docker Engine/CLI, and SSH access
+with permission to run Docker. The deployment command prepares Compose and optional
+Caddy automatically. The local machine uses the normal Go, Make, Docker Buildx, and
+SSH development tools. No registry account or remote source checkout is needed.
+
+```bash
+# Use your SSH alias and actual public IP or DNS name.
+make deploy HOST=ovs-prod URL=https://203.0.113.10
+
+# Later updates reuse the saved origin and proxy settings.
+make deploy HOST=ovs-prod
+make deploy-status HOST=ovs-prod
+make deploy-logs HOST=ovs-prod
+make deploy-restart HOST=ovs-prod
+make deploy-stop HOST=ovs-prod
+```
+
+The example IP is reserved for documentation. Replace it before deployment.
+An HTTP URL selects direct HTTP. An HTTPS URL starts a separate Caddy container,
+which obtains and renews certificates for a public IP or domain. Public IP
+certificates use Let's Encrypt's short-lived profile. Keep TCP 80/443 reachable
+and allow Caddy to contact the CA. TLS verification failures fail the deployment
+check; they do not enable an internal certificate or disable verification.
+
+Remote updates preserve data, but briefly stop OVS. Playback restarts paused at
+zero. Existing manual installations require explicit migration; the tool does
+not adopt their containers or volumes. See [remote deployment](deploy/README.md#remote-deployment)
+for prerequisites, proxy integration, persistence, and failure handling.
+
+For manual deployment, build the image and start Compose from the repository root:
 
 ```bash
 make image

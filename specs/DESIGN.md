@@ -381,6 +381,7 @@ Keep `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`
 Use internal room/socket limits. Do not expose retention, synchronization, or recovery settings.
 
 Keep direct HTTP and concise host/container/existing Caddy examples. OVS does not manage certificates or alter an operator's proxy installation.
+The deployment tooling may provision a separate Caddy container over SSH. It builds and transfers images locally, prepares Compose when absent, and keeps persistent volumes stable across single-instance replacements. Public IP HTTPS uses explicitly configured short-lived ACME certificates. Public TLS verification must not fall back to internal certificates. Existing proxy installations require explicit external mode and remain operator-owned. Failed preparation leaves the running application intact; startup failures preserve data without an automatic downgrade.
 Use bounded shutdown to stop admission and close sockets, workers, and SQLite. There is no playback checkpoint to save.
 Keep structured error logs and minimal liveness/readiness checks using in-memory startup, shutdown, and write-failure flags, without SQLite polling.
 Readiness may report failed persistence without stopping an already running playback loop.

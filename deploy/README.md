@@ -3,6 +3,160 @@
 These examples deploy the current OVS application, including room and playback features.
 The [design](../specs/DESIGN.md) keeps playback in memory and stores persistent metadata in `/data`.
 
+## Remote deployment
+
+Run these commands from the repository root on the development machine:
+
+```bash
+make deploy HOST=ovs-prod URL=https://203.0.113.10
+make deploy HOST=ovs-prod
+make deploy-status HOST=ovs-prod
+make deploy-logs HOST=ovs-prod
+make deploy-restart HOST=ovs-prod
+make deploy-stop HOST=ovs-prod
+```
+
+Replace the documentation IP with a real public address. `HOST` is an SSH config
+alias or `user@host`. Use SSH config for keys, ports, and jump hosts. Deployment
+uses noninteractive SSH authentication and preserves host-key checks; establish
+the trusted SSH connection before deploying. No SSH password is stored.
+
+The local machine needs Go, Make, Docker 28 or later with Buildx, and OpenSSH. The remote
+machine needs Linux amd64 or arm64, Docker Engine and CLI, a normal POSIX login
+environment, and permission to use Docker without an interactive sudo prompt.
+Docker must run on that remote host: the helper checks host ports and mounts
+configuration from its filesystem. Rootless Docker must support the chosen
+published ports. The tool does not install Docker or change host firewall rules.
+
+The command detects the remote CPU architecture, builds the application locally,
+and streams the image through SSH to `docker image load`. Managed HTTPS also
+transfers the pinned Caddy image. The remote machine does not need a registry
+account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
+needs access to build dependencies, images, and Compose release downloads.
+
+Compatible Compose installations (2.24 or later, including newer major versions)
+are reused. If Compose is missing, the tool downloads version 5.6.1 locally,
+checks its official SHA-256 checksum, and installs the remote user CLI plugin.
+An existing incompatible plugin is preserved; a deployment-local executable is
+used instead. Automatically installed versions are fixed and do not self-update.
+Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
+
+### Configuration
+
+| Make variable | Default | Meaning |
+| --- | --- | --- |
+| `HOST` | Required | SSH destination |
+| `URL` | Saved value | Public origin; required for the first deployment |
+| `DEPLOY_DIR` | Remote `~/.local/share/ovs` | Absolute remote configuration directory |
+| `PROXY` | Saved value, initially `auto` | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
+| `PROXY_NETWORK` | Saved value | Existing Docker network for an external container proxy |
+| `TRUSTED_PROXIES` | Saved value | Trusted proxy CIDRs; required for an external container proxy |
+| `PROXY_SUBNET` | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps |
+
+Saved settings are reused when a variable is omitted. Explicitly passing a new
+`URL` changes the public origin. Choose the final origin before inviting people:
+an origin change affects browser identities, invitation links, and the helper's
+installation scope. Returning to `PROXY=auto` clears external network/trust settings.
+
+Direct HTTP publishes the URL port (80 if omitted). Managed HTTPS requires port
+443 and publishes TCP 80/443 through Caddy only. OVS has no host port in this mode.
+Both public IPv4 and IPv6 origins are supported, subject to host Docker networking
+and public reachability. Caddy uses a fixed address outside the Docker network's
+dynamic allocation range; OVS trusts only that address.
+
+For a public IP, Caddy explicitly uses Let's Encrypt's `shortlived` ACME profile
+and a default server name for IP clients without SNI. These certificates last
+160 hours. Caddy renews them on the remote server without the development machine.
+Private IPs are rejected for automatic public certificates. Domain origins use
+Caddy's normal automatic HTTPS. Certbot is not needed.
+
+The CA must reach a validation endpoint: HTTP-01 uses TCP 80 and TLS-ALPN-01 uses
+TCP 443. DNS-01 cannot validate IP addresses. Mainland China servers have the same
+technical requirements; test outbound ACME and inbound validation reachability
+on the actual server. A certificate request is not a substitute for cloud security
+group or provider network configuration.
+
+### Existing proxies
+
+For an existing host proxy:
+
+```bash
+make deploy HOST=ovs-prod URL=https://watch.example.com PROXY=external
+```
+
+OVS publishes `127.0.0.1:8080`. Add `reverse_proxy 127.0.0.1:8080` to the existing
+Caddy site yourself. The deployment tool derives the trusted Compose gateway when
+no explicit CIDRs are supplied. It does not edit or reload an existing proxy.
+The public verification step succeeds after the existing proxy is configured.
+
+For an existing container proxy, create its private network and fixed proxy
+address first, then supply both values:
+
+```bash
+make deploy HOST=ovs-prod URL=https://watch.example.com PROXY=external \
+  PROXY_NETWORK=existing-proxy TRUSTED_PROXIES=172.31.0.2/32
+```
+
+Configure that proxy to reach `ovs:8080` on the shared network. OVS publishes no
+host port in this mode. Existing services on ports 80/443 are not stopped or
+reconfigured. Select external mode when those ports already belong to a proxy.
+
+### State and failure handling
+
+The Compose project is always `ovs`. An ownership volume records the canonical
+deployment directory. Changing `DEPLOY_DIR` cannot silently start another database.
+Managed volumes are `ovs-managed-data`, `ovs-managed-caddy-data`, and
+`ovs-managed-caddy-config`; the ownership marker is `ovs-managed-owner`. Do not
+delete these volumes during normal operations. No command prunes application data.
+
+The remote directory contains versioned configurations, helper binaries, an
+operation lock, `active.json`, and `successful.json`. `active.json` identifies the
+last activated attempt, including a failed startup. `successful.json` identifies
+the last deployment that passed public checks. A retry uses active settings so
+operators can diagnose and repair the attempted release. Configuration and image
+preparation failures leave the running application unchanged.
+
+Images receive unique tags. The tool verifies execution configuration and layer
+digests after transfer, then records the remote image IDs. This supports both
+classic and containerd Docker image stores, whose image IDs can differ. Once
+images and configurations are valid, OVS stops before the replacement starts.
+Startup or migration failures preserve the data and report an error. There is no
+automatic image downgrade, database rollback, or backup command. Old image tags
+and release configurations remain available for diagnosis; remove obsolete images
+manually only after checking that no deployment uses them.
+
+The tool waits up to five minutes for public readiness and UI checks. HTTPS must
+pass normal trust-chain, host, and expiry validation; redirects are not accepted.
+A public-check timeout returns an error while leaving containers running so Caddy
+can retry certificate acquisition. Check `deploy-logs`, fix network/configuration
+problems, then use `deploy-status` or deploy again.
+
+`deploy-status` reports the release, image ID, running version, container health,
+public reachability, and certificate expiration. `deploy-logs` follows the last
+100 lines. `deploy-restart` restarts only OVS, without rebuilding. `deploy-stop`
+stops the managed services without deleting volumes. Deploy again to start the
+whole stack after stopping it.
+
+Manual Compose installations are not automatically migrated. Stop the old
+installation, preserve a stopped copy of its entire data directory, and explicitly
+plan the volume transfer before switching tools. Do not delete the old volume to
+silence an ownership conflict. The original manual recipes below remain supported.
+
+### Remote deployment validation
+
+`make deploy-smoke` uses a disposable SSH server and a privileged, isolated Docker
+daemon. It never mounts the host Docker socket into the fixture. Prepare the OVS
+image with `make image` and pull `caddy:2.11.7-alpine` first. The test requires SSH
+client tools and network access for fixture and Compose downloads. It checks
+Compose bootstrap, image transfer, updates, data preservation, failed preparation,
+stop/restart, and IP HTTPS/WebSocket with a test CA. Test CA injection exists only
+in the test executable, not the deployment command. Evidence is retained under
+`.misc/deploy-smoke`; fixture containers, volumes, and synthetic private keys are
+removed after the test.
+
+The local fixture does not verify public CA issuance or renewal. Those checks
+require a real public server and remain a separate acceptance step.
+
 ## Direct HTTP
 
 Build the image with `make image`. Start the Compose application from the repository root:
