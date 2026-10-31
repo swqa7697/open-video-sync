@@ -4,6 +4,10 @@ export interface VideoFile {
   mimeType: string;
   buffer: Buffer;
 }
+export async function openAppPanel(page: Page, name: string): Promise<void> {
+  await page.locator('.app-settings-trigger').click();
+  await page.getByRole('menuitem', { name, exact: true }).click();
+}
 export async function dismissHelper(page: Page): Promise<void> {
   await expect(
     page.getByRole('complementary', { name: 'Playback helper' })

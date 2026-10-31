@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { t, message as msg, translate, type Message } from './i18n';
 import { useLanguageStore } from './stores/language';
-import LanguagePanel from './features/LanguagePanel.vue';
+import AppSettings from './features/AppSettings.vue';
 
 import {
   computed,
@@ -41,7 +41,6 @@ import HelperNotice from './features/media/HelperNotice.vue';
 import SettingsForm from './features/rooms/SettingsForm.vue';
 import Modal from './components/Modal.vue';
 import Icon from './components/Icon.vue';
-import AppearancePanel from './features/AppearancePanel.vue';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
@@ -63,8 +62,6 @@ const picker = ref<InstanceType<typeof MediaPicker>>();
 const draftSettings = ref(defaultSettings()),
   settingsOpen = ref(false),
   profileOpen = ref(false);
-const appearanceOpen = ref(false),
-  languageOpen = ref(false);
 const helperGeneration = ref(0);
 let initialFile: File | undefined;
 const safeName = computed(
@@ -506,22 +503,7 @@ onUnmounted(() => {
         <p class="server-status" role="status" :data-state="connection.status">
           <span class="status-dot" />{{ serverText }}
         </p>
-        <button
-          class="quiet icon-button"
-          :aria-label="t('common.language')"
-          :title="t('common.language')"
-          @click="languageOpen = true"
-        >
-          <Icon name="language" />
-        </button>
-        <button
-          class="quiet icon-button"
-          :aria-label="t('common.appearance')"
-          :title="t('common.appearance')"
-          @click="appearanceOpen = true"
-        >
-          <Icon name="appearance" />
-        </button>
+        <AppSettings />
         <button
           v-if="identity.session"
           :title="safeName"
@@ -729,19 +711,6 @@ onUnmounted(() => {
         </button>
       </form></Modal
     >
-    <Modal
-      v-if="languageOpen"
-      :title="t('common.language')"
-      @close="languageOpen = false"
-      ><LanguagePanel
-    /></Modal>
-    <Modal
-      v-if="appearanceOpen"
-      :title="t('common.appearance')"
-      @close="appearanceOpen = false"
-    >
-      <AppearancePanel />
-    </Modal>
     <Modal
       v-if="profileOpen"
       :title="t('app.profile')"

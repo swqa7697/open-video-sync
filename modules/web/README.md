@@ -19,7 +19,9 @@ pnpm --dir modules/web run test
 pnpm --dir modules/web run build
 ```
 
-The frontend build writes `dist/`. Root `versions.toml` supplies `versions.web`, included in the built HTML metadata.
+The frontend build writes `dist/`. Root `versions.toml` supplies `versions.web`, included in the built HTML metadata and `dist/release.json`.
+The header settings menu groups appearance, language, and About. Appearance defaults to dark and changes only through a local choice.
+About reads `/api/v2/version` for the running service and its embedded frontend and helper versions, independent of the installed browser helper.
 The development server proxies API, health, WebSocket, and helper routes to the Go server. Start that server with `make dev`.
 Production browser journeys remain under root `tests/e2e/` because they exercise all three modules.
 Use `make web-build` to copy generated assets for Go embedding, or `make build` for the complete application.

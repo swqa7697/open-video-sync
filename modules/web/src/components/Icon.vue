@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{ name: string; size?: number }>();
 const paths: Record<string, string> = {
+  info: 'M12 8h.01M11 12h1v5m-1 0h2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
   language:
     'M3 5h12M9 3v2m4 0c-1 6-4 10-10 12m2-9c1 4 4 7 8 9m0 4 5-12 5 12m-8-4h6',
   appearance: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0v18M12 6v12',
@@ -12,7 +13,8 @@ const paths: Record<string, string> = {
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
   mute: 'm11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6',
   fullscreen: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
-  settings: 'M4 7h16M4 17h16M8 4v6m8 4v6',
+  settings:
+    'M9.5 3h5l.6 2.4 1.2.7 2.4-.7 2.5 4.2-1.8 1.7v1.4l1.8 1.7-2.5 4.2-2.4-.7-1.2.7-.6 2.4h-5l-.6-2.4-1.2-.7-2.4.7-2.5-4.2 1.8-1.7v-1.4L2.8 9.6l2.5-4.2 2.4.7 1.2-.7ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
   users:
     'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
   plus: 'M12 5v14M5 12h14',

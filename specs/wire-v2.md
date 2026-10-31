@@ -32,6 +32,7 @@ Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate
 
 | Method and relative path                    | Input                                  | Result                                                            |
 | ------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
+| `GET /version`                              | None                                   | Public `{sync,web,helper}` build-version strings                  |
 | `POST /session`                             | `{}`                                   | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`       |
 | `GET /me`                                   | None                                   | Same profile/session shape                                        |
 | `PATCH /me`                                 | `{displayName}`                        | Same profile/session shape                                        |
@@ -46,6 +47,8 @@ Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate
 | `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`             | `{roomId,revision,removedMemberId}`                               |
 | `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`             | Committed departure receipt; host membership retained for return  |
 | `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`             | `{roomId,revision,closed:true}`                                   |
+
+`GET /version` needs no session and performs no storage access. Return the running binary's build version and the release versions of its embedded frontend and helper. Keep this metadata uncached; it does not report the helper installed in the browser.
 
 `Invitation` is `{linkSecret,code}`. It has no expiry. GET reuses the current invitation without rotating it.
 The host learns the replacement invitation through the host-only endpoint after removing a participant.

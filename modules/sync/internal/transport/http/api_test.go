@@ -58,6 +58,15 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
 	service := &identity.Service{Repository: store, Now: func() time.Time { return now }, Random: rand.Reader}
 	a := NewAPI("http://watch.example", service)
+	a.WithVersions("1.2.3", "2.3.4", "3.4.5")
+	release := call(t, a, apiPeer{}, "GET", "/api/v2/version", "")
+	var versions map[string]string
+	if err := json.Unmarshal(release.Body.Bytes(), &versions); err != nil {
+		t.Fatal(err)
+	}
+	if release.Code != 200 || len(versions) != 3 || versions["sync"] != "1.2.3" || versions["web"] != "2.3.4" || versions["helper"] != "3.4.5" || release.Header().Get("Cache-Control") != "no-store" || len(release.Result().Cookies()) != 0 {
+		t.Fatalf("public release metadata: %d %s", release.Code, release.Body)
+	}
 	p := bootstrapPeer(t, a)
 	q := bootstrapPeer(t, a)
 	if p.id == q.id {

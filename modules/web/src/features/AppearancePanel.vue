@@ -16,7 +16,7 @@ const appearance = useAppearanceStore();
     <p class="hint">{{ t('appearance.hint') }}</p>
     <fieldset class="appearance-options">
       <legend>{{ t('appearance.mode') }}</legend>
-      <div class="appearance-grid">
+      <div class="appearance-grid mode-grid">
         <label
           v-for="option in appearanceModes"
           :key="option.value"
@@ -36,7 +36,7 @@ const appearance = useAppearanceStore();
           >
         </label>
       </div>
-      <p class="hint">{{ t('appearance.systemHint') }}</p>
+      <p class="hint">{{ t('appearance.modeHint') }}</p>
     </fieldset>
     <fieldset class="appearance-options">
       <legend>{{ t('appearance.accent') }}</legend>

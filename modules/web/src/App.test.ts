@@ -272,13 +272,20 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   );
   // An error already on screen must follow the selection without retrying the request.
   const requestCount = vi.mocked(fetch).mock.calls.length;
-  await wrapper.get('button[aria-label="Language"]').trigger('click');
+  // Popover dismissal belongs to the browser; this test owns live translation.
+  const settings = wrapper.getComponent({ name: 'AppSettings' });
+  const menu = settings.get<HTMLElement>('[popover]');
+  menu.element.hidePopover = vi.fn();
+  await settings
+    .findAll('[role="menuitem"]')
+    .find((item) => item.text() === 'Language')!
+    .trigger('click');
   await wrapper.get('input[name="language"][value="zh-CN"]').setValue(true);
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain(
     '无法通过代理连接服务器（HTTP 502）'
   );
-  expect(wrapper.find('button[aria-label="语言"]').exists()).toBe(true);
+  expect(wrapper.find('button[aria-label="设置"]').exists()).toBe(true);
   expect(document.title).toBe('一起观看 · Open Video Sync');
   expect(vi.mocked(fetch).mock.calls).toHaveLength(requestCount);
   wrapper.unmount();

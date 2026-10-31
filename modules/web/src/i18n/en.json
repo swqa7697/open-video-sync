@@ -18,7 +18,9 @@
     "watchTogether": "Watch together",
     "watchingTogether": "Watching together",
     "localFile": "Local file",
-    "localFileLabel": "LOCAL FILE"
+    "localFileLabel": "LOCAL FILE",
+    "appSettings": "Settings",
+    "about": "About"
   },
   "app": {
     "description": "Private, self-hosted synchronized viewing. Video stays in each participant’s browser.",
@@ -152,16 +154,15 @@
   "appearance": {
     "hint": "Make this space your own. Changes apply only to this browser.",
     "mode": "Color mode",
-    "system": "System",
     "light": "Light",
     "dark": "Dark",
-    "systemHint": "System follows your device’s light or dark setting.",
     "accent": "Accent color",
     "slate": "Slate blue",
     "iris": "Soft iris",
     "neutral": "Graphite",
     "saved": "Your preferences are saved on this device.",
-    "unsaved": "Browser storage is unavailable. Changes last until you reload this page."
+    "unsaved": "Browser storage is unavailable. Changes last until you reload this page.",
+    "modeHint": "Dark by default. Change the color mode only here."
   },
   "language": {
     "label": "Interface language",
@@ -356,5 +357,14 @@
     "retry": "The server could not apply this command now. Try again in a few seconds.",
     "upgrade": "Update required. Reload after the server and browser assets use the same version.",
     "controls": "Controls need an active connection and a resolved previous command."
+  },
+  "about": {
+    "hint": "Component versions in this deployment.",
+    "sync": "Sync service",
+    "web": "Web frontend",
+    "helper": "Helper script",
+    "loading": "Loading versions…",
+    "unavailable": "Versions are unavailable. Try again.",
+    "retry": "Retry"
   }
 }

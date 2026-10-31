@@ -2,9 +2,8 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 export const appearanceModes = [
-  { value: 'system', label: 'appearance.system', icon: 'screen' },
-  { value: 'light', label: 'appearance.light', icon: 'sun' },
   { value: 'dark', label: 'appearance.dark', icon: 'moon' },
+  { value: 'light', label: 'appearance.light', icon: 'sun' },
 ] as const;
 export const appearanceAccents = [
   { value: 'slate', label: 'appearance.slate' },
@@ -18,7 +17,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
   const root = document.documentElement;
   const mode = ref<Mode>(
     appearanceModes.find((option) => option.value === root.dataset.mode)
-      ?.value ?? 'system'
+      ?.value ?? 'dark'
   );
   const accent = ref<Accent>(
     appearanceAccents.find((option) => option.value === root.dataset.accent)

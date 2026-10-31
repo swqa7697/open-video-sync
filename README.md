@@ -29,13 +29,15 @@ Root [deploy/](deploy/README.md) contains shared Compose and Caddy configuration
 ## Watch together
 
 Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
-The interface supports English and Simplified Chinese. **Language** in the header defaults to **Follow system**.
+The header keeps server status, **Settings**, and your identity together. Open **Settings** for **Appearance**, **Language**, or **About**.
+The interface supports English and Simplified Chinese. **Settings → Language** defaults to **Follow system**.
 Chinese device languages use Simplified Chinese; other device languages use English. Choose **简体中文** or **English** to override.
 Language changes apply immediately, including current status and error messages, and stay in this browser across reloads.
-Use **Appearance** in the header to choose Slate blue (default), Soft iris, or Graphite.
-Choose **System** (default), **Light**, or **Dark** for the color mode. System follows device changes automatically.
+Use **Settings → Appearance** to choose Slate blue (default), Soft iris, or Graphite.
+The color mode defaults to **Dark**. Choose **Light** or **Dark** manually; device theme changes do not affect OVS.
 These choices stay in this browser across reloads; they are not room settings. If browser storage is blocked, choices last until reload.
 Dialogs use short transitions and buttons give subtle pointer feedback. Keyboard actions stay immediate; reduced motion uses a brief dialog fade.
+**Settings → About** shows the running Sync service and the Web frontend and Helper script bundled in the deployed image.
 
 On home, select **Bilibili** or **Local file**. Preview a canonical Bilibili URL/BV identifier, or choose/drop a supported local video.
 Select a multipart video's part in the preview. Short links must first be opened on Bilibili to obtain the canonical URL.

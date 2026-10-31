@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
@@ -5,6 +6,7 @@ import {
   createLocalRoom,
   dismissHelper,
   invitationLink,
+  openAppPanel,
   settings,
 } from './flows';
 
@@ -55,7 +57,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
       for (const colorScheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme });
+        await openAppPanel(page, 'Appearance');
+        await page
+          .getByRole('radio', {
+            name: colorScheme === 'light' ? 'Light' : 'Dark',
+            exact: true,
+          })
+          .check();
+        await page.keyboard.press('Escape');
         await page.screenshot({
           path: testInfo.outputPath(`home-${colorScheme}-${width}.png`),
           fullPage: true,
@@ -112,7 +121,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
       for (const colorScheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme });
+        await openAppPanel(page, 'Appearance');
+        await page
+          .getByRole('radio', {
+            name: colorScheme === 'light' ? 'Light' : 'Dark',
+            exact: true,
+          })
+          .check();
+        await page.keyboard.press('Escape');
         expect(await playerColors()).toEqual(darkPlayerColors);
         await page.screenshot({
           path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
@@ -227,10 +243,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(cookie?.secure).toBe(false);
     expect(
       await page.evaluate(() => ({
-        local: localStorage.length,
+        local: Object.keys(localStorage),
         session: sessionStorage.length,
       }))
-    ).toEqual({ local: 0, session: 0 });
+    ).toEqual({ local: ['ovs.appearance'], session: 0 });
     expect(failures).toEqual([]);
   } finally {
     await guest.close();
@@ -238,9 +254,110 @@ test('independent identities manage a private room over direct HTTP', async ({
   }
 });
 
+// This distinct shell contract covers menu navigation and deployed release metadata.
+test('settings groups local preferences and shows packaged component versions', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/');
+  await dismissHelper(page);
+  const trigger = page.getByRole('button', { name: 'Settings', exact: true });
+  const menu = page.getByRole('menu', { name: 'Settings', exact: true });
+  const about = page.getByRole('dialog', { name: 'About', exact: true });
+  await expect(page.locator('.header-end > :visible')).toHaveCount(3);
+  await trigger.focus();
+  await trigger.press('ArrowDown');
+  await expect(
+    menu.getByRole('menuitem', { name: 'Appearance' })
+  ).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitem', { name: 'Language' })).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(menu.getByRole('menuitem', { name: 'About' })).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(
+    menu.getByRole('menuitem', { name: 'Appearance' })
+  ).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(menu.getByRole('menuitem', { name: 'About' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.getByRole('heading', { name: 'Start a watch party' }).click();
+  await expect(menu).toBeHidden();
+  await trigger.press('ArrowUp');
+  await page.keyboard.press('Tab');
+  await expect(menu).toBeHidden();
+  await expect(page.locator('.profile-button')).toBeFocused();
+
+  await openAppPanel(page, 'About');
+  const release = Object.fromEntries(
+    [
+      ...readFileSync('../../versions.toml', 'utf8').matchAll(
+        /^(sync|web|helper) = "([\d.]+)"$/gm
+      ),
+    ].map(([, name, version]) => [name!, version!])
+  );
+  const componentVersions = ['sync', 'web', 'helper'].map((name) => {
+    const version = release[name];
+    if (!version) throw new Error(`Missing ${name} release version.`);
+    return version;
+  });
+  await expect(about.locator('dd')).toHaveText(componentVersions);
+  await about.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished))
+  );
+  // The response is public, uncached metadata from the running artifact, not browser helper state.
+  const response = await page.request.get('/api/v2/version');
+  expect(response.headers()['cache-control']).toBe('no-store');
+  expect(await response.json()).toEqual(release);
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width: width!, height: height! });
+    await page.screenshot({
+      path: testInfo.outputPath(`about-${width}.png`),
+      animations: 'disabled',
+    });
+    const bounds = await about.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
+  }
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.screenshot({ path: testInfo.outputPath('settings-mobile.png') });
+  await page.keyboard.press('Escape');
+
+  // A failed or malformed metadata response offers recovery without showing raw errors.
+  for (const body of [
+    'unavailable',
+    JSON.stringify({ ...release, helper: 'invalid' }),
+  ]) {
+    await page.route('**/api/v2/version', (route) =>
+      route.fulfill({
+        status: body === 'unavailable' ? 503 : 200,
+        contentType: 'application/json',
+        body,
+      })
+    );
+    await openAppPanel(page, 'About');
+    await expect(about.getByRole('status')).toContainText(
+      'Versions are unavailable'
+    );
+    await expect(about.locator('dd')).toHaveCount(0);
+    await page.unroute('**/api/v2/version');
+    await about.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(about.locator('dd')).toHaveText(componentVersions);
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+  }
+});
+
 // Appearance is a browser preference, independent of identity and room lifecycle.
-// This scenario covers persistence, live system changes, and storage failure in real browsers.
-test('appearance follows the system and preserves explicit local choices', async ({
+// This scenario covers manual modes, ignored system changes, persistence, and storage failure.
+test('appearance defaults to dark and preserves manual local choices', async ({
   page,
 }, testInfo) => {
   const failures: string[] = [];
@@ -253,10 +370,8 @@ test('appearance follows the system and preserves explicit local choices', async
     page
       .locator('.create-submit')
       .evaluate((node) => getComputedStyle(node).backgroundColor);
-  const appearance = page.getByRole('button', {
-    name: 'Appearance',
-    exact: true,
-  });
+  const appearance = page.locator('.app-settings-trigger');
+  const openAppearance = () => openAppPanel(page, 'Appearance');
   const dialog = page.getByRole('dialog', { name: 'Appearance', exact: true });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
@@ -264,11 +379,13 @@ test('appearance follows the system and preserves explicit local choices', async
   await expect(
     page.getByRole('heading', { name: 'Start a watch party' })
   ).toBeVisible();
-  const light = await background();
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await expect.poll(background).not.toBe(light);
   const dark = await background();
-  await appearance.click();
+  await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(background).toBe(dark);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(background).toBe(dark);
+  await openAppearance();
   // Sample the rendered production animation: a seconds/ms conversion error makes this opaque.
   const enteringOpacity = await dialog.evaluate((node) => {
     const animation = node.getAnimations()[0]!;
@@ -281,10 +398,14 @@ test('appearance follows the system and preserves explicit local choices', async
   expect(enteringOpacity).toBeGreaterThan(0);
   expect(enteringOpacity).toBeLessThan(1);
   await expect(
-    page.getByRole('radio', { name: 'System', exact: true })
+    page.getByRole('radio', { name: 'Dark', exact: true })
   ).toBeChecked();
+  await expect(
+    page.getByRole('radio', { name: 'System', exact: true })
+  ).toHaveCount(0);
   await page.getByRole('radio', { name: 'Light', exact: true }).check();
-  await expect.poll(background).toBe(light);
+  await expect.poll(background).not.toBe(dark);
+  const light = await background();
   await page.emulateMedia({ colorScheme: 'light' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect.poll(background).toBe(light);
@@ -304,12 +425,12 @@ test('appearance follows the system and preserves explicit local choices', async
   await page.reload();
   await dismissHelper(page);
   await expect.poll(background).toBe(light);
-  await appearance.click();
+  await openAppearance();
   await expect(
     page.getByRole('radio', { name: 'Light', exact: true })
   ).toBeChecked();
   await expect(page.getByRole('radio', { name: 'Graphite' })).toBeChecked();
-  await page.getByRole('radio', { name: 'System', exact: true }).check();
+  await page.getByRole('radio', { name: 'Dark', exact: true }).check();
   await expect.poll(background).toBe(dark);
   await page.getByRole('radio', { name: 'Slate blue' }).check();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -324,7 +445,10 @@ test('appearance follows the system and preserves explicit local choices', async
   await page.keyboard.press('Escape');
   await expect(appearance).toBeFocused();
   // Keyboard entry/exit is immediate; reduced motion uses a short fade without scaling.
-  await appearance.press('Enter');
+  await appearance.press('ArrowDown');
+  await page
+    .getByRole('menuitem', { name: 'Appearance', exact: true })
+    .press('Enter');
   await expect(dialog).toBeVisible();
   expect(
     await dialog.evaluate(
@@ -335,7 +459,7 @@ test('appearance follows the system and preserves explicit local choices', async
   await page.keyboard.press('Escape');
   // Close during entry and reopen immediately; no stranded focus trap or stale callback.
   for (let repeat = 0; repeat < 2; repeat++) {
-    await appearance.click();
+    await openAppearance();
     await dialog
       .getByRole('button', { name: 'Close dialog' })
       .click({ force: true });
@@ -343,7 +467,7 @@ test('appearance follows the system and preserves explicit local choices', async
     await expect(appearance).toBeFocused();
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await appearance.click();
+  await openAppearance();
   await expect(dialog).toBeVisible();
   expect(
     await dialog.evaluate((node) => getComputedStyle(node).transform)
@@ -351,9 +475,10 @@ test('appearance follows the system and preserves explicit local choices', async
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(appearance).toBeFocused();
-  // Malformed and unknown stored values fall back to system/slate without breaking startup.
+  // Malformed, unknown, and legacy system values fall back to dark/slate without breaking startup.
   for (const invalid of [
     '{bad',
+    JSON.stringify({ mode: 'system', accent: 'slate' }),
     JSON.stringify({ mode: 'sepia', accent: 'unknown' }),
   ]) {
     await page.evaluate(
@@ -363,9 +488,9 @@ test('appearance follows the system and preserves explicit local choices', async
     await page.reload();
     await dismissHelper(page);
     await expect.poll(background).toBe(dark);
-    await appearance.click();
+    await openAppearance();
     await expect(
-      page.getByRole('radio', { name: 'System', exact: true })
+      page.getByRole('radio', { name: 'Dark', exact: true })
     ).toBeChecked();
     await expect(page.getByRole('radio', { name: 'Slate blue' })).toBeChecked();
     await page.keyboard.press('Escape');
@@ -380,7 +505,7 @@ test('appearance follows the system and preserves explicit local choices', async
   });
   await page.reload();
   await dismissHelper(page);
-  await appearance.click();
+  await openAppearance();
   await page.getByRole('radio', { name: 'Light', exact: true }).check();
   await expect.poll(background).toBe(light);
   await expect(dialog.getByRole('status')).toContainText(
@@ -404,10 +529,12 @@ test.describe('interface language', () => {
       if (/intlify|message compilation|not found.*locale/i.test(event.text()))
         failures.push(event.text());
     });
-    const language = () =>
-      page.getByRole('button', { name: /^(Language|语言)$/, exact: true });
+    const language = async () => {
+      const locale = await page.locator('html').getAttribute('lang');
+      await openAppPanel(page, locale === 'zh-CN' ? '语言' : 'Language');
+    };
     const selectLanguage = async (value: 'system' | 'zh-CN' | 'en') => {
-      await language().click();
+      await language();
       await page.locator(`input[name="language"][value="${value}"]`).check();
       await page.keyboard.press('Escape');
     };
@@ -509,12 +636,12 @@ test.describe('interface language', () => {
         () => document.documentElement.scrollWidth <= innerWidth
       )
     ).toBe(true);
-    await page.getByRole('button', { name: '外观', exact: true }).click();
+    await openAppPanel(page, '外观');
     await expect(
       page.getByRole('radio', { name: '石板蓝', exact: true })
     ).toBeChecked();
     await page.keyboard.press('Escape');
-    await language().click();
+    await language();
     await page.screenshot({
       path: testInfo.outputPath('i18n-language-zh-mobile.png'),
       animations: 'disabled',
@@ -561,7 +688,7 @@ test.describe('interface language', () => {
     });
     await page.reload();
     await dismissChineseHelper();
-    await language().click();
+    await language();
     await page.locator('input[name="language"][value="en"]').check();
     await expect(
       page

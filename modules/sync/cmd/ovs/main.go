@@ -76,6 +76,14 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	if err != nil {
 		return err
 	}
+	webVersion, err := web.Version()
+	if err != nil {
+		return err
+	}
+	helperVersion, err := helper.Version()
+	if err != nil {
+		return err
+	}
 	helperHandler, err := helper.Handler(cfg.origin.String())
 	if err != nil {
 		return err
@@ -101,6 +109,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	go func() { defer close(cleanupDone); identities.RunCleanup(cleanupCtx) }()
 	defer func() { stopCleanup(); <-cleanupDone }()
 	api := transport.NewAPI(cfg.origin.String(), identities)
+	api.WithVersions(version, webVersion, helperVersion)
 	api.TrustedProxies = cfg.trustedProxies
 	api.WithRooms(roomService)
 	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)

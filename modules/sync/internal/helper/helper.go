@@ -15,6 +15,21 @@ import (
 //go:embed dist/helper.user.js dist/release.json
 var source embed.FS
 
+// Version returns the release version of the embedded helper script.
+func Version() (string, error) {
+	data, err := source.ReadFile("dist/release.json")
+	if err != nil {
+		return "", fmt.Errorf("read helper release: %w", err)
+	}
+	var release struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &release); err != nil || release.Version == "" {
+		return "", fmt.Errorf("invalid helper release metadata")
+	}
+	return release.Version, nil
+}
+
 // Handler generates installable code using only the validated deployment origin.
 // Host and forwarding headers never select the helper's authority.
 func Handler(origin string) (http.Handler, error) {

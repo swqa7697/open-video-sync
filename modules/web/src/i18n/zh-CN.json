@@ -18,7 +18,9 @@
     "watchTogether": "一起观看",
     "watchingTogether": "一起观看中",
     "localFile": "本地文件",
-    "localFileLabel": "本地文件"
+    "localFileLabel": "本地文件",
+    "appSettings": "设置",
+    "about": "关于"
   },
   "app": {
     "description": "私有、自托管的同步观影应用。视频始终保留在每位参与者的浏览器中。",
@@ -152,16 +154,15 @@
   "appearance": {
     "hint": "按你的喜好设置界面。更改仅适用于此浏览器。",
     "mode": "颜色模式",
-    "system": "跟随系统",
     "light": "浅色",
     "dark": "深色",
-    "systemHint": "“跟随系统”使用设备的浅色或深色设置。",
     "accent": "主题色",
     "slate": "石板蓝",
     "iris": "柔和鸢尾紫",
     "neutral": "石墨灰",
     "saved": "偏好设置已保存在此设备上。",
-    "unsaved": "浏览器存储不可用。更改仅在重新加载前有效。"
+    "unsaved": "浏览器存储不可用。更改仅在重新加载前有效。",
+    "modeHint": "默认使用深色模式，仅通过此设置切换。"
   },
   "language": {
     "label": "界面语言",
@@ -356,5 +357,14 @@
     "retry": "服务器暂时无法执行此指令，请稍等几秒后重试。",
     "upgrade": "需要更新。请在服务器和浏览器资源版本一致后重新加载。",
     "controls": "控制播放需要有效连接，且上一条指令的结果已确认。"
+  },
+  "about": {
+    "hint": "当前部署中各组件的版本。",
+    "sync": "Sync 服务",
+    "web": "Web 前端",
+    "helper": "Helper 脚本",
+    "loading": "正在读取版本…",
+    "unavailable": "暂时无法读取版本，请重试。",
+    "retry": "重试"
   }
 }

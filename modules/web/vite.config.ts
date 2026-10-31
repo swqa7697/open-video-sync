@@ -7,6 +7,13 @@ export default defineConfig({
     vue(),
     {
       name: 'ovs-web-version',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'release.json',
+          source: JSON.stringify({ version: readVersions().web }),
+        });
+      },
       transformIndexHtml() {
         return [
           {

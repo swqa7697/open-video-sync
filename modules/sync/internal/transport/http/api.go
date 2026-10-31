@@ -39,6 +39,19 @@ func NewAPI(origin string, service *identity.Service) *API {
 	return a
 }
 
+// WithVersions exposes the running service and its embedded component versions.
+// Install this route before serving. Release metadata needs no identity or storage access.
+func (a *API) WithVersions(syncVersion, webVersion, helperVersion string) {
+	versions := struct {
+		Sync   string `json:"sync"`
+		Web    string `json:"web"`
+		Helper string `json:"helper"`
+	}{syncVersion, webVersion, helperVersion}
+	a.mux.HandleFunc("GET /api/v2/version", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, versions)
+	})
+}
+
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
