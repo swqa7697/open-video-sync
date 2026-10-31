@@ -4,7 +4,7 @@ import PlayerPanel from './PlayerPanel.vue';
 import { decodeSnapshot } from '../../transport/api';
 import { FakeSocket, roomFixture } from '../../test-support/room';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
-import type { MediaInfo } from '../../player/bilibili/media';
+import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 
 vi.mock('../../player/fingerprint', () => ({
   localFingerprint: async () => 'f'.repeat(64),
@@ -279,6 +279,117 @@ test('quality choices use a small menu and survive player recreation', async () 
   }
 });
 afterEach(() => vi.unstubAllGlobals());
+
+// Media replacement is owned by the player, independently of the sidebar's presentation.
+test('host episode selection publishes resolved metadata and retains the list during loading', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  const first = { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
+    second = { bvid: 'BV17Jx76CEje', part: 2, title: 'Second' },
+    playlist: Playlist = { title: 'Collection', episodes: [first, second] };
+  let media = {
+    kind: 'bilibili' as const,
+    bvid: first.bvid,
+    cid: '1',
+    part: 1,
+    durationMs: 10000,
+  };
+  const snapshot = decodeSnapshot({
+    ...roomFixture,
+    mediaGeneration: 1,
+    media,
+    playback: { ...roomFixture.playback, phase: 'paused' },
+  });
+  let finish: (() => void) | undefined;
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
+    async (bvid, part) => {
+      if (bvid === second.bvid)
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      media = { ...media, bvid, part, cid: bvid === first.bvid ? '1' : '2' };
+      return media;
+    }
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
+    (): MediaInfo => ({
+      ...media,
+      duration: 10,
+      title: 'Synthetic collection',
+      parts: 2,
+      playlist,
+      quality: 80,
+      qualities: [80],
+      handle: 'h1-1234',
+      tracks: [],
+    })
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
+    positionMs: 0,
+    durationMs: 10000,
+    paused: true,
+    seeking: false,
+    status: 'ready',
+  });
+  const wrapper = mount(PlayerPanel, {
+    props: { room: snapshot },
+    attachTo: document.body,
+  });
+  const panel = wrapper.vm as unknown as {
+    playlist: Playlist | undefined;
+    canReplace: boolean;
+    selectEpisode: (episode: Episode) => Promise<void>;
+  };
+  try {
+    fakeMedia(wrapper.get('video').element);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.readyState = 1;
+    socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
+    await flushPromises();
+    await panel.selectEpisode(first);
+    await panel.selectEpisode({ ...second, part: 3 });
+    expect(
+      socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((q) => q.type === 'media.select')
+    ).toHaveLength(0);
+    const selecting = panel.selectEpisode(second);
+    await flushPromises();
+    expect(panel.canReplace).toBe(false);
+    expect(panel.playlist).toEqual(playlist);
+    finish?.();
+    await selecting;
+    const commands = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((q) => q.type === 'media.select');
+    expect(commands).toHaveLength(1);
+    expect(commands[0].payload.media).toEqual({
+      kind: 'bilibili',
+      bvid: second.bvid,
+      cid: '2',
+      part: 2,
+      durationMs: 10000,
+    });
+    expect(JSON.stringify(commands)).not.toContain('playlist');
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      revision: 2,
+      mediaGeneration: 2,
+      media,
+    });
+    await flushPromises();
+    expect(panel.playlist).toEqual(playlist);
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      revision: 3,
+      mediaGeneration: 3,
+      media: room('paused', 3).media,
+    });
+    await flushPromises();
+    expect(panel.playlist).toBeUndefined();
+  } finally {
+    wrapper.unmount();
+  }
+});
 
 test('a room pause that interrupts a pending play is not a player failure', async () => {
   const { wrapper, socket, video, media, pending } = await join('playing');

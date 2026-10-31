@@ -974,6 +974,110 @@ fieldset select {
   min-height: 0;
   min-width: 0;
 }
+.room-sidebar,
+.sidebar-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.sidebar-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  margin: 12px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--input);
+}
+.sidebar-tabs button {
+  flex: 1;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  transition: none;
+}
+.sidebar-tabs button[aria-selected='true'] {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.sidebar-tabs .count {
+  padding: 2px 5px;
+  font-variant-numeric: tabular-nums;
+}
+.episodes-heading {
+  padding: 6px 20px 16px;
+}
+.episodes-heading h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.episodes-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+.episode-list {
+  list-style: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0 12px 12px;
+  min-height: 0;
+}
+.episode-list li + li {
+  margin-top: 4px;
+}
+.episode-list .episode-button {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px;
+  gap: 10px;
+  text-align: left;
+  font-weight: 400;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  transition: none;
+}
+.episode-number {
+  min-width: 16px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.episode-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.episode-button[aria-current='true'] {
+  background: var(--notice);
+  color: var(--primary);
+}
+.episode-button[aria-disabled='true'] {
+  cursor: default;
+  transform: none;
+}
+.modal .room-sidebar {
+  max-height: 60dvh;
+}
+.modal .sidebar-tabs {
+  margin: 0 0 16px;
+}
+.modal .episodes-heading {
+  padding: 0 0 16px;
+}
+.modal .episode-list {
+  padding: 0;
+}
 .members-heading {
   padding: 22px 20px 14px;
   display: flex;

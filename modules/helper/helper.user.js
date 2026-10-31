@@ -199,6 +199,69 @@
       );
     return x.data;
   }
+  // Return display/selection metadata only. Provider objects stay in the helper.
+  function episodeList(view, bvid, part) {
+    const episodes = [],
+      seen = new Set();
+    const text = (value) => {
+      if (typeof value !== 'string') return '';
+      let result = '';
+      for (const c of value) {
+        const code = c.codePointAt(0);
+        if (code < 32 || (code >= 127 && code <= 159)) continue;
+        if (result.length + c.length > 160) break;
+        result += c;
+      }
+      return result;
+    };
+    const add = (id, page, title) => {
+      if (
+        !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(id) ||
+        !Number.isSafeInteger(page) ||
+        page < 1 ||
+        page > 10000
+      )
+        return;
+      const key = `${id}:${page}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      episodes.push({ bvid: id, part: page, title: text(title) || `P${page}` });
+    };
+    const sections = view.ugc_season?.sections;
+    if (Array.isArray(sections) && sections.length <= 100) {
+      for (const section of sections) {
+        if (!Array.isArray(section?.episodes) || section.episodes.length > 500)
+          return;
+        for (const episode of section.episodes) {
+          if (!episode) continue;
+          const pages = Array.isArray(episode.pages)
+            ? episode.pages
+            : [episode.page];
+          if (pages.length > 500) return;
+          for (const page of pages) {
+            if (!page) continue;
+            add(
+              episode.bvid,
+              page.page,
+              pages.length > 1
+                ? `${text(episode.title)} · ${text(page.part)}`
+                : episode.title || page.part
+            );
+            if (episodes.length > 500) return;
+          }
+        }
+      }
+    }
+    let title = text(view.ugc_season?.title);
+    if (!episodes.some((e) => e.bvid === bvid && e.part === part)) {
+      episodes.length = 0;
+      seen.clear();
+      if (view.pages.length > 500) return;
+      for (const page of view.pages) add(bvid, page.page, page.part);
+      title = text(view.title);
+    }
+    if (episodes.length > 1) return { title, episodes };
+  }
   async function resolve(bvid, part, selectedQuality = 0) {
     const view = await api('/x/web-interface/view', { bvid });
     if (!Array.isArray(view?.pages) || view.pages.length > 10000)
@@ -272,6 +335,7 @@
       )
     )
       throw Error('invalid-media');
+    const playlist = episodeList(view, bvid, part);
     return {
       bvid,
       cid: String(page.cid),
@@ -279,6 +343,7 @@
       duration: play.timelength / 1000,
       title: String(view.title).slice(0, 160),
       parts: view.pages.length,
+      ...(playlist ? { playlist } : {}),
       quality: video.id,
       qualities: [...new Set(playable.map((t) => t.id))].sort((a, b) => b - a),
       tracks,

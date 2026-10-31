@@ -132,6 +132,7 @@
     "membersCount": "成员（{count}）",
     "leave": "离开",
     "membersTitle": "房间成员",
+    "sidebar": "成员与选集",
     "inviteTitle": "一起看，更精彩",
     "inviteHint": "邀请好友加入{title}。",
     "invitationLink": "邀请链接",
@@ -152,6 +153,11 @@
     "leaveTitle": "离开房间？",
     "leaveWarning": "房间开放时，你可以通过邀请再次加入。如果你是最后一位观众，离开后房间将关闭。",
     "confirmLeave": "确认离开"
+  },
+  "episodes": {
+    "title": "选集",
+    "hostHint": "选择一集，为所有人切换视频。",
+    "viewerHint": "由房主为所有人切换选集。"
   },
   "members": {
     "participants": "参与者",

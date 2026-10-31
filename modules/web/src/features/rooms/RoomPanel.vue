@@ -4,9 +4,9 @@ import { t, message, translate, type Message } from '../../i18n';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Invitation, Snapshot } from '../../transport/api';
 import type { RoomSettings } from '../../transport/contracts';
-import { settingsSummary } from '../status-text';
+import type { Episode, Playlist } from '../../player/bilibili/media';
 import SettingsForm from './SettingsForm.vue';
-import MembersPanel from './MembersPanel.vue';
+import RoomSidebar from './RoomSidebar.vue';
 import Modal from '../../components/Modal.vue';
 import Icon from '../../components/Icon.vue';
 import type { QuickCommand } from '../commands/search';
@@ -16,6 +16,8 @@ const props = defineProps<{
   host: boolean;
   busy: boolean;
   error?: string | undefined;
+  playlist?: Playlist | undefined;
+  canSelectEpisode?: boolean;
 }>();
 const emit = defineEmits<{
   refresh: [];
@@ -25,7 +27,9 @@ const emit = defineEmits<{
   remove: [memberId: string];
   close: [];
   leave: [];
+  selectEpisode: [episode: Episode];
 }>();
+const sidebar = ref<InstanceType<typeof RoomSidebar>>();
 const settings = ref<RoomSettings>({ ...props.room.settings });
 const inviteOpen = ref(false),
   settingsOpen = ref(false),
@@ -125,10 +129,7 @@ const commands = computed<QuickCommand[]>(() => [
     aliases: 'participants people 成员 参与者',
     run: () => {
       membersOpen.value = true;
-      if (!narrow.value)
-        void nextTick(() =>
-          document.getElementById('participants-title')?.focus()
-        );
+      void nextTick(() => sidebar.value?.showMembers());
     },
   },
 ]);
@@ -155,11 +156,15 @@ defineExpose({ commands });
         <button
           class="quiet"
           :aria-expanded="membersOpen"
-          :aria-label="t('room.membersCount', { count: room.members.length })"
+          :aria-label="
+            playlist
+              ? t('room.sidebar')
+              : t('room.membersCount', { count: room.members.length })
+          "
           @click="membersOpen = !membersOpen"
         >
           <Icon name="users" /><span class="toolbar-label">{{
-            t('room.members')
+            playlist ? t('room.sidebar') : t('room.members')
           }}</span
           ><span>{{ room.members.length }}</span>
         </button>
@@ -189,28 +194,31 @@ defineExpose({ commands });
     >
       <div class="viewing-column"><slot /></div>
       <aside v-if="membersOpen && !narrow" class="member-panel">
-        <MembersPanel
+        <RoomSidebar
+          ref="sidebar"
           :room="room"
           :host="host"
           :busy="busy"
+          :playlist="playlist"
+          :can-select-episode="canSelectEpisode ?? false"
           @remove="(id) => emit('remove', id)"
+          @select-episode="(episode) => emit('selectEpisode', episode)"
         />
-        <div class="panel-policy">
-          <Icon name="shield" :size="16" /><span>{{
-            settingsSummary(room.settings)
-          }}</span>
-        </div>
       </aside>
     </div>
     <Modal
       v-if="membersOpen && narrow"
-      :title="t('room.membersTitle')"
+      :title="playlist ? t('room.sidebar') : t('room.membersTitle')"
       @close="membersOpen = false"
-      ><MembersPanel
+      ><RoomSidebar
+        ref="sidebar"
         :room="room"
         :host="host"
         :busy="busy"
+        :playlist="playlist"
+        :can-select-episode="canSelectEpisode ?? false"
         @remove="(id) => emit('remove', id)"
+        @select-episode="(episode) => emit('selectEpisode', episode)"
     /></Modal>
     <Modal
       v-if="inviteOpen"

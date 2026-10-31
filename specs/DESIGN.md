@@ -277,6 +277,7 @@ Keep these selected interfaces and browser-local boundaries:
 - Use the participant's own available session. These observed interfaces are not a maintained public playback contract.
 - Load AVC/AAC DASH with SegmentBase/SIDX and MediaSource. Bound buffering, seek work, track appends, and eviction.
 - Keep signed locations inside the helper; return opaque media handles and bounded byte ranges to the page.
+- On open, optionally return a browser-local playlist of up to 500 unique `{bvid,part,title}` entries and a title, derived from `pages` or `ugc_season.sections[].episodes`. Omit unsupported or oversized lists without blocking playback. Validate the bounded display metadata at the bridge boundary; never persist or broadcast playlists. The right sidebar offers Members/Episodes tabs, with the same tabs in the narrow-screen dialog. Mark the selected BV/part. Only the host selects an episode through the existing media replacement path; the room receives only the resolved selected-media descriptor and restarts paused at zero. Keep selection immediate and cancel stale adapter work.
 - Permit only reviewed HTTPS API/CDN hosts and paths, including the selected `bilivideo.com` destinations and `upos-hz-mirrorakam.akamaized.net`. Reject unapproved redirects.
 - Preserve existing request/response size, concurrency, deadline, and one-refresh bounds. Tune only when a real compatibility issue requires it.
 - Keep no provider payloads or credentials in helper storage, frontend persistence, logs, SQLite, or room messages.

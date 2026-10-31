@@ -22,6 +22,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Quick Actions: Open a searchable menu with Cmd/Ctrl + K or an entry beside the OVS logo. Support English/Chinese action search, `/` command matching, and `$` or direct Bilibili link/BV input. Prefill video selection for explicit confirmation. Respect current room permissions and keep keyboard interaction immediate.
 - Synchronized Playback: Keep play, pause, seeking, and playback position aligned across participants according to room preferences
 - Online Video Support: Support Bilibili video links in the first release, including loading and displaying danmaku; more sources (like YouTube) are planned after the first release
+  - For multipart videos and collections, show a selectable episode list beside room members through tabs. The host selects the episode for everyone.
 - Local Video Support: Let each participant select a local video file -- all participants must prepare the same video themselves (OVS does not distribute it)
 - Platform Credentials: Keep video-platform login credentials and session information on the participant's device (browser) -- never send them to the OVS server
 - Existing Access Rights: Participants use their own access to platform content (OVS does not grant access to restricted videos)

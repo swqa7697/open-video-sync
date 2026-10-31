@@ -1,5 +1,10 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
-import { decodeInfo, parseIndex, parseSelection } from './media';
+import {
+  decodeInfo,
+  decodePlaylist,
+  parseIndex,
+  parseSelection,
+} from './media';
 import { DanmakuRenderer, decodeComments } from './danmaku';
 afterEach(() => vi.unstubAllGlobals());
 test('selection resolves only canonical IDs and exact parts without forwarding pasted credentials', () => {
@@ -49,6 +54,26 @@ test('SIDX decoding accepts the full reference size and rejects truncated, neste
   }
 });
 test('helper metadata and display comments reject foreign payload fields and script modes', () => {
+  const first = { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
+    second = {
+      bvid: 'BV17Jx76CEje',
+      part: 1,
+      title: '<script>Second</script>',
+    },
+    playlist = { title: 'Collection', episodes: [first, second] };
+  expect(decodePlaylist(playlist, first.bvid, 1)).toEqual(playlist);
+  for (const episodes of [
+    [first, first],
+    [first, { ...second, signedURL: 'synthetic' }],
+    [first, { ...second, part: 0 }],
+    [first, { ...second, bvid: 'https://example.invalid' }],
+    [first, { ...second, title: 'x'.repeat(161) }],
+    Array(501).fill(first),
+  ])
+    expect(() =>
+      decodePlaylist({ ...playlist, episodes }, first.bvid, 1)
+    ).toThrow();
+  expect(() => decodePlaylist(playlist, first.bvid, 2)).toThrow();
   const comment = {
     time: 1,
     mode: 1,

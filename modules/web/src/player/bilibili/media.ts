@@ -7,6 +7,15 @@ export interface TrackInfo {
   init: [number, number];
   index: [number, number];
 }
+export interface Episode {
+  bvid: string;
+  part: number;
+  title: string;
+}
+export interface Playlist {
+  title: string;
+  episodes: Episode[];
+}
 export interface MediaInfo {
   bvid: string;
   cid: string;
@@ -18,6 +27,36 @@ export interface MediaInfo {
   tracks: TrackInfo[];
   quality: number;
   qualities: number[];
+  playlist?: Playlist;
+}
+export function decodePlaylist(
+  value: unknown,
+  bvid: string,
+  part: number
+): Playlist {
+  const v = object(value);
+  exact(v, ['title', 'episodes']);
+  if (
+    !Array.isArray(v.episodes) ||
+    v.episodes.length < 2 ||
+    v.episodes.length > 500
+  )
+    throw new HelperError('invalid-reply');
+  const seen = new Set<string>();
+  const episodes = v.episodes.map((value) => {
+    const e = object(value);
+    exact(e, ['bvid', 'part', 'title']);
+    const id = boundedText(e.bvid, 12),
+      page = integer(e.part, 1, 10000),
+      title = boundedText(e.title, 160),
+      key = `${id}:${page}`;
+    if (!/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(id) || !title || seen.has(key))
+      throw new HelperError('invalid-reply');
+    seen.add(key);
+    return { bvid: id, part: page, title };
+  });
+  if (!seen.has(`${bvid}:${part}`)) throw new HelperError('invalid-reply');
+  return { title: boundedText(v.title, 160), episodes };
 }
 export interface Segment {
   offset: number;
@@ -80,6 +119,7 @@ export function decodeInfo(
     'tracks',
     'quality',
     'qualities',
+    ...(Object.hasOwn(v, 'playlist') ? ['playlist'] : []),
   ]);
   if (
     v.bvid !== bvid ||
@@ -146,6 +186,9 @@ export function decodeInfo(
     parts: integer(v.parts, part, 10000),
     handle,
     tracks,
+    ...(Object.hasOwn(v, 'playlist')
+      ? { playlist: decodePlaylist(v.playlist, bvid, part) }
+      : {}),
   };
 }
 // Parse a bounded ISO-BMFF SIDX. Nested indexes and unsafe offsets are unsupported.

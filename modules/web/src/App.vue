@@ -723,6 +723,8 @@ onUnmounted(() => {
           ref="roomPanel"
           :room="room"
           :host="host"
+          :playlist="player?.playlist"
+          :can-select-episode="player?.canReplace ?? false"
           :invitation="invitation"
           :busy="busy"
           :error="failure ? translate(failure.text) : undefined"
@@ -737,6 +739,7 @@ onUnmounted(() => {
           @remove="(id) => perform(() => manage('remove', undefined, id))"
           @leave="requestLeave"
           @close="perform(() => manage('close'))"
+          @select-episode="(episode) => player?.selectEpisode(episode)"
         >
           <PlayerPanel
             ref="player"

@@ -67,6 +67,9 @@ The creator's selected local file stays available through this in-app transition
 Paste an invitation link or code on home, or open an invitation link to enter automatically.
 Links use `/join#invite=...`; OVS removes the fragment before mounting provider components.
 Bilibili loads automatically on entry and media changes, using each participant's own helper and access.
+When a loaded Bilibili video has multiple parts or belongs to a collection, switch the right sidebar between **Members** and **Episodes**.
+The current episode is marked. Only the host can select another episode for the room; playback restarts paused at zero.
+On narrow screens, open **Members and episodes** in the room toolbar to use the same tabs in a dialog.
 For local media, select your own matching file inside the player. Reloading requires local-file reselection.
 There is no home room directory. An existing member can revisit an authorized room URL while the room remains open.
 
@@ -127,6 +130,7 @@ Return to OVS and select **Reload page** to activate the installed script. Updat
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
 The bundled `modules/helper/dist/release.json`, generated from root `versions.toml`, supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
 For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
+After updating an existing development checkout, reinstall the instance helper and reload to use the new episode-list metadata.
 
 The helper runs only on the configured OVS origin, never on Bilibili pages or frames. Each profile uses its own platform access.
 Sign in on Bilibili in that profile when required. Access failures leave only that participant unready.

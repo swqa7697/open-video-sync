@@ -32,7 +32,7 @@ import {
 } from '../../transport/room-socket';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
 import { HelperError } from '../../player/bilibili/bridge';
-import type { MediaInfo } from '../../player/bilibili/media';
+import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 import Icon from '../../components/Icon.vue';
 import Modal from '../../components/Modal.vue';
 import MediaPicker from '../media/MediaPicker.vue';
@@ -113,6 +113,7 @@ const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
 const qualityTrigger = ref<HTMLButtonElement>(),
   qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
+const playlist = shallowRef<Playlist>();
 const videoTitle = ref('');
 const totalSeconds = computed(
   () => (current.value.media?.durationMs ?? 0) / 1000
@@ -157,6 +158,18 @@ const qualityName = (value: number): string =>
 const waitTimedOut = ref(false),
   replaced = ref(false);
 const current = ref(props.room);
+watch(
+  () => current.value.media,
+  (media) => {
+    if (
+      media?.kind !== 'bilibili' ||
+      !playlist.value?.episodes.some(
+        (episode) => episode.bvid === media.bvid && episode.part === media.part
+      )
+    )
+      playlist.value = undefined;
+  }
+);
 // Rendered state must be reactive; the adapter itself stays outside reactivity.
 const descriptor = shallowRef<MediaDescriptor>();
 const host = computed(
@@ -488,7 +501,7 @@ function showError(value: Message | '', reload = false): void {
   errorReload.value = reload;
 }
 async function chooseBilibili(
-  selected: Extract<MediaDescriptor, { kind: 'bilibili' }>,
+  selected: Pick<Episode, 'bvid' | 'part'>,
   publishMedia = false,
   quality?: number
 ): Promise<void> {
@@ -529,6 +542,7 @@ async function chooseBilibili(
     );
     if (signal.aborted || generation !== selectionGeneration) return;
     streamInfo.value = local.mediaInfo;
+    playlist.value = local.mediaInfo?.playlist;
     videoTitle.value = local.mediaInfo?.title ?? selected.bvid;
     descriptor.value = media;
     subscription = local.subscribe(() => {
@@ -665,6 +679,23 @@ async function replaceMedia(): Promise<void> {
   else if (selected.media.kind === 'bilibili')
     await chooseBilibili(selected.media, true);
 }
+async function selectEpisode(episode: Episode): Promise<void> {
+  if (
+    !canReplace.value ||
+    !playlist.value?.episodes.some(
+      (entry) => entry.bvid === episode.bvid && entry.part === episode.part
+    )
+  )
+    return;
+  const media = current.value.media;
+  if (
+    media?.kind === 'bilibili' &&
+    media.bvid === episode.bvid &&
+    media.part === episode.part
+  )
+    return;
+  await chooseBilibili(episode, true);
+}
 function confirmMedia(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) {
     event.preventDefault();
@@ -799,7 +830,7 @@ const commands = computed<QuickCommand[]>(() => [
       ]
     : []),
 ]);
-defineExpose({ commands });
+defineExpose({ commands, playlist, canReplace, selectEpisode });
 async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
   if (

@@ -34,6 +34,7 @@ function fixture(options = {}) {
     title: 'fixture',
     pages: [{ cid: 400306737, page: 1 }],
     cookie: CANARY,
+    ...options.view,
   };
   const track = {
     id: 32,
@@ -284,6 +285,67 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   );
   assert(!JSON.stringify(open).includes(CANARY));
   assert(!JSON.stringify(open).includes('https://'));
+  assert.equal(open.value.playlist, undefined);
+  const pages = [
+    { cid: 400306737, page: 1, part: 'Opening' },
+    {
+      cid: 400306738,
+      page: 2,
+      part: '<script>Finale</script>',
+      cookie: CANARY,
+    },
+  ];
+  const multipart = await fixture({ view: { pages } }).open();
+  assert.deepEqual(multipart.value.playlist, {
+    title: 'fixture',
+    episodes: pages.map((p) => ({
+      bvid: 'BV1hf4y1N75G',
+      part: p.page,
+      title: p.part,
+    })),
+  });
+  const episodes = [
+    { bvid: 'BV1hf4y1N75G', title: 'First', pages: [pages[0]], token: CANARY },
+    {
+      bvid: 'BV17Jx76CEje',
+      title: 'Second',
+      pages,
+      signedURL: `https://example.invalid/${CANARY}`,
+    },
+  ];
+  const collection = await fixture({
+    view: {
+      ugc_season: {
+        title: 'Collection',
+        sections: [{ episodes: [...episodes, episodes[0]] }],
+        cookie: CANARY,
+      },
+    },
+  }).open();
+  assert.deepEqual(collection.value.playlist, {
+    title: 'Collection',
+    episodes: [
+      { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
+      { bvid: 'BV17Jx76CEje', part: 1, title: 'Second · Opening' },
+      {
+        bvid: 'BV17Jx76CEje',
+        part: 2,
+        title: 'Second · <script>Finale</script>',
+      },
+    ],
+  });
+  assert(!JSON.stringify(collection).includes(CANARY));
+  assert(!JSON.stringify(collection).includes('https://'));
+  const oversized = await fixture({
+    view: {
+      ugc_season: {
+        title: 'Too many',
+        sections: [{ episodes: Array(501).fill(episodes[0]) }],
+      },
+    },
+  }).open();
+  assert.equal(oversized.ok, true);
+  assert.equal(oversized.value.playlist, undefined);
   const data = await f.call('bytes', {
     handle: open.value.handle,
     track: 0,

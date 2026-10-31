@@ -132,6 +132,7 @@
     "membersCount": "Members ({count})",
     "leave": "Leave",
     "membersTitle": "Room members",
+    "sidebar": "Members and episodes",
     "inviteTitle": "A little better together",
     "inviteHint": "Invite your people to {title}.",
     "invitationLink": "Invitation link",
@@ -152,6 +153,11 @@
     "leaveTitle": "Leave this room?",
     "leaveWarning": "You can return with an invitation while the room is open. If you are the last viewer, leaving closes the room.",
     "confirmLeave": "Confirm leave"
+  },
+  "episodes": {
+    "title": "Episodes",
+    "hostHint": "Choose an episode for everyone.",
+    "viewerHint": "The host chooses the episode for everyone."
   },
   "members": {
     "participants": "Participants",
