@@ -6,18 +6,21 @@ import {
   type PlayerObservation,
 } from '../adapters/local';
 import { exact, HelperBridge, HelperError, object } from './bridge';
-import {
-  decodeInfo,
-  MAX_SEGMENT_BYTES,
-  parseIndex,
-  type MediaInfo,
-  type Segment,
-} from './media';
+import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
 import { DanmakuRenderer, decodeComments } from './danmaku';
+const CHUNK_BYTES = 256 * 1024;
 interface Track {
   index: number;
   buffer: SourceBuffer;
   segments: Segment[];
+  pending?:
+    | {
+        segment: Segment;
+        at: number;
+        seek: number;
+        data?: Uint8Array<ArrayBuffer> | undefined;
+      }
+    | undefined;
 }
 export class BilibiliAdapter implements PlayerAdapter {
   readonly capabilities;
@@ -158,6 +161,11 @@ export class BilibiliAdapter implements PlayerAdapter {
   private assertOwned(): void {
     if (this.disposed) throw new DOMException('Cancelled', 'AbortError');
   }
+  private assertSeek(seek: number): void {
+    this.assertOwned();
+    if (seek !== this.seekGeneration)
+      throw new DOMException('Seek cancelled', 'AbortError');
+  }
   private fail(error: unknown): void {
     if (
       this.disposed ||
@@ -178,51 +186,45 @@ export class BilibiliAdapter implements PlayerAdapter {
     length: number,
     seek = this.seekGeneration
   ): Promise<Uint8Array<ArrayBuffer>> {
-    if (length < 1 || length > MAX_SEGMENT_BYTES)
+    if (length < 1 || length > CHUNK_BYTES)
       throw new HelperError('segment-limit');
-    const output = new Uint8Array(length);
-    for (let at = 0; at < length; at += 256 * 1024) {
-      this.assertOwned();
-      if (seek !== this.seekGeneration)
-        throw new DOMException('Seek cancelled', 'AbortError');
-      const count = Math.min(256 * 1024, length - at);
-      let reply: Record<string, unknown>;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          reply = object(
-            await this.bridge.call('bytes', {
-              handle: this.info!.handle,
-              track,
-              offset: offset + at,
-              length: count,
-              generation: this.generation,
-            })
-          );
-          break;
-        } catch (error) {
-          if (
-            !(error instanceof HelperError) ||
-            !['busy', 'rate-limited'].includes(error.code) ||
-            attempt >= 3
-          )
-            throw error;
-          await this.delay(250 * 2 ** attempt);
-        }
+    let reply: Record<string, unknown>;
+    for (let attempt = 0; ; attempt++) {
+      this.assertSeek(seek);
+      try {
+        reply = object(
+          await this.bridge.call('bytes', {
+            handle: this.info!.handle,
+            track,
+            offset,
+            length,
+            generation: this.generation,
+          })
+        );
+        break;
+      } catch (error) {
+        this.assertSeek(seek);
+        if (
+          !(error instanceof HelperError) ||
+          !['busy', 'rate-limited'].includes(error.code) ||
+          attempt >= 3
+        )
+          throw error;
+        await this.delay(250 * 2 ** attempt);
       }
-      this.assertOwned();
-      if (seek !== this.seekGeneration)
-        throw new DOMException('Seek cancelled', 'AbortError');
-      exact(reply, ['base64']);
-      if (
-        typeof reply.base64 !== 'string' ||
-        reply.base64.length > 349528 ||
-        !/^[A-Za-z0-9+/]*={0,2}$/.test(reply.base64)
-      )
-        throw new HelperError('invalid-bytes');
-      const chunk = atob(reply.base64);
-      if (chunk.length !== count) throw new HelperError('invalid-bytes');
-      for (let i = 0; i < count; i++) output[at + i] = chunk.charCodeAt(i);
     }
+    this.assertSeek(seek);
+    exact(reply, ['base64']);
+    if (
+      typeof reply.base64 !== 'string' ||
+      reply.base64.length > 349528 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(reply.base64)
+    )
+      throw new HelperError('invalid-bytes');
+    const chunk = atob(reply.base64);
+    if (chunk.length !== length) throw new HelperError('invalid-bytes');
+    const output = new Uint8Array(length);
+    for (let i = 0; i < length; i++) output[i] = chunk.charCodeAt(i);
     return output;
   }
   private wait(
@@ -259,8 +261,9 @@ export class BilibiliAdapter implements PlayerAdapter {
       }
       try {
         operation?.();
-      } catch {
-        fail();
+      } catch (error) {
+        cleanup();
+        reject(error);
       }
     });
   }
@@ -290,60 +293,141 @@ export class BilibiliAdapter implements PlayerAdapter {
         return true;
     return false;
   }
+  private window(track: Track, target: number): number {
+    // SIDX gives an estimate, not the browser's actual allocation. Split the
+    // byte budget between history and prefetch, and also cap both by time.
+    let rate = 1;
+    for (const segment of track.segments)
+      if (segment.end > target - 15 && segment.time < target + 12)
+        rate = Math.max(rate, segment.length / (segment.end - segment.time));
+    const budget = (track.index === 0 ? 32 : 4) * 1024 * 1024;
+    return Math.min(12, Math.max(1, budget / 2 / rate));
+  }
+  private async trim(
+    track: Track,
+    seek: number,
+    pressure = false
+  ): Promise<void> {
+    this.assertSeek(seek);
+    const target = this.video.currentTime;
+    const window = this.window(track, target);
+    const behind = pressure ? 1 : Math.min(15, window);
+    const current = track.segments.find(
+      (s) => s.time <= target && s.end > target
+    );
+    // remove() also drops dependent frames up to the next random access point.
+    // Preserve the current fragment's keyframe even when its byte rate is high.
+    const before = Math.min(target - behind, current?.time ?? target);
+    const ranges = track.buffer.buffered;
+    if (ranges.length && ranges.start(0) < before)
+      await this.update(track.buffer, () => track.buffer.remove(0, before));
+    this.assertSeek(seek);
+    const end = ranges.length ? ranges.end(ranges.length - 1) : 0;
+    const after = Math.max(target + 30, current?.end ?? target);
+    if (end > after)
+      await this.update(track.buffer, () => track.buffer.remove(after, end));
+  }
+  private async append(
+    track: Track,
+    data: Uint8Array<ArrayBuffer>,
+    seek: number
+  ): Promise<boolean> {
+    for (let attempt = 0; ; attempt++) {
+      this.assertSeek(seek);
+      try {
+        await this.update(track.buffer, () => track.buffer.appendBuffer(data));
+        return true;
+      } catch (error) {
+        this.assertSeek(seek);
+        if (!(
+          error instanceof DOMException && error.name === 'QuotaExceededError'
+        ))
+          throw error;
+        if (attempt === 0) {
+          await this.trim(track, seek, true);
+          continue;
+        }
+        // Retain this one chunk until playback frees space. If playback cannot
+        // advance, report failure rather than retrying a full buffer forever.
+        if (this.contains(track.buffer, this.video.currentTime + 1))
+          return false;
+        throw new HelperError('source-buffer-failed');
+      }
+    }
+  }
+  private async step(track: Track, seek: number): Promise<boolean> {
+    this.assertSeek(seek);
+    const target = this.video.currentTime;
+    if (
+      track.pending &&
+      (track.pending.seek !== seek || track.pending.segment.end <= target)
+    ) {
+      // Reset an incomplete MP4 parser even when no append is in progress.
+      track.buffer.abort();
+      track.pending = undefined;
+    }
+    await this.trim(track, seek);
+    this.assertSeek(seek);
+    const ahead = this.window(track, target);
+    for (let i = 0; i < track.buffer.buffered.length; i++)
+      if (
+        track.buffer.buffered.start(i) <= target + 0.05 &&
+        track.buffer.buffered.end(i) >=
+          Math.min(this.info!.duration, target + ahead)
+      )
+        return false;
+    if (!track.pending) {
+      const segment = track.segments.find((s) => {
+        if (s.end <= target || s.time > target + ahead) return false;
+        for (let i = 0; i < track.buffer.buffered.length; i++)
+          if (
+            track.buffer.buffered.start(i) <= Math.max(s.time, target) + 0.05 &&
+            track.buffer.buffered.end(i) >= s.end - 0.05
+          )
+            return false;
+        return true;
+      });
+      if (!segment) return false;
+      track.pending = { segment, at: 0, seek };
+    }
+    const pending = track.pending;
+    pending.data ??= await this.bytes(
+      track.index,
+      pending.segment.offset + pending.at,
+      Math.min(CHUNK_BYTES, pending.segment.length - pending.at),
+      seek
+    );
+    this.assertSeek(seek);
+    if (!(await this.append(track, pending.data, seek))) return false;
+    this.assertSeek(seek);
+    pending.at += pending.data.length;
+    pending.data = undefined;
+    if (pending.at === pending.segment.length) track.pending = undefined;
+    return true;
+  }
   private async pump(): Promise<void> {
     if (this.pumping || this.disposed || this.failure || !this.tracks.length)
       return;
     this.pumping = true;
     try {
-      const target = this.video.currentTime,
-        seek = this.seekGeneration;
-      for (const horizon of [1, 12])
+      const seek = this.seekGeneration;
+      const blocked = new Set<Track>();
+      // Alternate tracks and bound work per tick. A long video fragment must
+      // not block audio, readiness, cancellation, or the next buffering pass.
+      let steps = 0;
+      for (let round = 0; round < 8 && steps < 8; round++)
         for (const track of this.tracks) {
-          this.assertOwned();
-          if (!track.buffer.updating && track.buffer.buffered.length) {
-            const end = track.buffer.buffered.end(
-              track.buffer.buffered.length - 1
-            );
-            if (target > 20 && track.buffer.buffered.start(0) < target - 20)
-              await this.update(track.buffer, () =>
-                track.buffer.remove(0, target - 15)
-              );
-            if (end > target + 40)
-              await this.update(track.buffer, () =>
-                track.buffer.remove(target + 30, end)
-              );
-          }
-          for (const segment of track.segments) {
-            if (
-              segment.end <= target ||
-              segment.time > target + horizon ||
-              this.contains(
-                track.buffer,
-                Math.min(
-                  segment.end - 0.3,
-                  Math.max(segment.time + 0.5, target)
-                )
-              )
-            )
-              continue;
-            const data = await this.bytes(
-              track.index,
-              segment.offset,
-              segment.length,
-              seek
-            );
-            this.assertOwned();
-            if (seek !== this.seekGeneration) return;
-            await this.update(track.buffer, () =>
-              track.buffer.appendBuffer(data)
-            );
-          }
+          if (steps === 8) break;
+          if (blocked.has(track)) continue;
+          if (await this.step(track, seek)) steps++;
+          else blocked.add(track);
         }
       if (
         this.info &&
         this.video.currentTime > this.info.duration - 15 &&
-        this.tracks.every((t) =>
-          this.contains(t.buffer, this.info!.duration - 0.3)
+        this.tracks.every(
+          (t) =>
+            !t.pending && this.contains(t.buffer, this.info!.duration - 0.3)
         ) &&
         this.source?.readyState === 'open'
       )
@@ -403,9 +487,10 @@ export class BilibiliAdapter implements PlayerAdapter {
     return this.native.setPlaybackRate(rate);
   }
   getState(): PlayerObservation {
+    const observed = this.native.getState();
     return {
-      ...this.native.getState(),
-      ...(this.loading
+      ...observed,
+      ...(this.loading || (!this.failure && observed.status === 'no_media')
         ? { status: 'loading' as const }
         : this.failure
           ? { status: this.failure.status }

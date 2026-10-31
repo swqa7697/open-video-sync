@@ -296,7 +296,11 @@ Visibility, density, and text size remain local. Ignore executable/advanced-scri
 Comment failure is distinct from playback failure and from hiding comments.
 
 The helper returns actual AVC quality IDs from the participant's DASH response and accepts a requested ID on `open`.
-SIDX parsing and range assembly allow media fragments up to 64 MiB for high-bitrate AVC qualities. Each helper byte request remains at or below 256 KiB.
+SIDX parsing accepts the full 31-bit direct-reference size without allocating a whole media fragment. Nested indexes and unsafe offsets remain invalid.
+Read and append at most 256 KiB at a time. Keep one cursor and at most one pending chunk per track; alternate audio/video work within a bounded buffering pass.
+Use the nearby SIDX byte rate to estimate a 32 MiB video / 4 MiB audio buffering budget. Keep 1–12 seconds ahead and bounded history; preserve the current fragment's keyframe during eviction. These estimates do not measure browser allocations.
+On browser quota pressure, evict played data and retry the same chunk once. Retain that chunk while buffered playback can advance; fail if no playable headroom remains.
+On seek, discard stale replies and reset incomplete MediaSource parsers before reading a new fragment. Browser codec and memory limits still apply.
 Only returned tracks are offered. Quality switching opens a new local adapter, retains room playback intent, reports readiness, and converges to the current timeline.
 Never claim a pending/failed quality is active. No adaptive Auto mode is implemented. Live quality switching requires evidence beyond the fixed-quality B0 baseline.
 Root `versions.toml` is the sole module release-version source. The helper build generates `modules/helper/dist/release.json`; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.

@@ -134,6 +134,8 @@ The player lists the returned playable AVC qualities and requests the selected q
 Initial loading prefers the previously validated quality 32 when available; Retry video returns to that safe default after a failed quality switch.
 Switching reloads local media buffers, reports readiness, and converges to the authoritative room position without changing room playback intent.
 Only an active loaded quality is displayed as selected. No adaptive Auto mode is offered.
+Large DASH fragments, including those above 64 MiB, stream through bounded chunks without whole-fragment assembly.
+The player limits prefetch and reclaims played buffers under memory pressure. Browser memory and codec limits still apply.
 Quality switching needs new live-platform validation; the earlier B0 evidence covers the previous fixed-quality path.
 DASH AVC/AAC remains the supported path. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
 

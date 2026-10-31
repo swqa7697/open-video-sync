@@ -21,7 +21,7 @@ test('selection resolves only canonical IDs and exact parts without forwarding p
   ])
     expect(() => parseSelection(input, 1)).toThrow();
 });
-test('SIDX decoding accepts high-bitrate fragments and rejects truncated, nested, and oversized fragments', () => {
+test('SIDX decoding accepts the full reference size and rejects truncated, nested, and unsafe indexes', () => {
   const data = new Uint8Array(44),
     v = new DataView(data.buffer);
   v.setUint32(0, 44);
@@ -34,14 +34,16 @@ test('SIDX decoding accepts high-bitrate fragments and rejects truncated, nested
     { offset: 144, length: 1024, time: 0, end: 5 },
   ]);
   // Premium AVC qualities can exceed 4 MiB per fragment without changing codec.
-  for (const length of [4 * 1024 * 1024 + 1, 64 * 1024 * 1024]) {
+  for (const length of [64 * 1024 * 1024 + 1, 0x7fffffff]) {
     v.setUint32(32, length);
     expect(parseIndex(data, 100)).toEqual([
       { offset: 144, length, time: 0, end: 5 },
     ]);
   }
   expect(() => parseIndex(data.slice(0, 43), 100)).toThrow();
-  for (const size of [0, 64 * 1024 * 1024 + 1, 0x80000400]) {
+  expect(() => parseIndex(data, -1)).toThrow();
+  expect(() => parseIndex(data, Number.MAX_SAFE_INTEGER)).toThrow();
+  for (const size of [0, 0x80000400]) {
     v.setUint32(32, size);
     expect(() => parseIndex(data, 100)).toThrow();
   }

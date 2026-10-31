@@ -1,8 +1,5 @@
 import { message, LocalizedError } from '../../i18n';
 import { boundedText, exact, HelperError, integer, object } from './bridge';
-// High-bitrate AVC fragments can exceed 4 MiB. Bound the assembled fragment,
-// independently of the helper's 256 KiB request limit.
-export const MAX_SEGMENT_BYTES = 64 * 1024 * 1024;
 export interface TrackInfo {
   id: number;
   codec: string;
@@ -157,6 +154,7 @@ export function parseIndex(data: Uint8Array, offset: number): Segment[] {
   const fail = (): never => {
     throw new HelperError('invalid-index');
   };
+  if (!Number.isSafeInteger(offset) || offset < 0) return fail();
   let at = 0;
   while (at + 8 <= data.length) {
     const size = v.getUint32(at),
@@ -198,7 +196,6 @@ export function parseIndex(data: Uint8Array, offset: number): Segment[] {
       if (
         reference >>> 31 ||
         length < 1 ||
-        length > MAX_SEGMENT_BYTES ||
         !duration ||
         !Number.isSafeInteger(position + length) ||
         (time + duration) / scale > 604801
