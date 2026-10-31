@@ -91,11 +91,6 @@ test.describe('autoplay permission', () => {
               )?.dataset.state;
             if (input && !input.disabled && !selected) {
               selected = true;
-              document
-                .querySelector<HTMLButtonElement>(
-                  '[aria-label="Unmute locally"]'
-                )!
-                .click();
               const transfer = new DataTransfer();
               transfer.items.add(
                 new File(

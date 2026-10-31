@@ -9,6 +9,12 @@ export const appearanceAccents = [
   { value: 'slate', label: 'appearance.slate' },
   { value: 'iris', label: 'appearance.iris' },
   { value: 'neutral', label: 'appearance.neutral' },
+  { value: 'teal', label: 'appearance.teal' },
+  { value: 'sage', label: 'appearance.sage' },
+  { value: 'rose', label: 'appearance.rose' },
+  { value: 'amber', label: 'appearance.amber' },
+  { value: 'ocean', label: 'appearance.ocean' },
+  { value: 'clay', label: 'appearance.clay' },
 ] as const;
 type Mode = (typeof appearanceModes)[number]['value'];
 type Accent = (typeof appearanceAccents)[number]['value'];

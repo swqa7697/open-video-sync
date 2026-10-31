@@ -229,10 +229,9 @@
         typeof t.codecs === 'string' &&
         t.codecs.startsWith('avc1')
     );
-    const video = selectedQuality
-      ? playable.find((t) => t.id === selectedQuality)
-      : playable.find((t) => t.id === 32) ||
-        playable.sort((a, b) => a.id - b.id)[0];
+    const video =
+      playable.find((t) => t.id === selectedQuality) ||
+      playable.sort((a, b) => b.id - a.id)[0];
     const audio = play.dash.audio.find((t) => t.codecs.startsWith('mp4a'));
     if (!video || !audio) throw Error('unsupported-codec');
     if (

@@ -51,7 +51,7 @@ Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate
 `GET /version` needs no session and performs no storage access. Return the running binary's build version and the release versions of its embedded frontend and helper. Keep this metadata uncached; it does not report the helper installed in the browser.
 
 `Invitation` is `{linkSecret,code}`. It has no expiry. GET reuses the current invitation without rotating it.
-The host learns the replacement invitation through the host-only endpoint after removing a participant.
+Joining, leaving, sharing, and removing a participant preserve the current invitation. Only explicit reset or room closure invalidates it. A current host cannot redeem an invitation; use the room URL to return.
 No snapshot, list, or non-host response contains invitation secrets.
 
 Existing-room mutations use current runtime epoch/revision, even when their persistent fields are stored in SQLite.

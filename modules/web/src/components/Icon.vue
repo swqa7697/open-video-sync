@@ -1,6 +1,10 @@
 <script setup lang="ts">
 defineProps<{ name: string; size?: number }>();
 const paths: Record<string, string> = {
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
+  sliders: 'M4 3v7m0 4v7M12 3v13m0 4v1M20 3v1m0 4v13M1 10h6m2 6h6m2-12h6',
+  'chat-off':
+    'm3 3 18 18M8 2h10a3 3 0 0 1 3 3v10M17 18H8l-5 4V8M10 7h7M14 12h3',
   search: 'M21 21l-5-5M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0',
   info: 'M12 8h.01M11 12h1v5m-1 0h2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
   language:

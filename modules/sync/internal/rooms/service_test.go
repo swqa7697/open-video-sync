@@ -79,6 +79,8 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 		t.Fatal("private listing leaked")
 	}
 	redeemKey := key(t)
+	_, err = service.Redeem(ctx, host, key(t), "code", created.Invitation.Code)
+	expectCode(t, err, "invalid_invitation")
 	joined, err := service.Redeem(ctx, guest, redeemKey, "code", strings.ToLower(created.Invitation.Code[:4])+"-"+created.Invitation.Code[4:])
 	if err != nil {
 		t.Fatal(err)
@@ -180,8 +182,14 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 	expectCode(t, err, "not_found")
 	_, err = service.Redeem(ctx, guest, redeemKey, "code", created.Invitation.Code)
 	expectCode(t, err, "invalid_invitation")
-	_, err = service.Redeem(ctx, guest, key(t), "code", rotated.Invitation.Code)
-	expectCode(t, err, "invalid_invitation")
+	rejoined, err := service.Redeem(ctx, guest, key(t), "code", rotated.Invitation.Code)
+	if err != nil || len(rejoined.Snapshot.Members) != 2 {
+		t.Fatal("removal unexpectedly replaced reusable invitation", err)
+	}
+	_, err = service.Redeem(ctx, outsider, key(t), "link", rotated.Invitation.LinkSecret)
+	if err != nil {
+		t.Fatal("invitation could not be reused by another identity", err)
+	}
 	fresh, err = service.Snapshot(ctx, host, id)
 	if err != nil {
 		t.Fatal(err)

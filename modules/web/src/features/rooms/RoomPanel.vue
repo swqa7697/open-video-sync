@@ -106,7 +106,7 @@ const commands = computed<QuickCommand[]>(() => [
           id: 'room-settings',
           label: t('commands.roomSettings'),
           group: 'room' as const,
-          icon: 'settings',
+          icon: 'sliders',
           shortcut: '/room',
           aliases: 'room settings preferences 房间 设置 等待 控制权限',
           disabled: props.busy,
@@ -170,7 +170,7 @@ defineExpose({ commands });
           :disabled="busy"
           @click="openSettings"
         >
-          <Icon name="settings" />
+          <Icon name="sliders" />
         </button>
         <button
           class="quiet leave-button"

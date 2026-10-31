@@ -36,11 +36,16 @@ import type { MediaInfo } from '../../player/bilibili/media';
 import Icon from '../../components/Icon.vue';
 import Modal from '../../components/Modal.vue';
 import MediaPicker from '../media/MediaPicker.vue';
+import DanmakuControl from './DanmakuControl.vue';
 import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
 import { reportedReadiness, SyncController } from '../../sync/controller';
 import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
 import { phaseText, readinessText } from '../status-text';
+import {
+  readPlayerPreferences,
+  savePlayerPreferences,
+} from '../../player/preferences';
 
 const props = defineProps<{
   room: Snapshot;
@@ -79,22 +84,34 @@ const qualityText = {
   calibrated: message('player.calibrated'),
   degraded: message('player.degraded'),
 };
+const preferences = readPlayerPreferences();
 const active = ref(false),
   connected = ref(false),
   loading = ref(false),
   uncertain = ref<Command>(),
   seekSeconds = ref(0),
-  muted = ref(true),
-  volume = ref(1);
+  muted = ref(preferences.muted),
+  volume = ref(preferences.volume);
+const preferredQuality = ref(preferences.quality);
+watch([volume, muted, preferredQuality], () =>
+  savePlayerPreferences({
+    volume: volume.value,
+    muted: muted.value,
+    ...(preferredQuality.value ? { quality: preferredQuality.value } : {}),
+  })
+);
 const position = ref(0),
   buffered = ref(0),
   dragging = ref(false),
-  playerMenu = ref(false),
+  danmakuMenu = ref(false),
+  qualityMenu = ref(false),
   replaceOpen = ref(false),
   hoveredTime = ref<number>(),
   idle = ref(false),
   controlsHovered = ref(false);
 const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
+const qualityTrigger = ref<HTMLButtonElement>(),
+  qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
 const videoTitle = ref('');
 const totalSeconds = computed(
@@ -109,7 +126,8 @@ function wake(): void {
     if (
       !controlsHovered.value &&
       isPlaying.value &&
-      !playerMenu.value &&
+      !danmakuMenu.value &&
+      !qualityMenu.value &&
       !stage.value?.contains(document.activeElement)
     )
       idle.value = true;
@@ -325,6 +343,10 @@ const transport = new RoomSocket(
   probe
 );
 function clearMedia(): void {
+  danmakuMenu.value = false;
+  if (qualityOptions.value?.contains(document.activeElement))
+    stage.value?.focus({ preventScroll: true });
+  qualityMenu.value = false;
   selection.abort();
   selection = new AbortController();
   selectionGeneration++;
@@ -370,6 +392,85 @@ function danmakuPreferences(): void {
     adapter.danmaku.density = density.value;
     adapter.danmaku.fontSize = danmakuSize.value;
   }
+}
+function toggleDanmaku(): void {
+  showDanmaku.value = !showDanmaku.value;
+  danmakuPreferences();
+}
+function togglePlayback(): void {
+  command(
+    isPlaying.value
+      ? 'pause'
+      : current.value.playback.phase === 'ended'
+        ? 'replay'
+        : 'play'
+  );
+}
+function clickSurface(event: MouseEvent): void {
+  if (event.target !== video.value && event.target !== stage.value) return;
+  stage.value?.focus({ preventScroll: true });
+  if (danmakuMenu.value || qualityMenu.value) {
+    danmakuMenu.value = false;
+    qualityMenu.value = false;
+    return;
+  }
+  togglePlayback();
+}
+async function openQuality(): Promise<void> {
+  qualityMenu.value = !qualityMenu.value;
+  danmakuMenu.value = false;
+  if (qualityMenu.value) {
+    await nextTick();
+    qualityOptions.value
+      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+      ?.focus();
+  }
+}
+function closeQuality(restoreFocus = false): void {
+  qualityMenu.value = false;
+  if (restoreFocus) qualityTrigger.value?.focus();
+}
+function qualityKeyboard(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeQuality(true);
+    return;
+  }
+  const items = Array.from(
+    qualityOptions.value?.querySelectorAll<HTMLButtonElement>('button') ?? []
+  );
+  const index = items.indexOf(document.activeElement as HTMLButtonElement);
+  let next: number;
+  switch (event.key) {
+    case 'ArrowDown':
+      next = (index + 1) % items.length;
+      break;
+    case 'ArrowUp':
+      next = (index + items.length - 1) % items.length;
+      break;
+    case 'Home':
+      next = 0;
+      break;
+    case 'End':
+      next = items.length - 1;
+      break;
+    case 'Tab':
+      closeQuality(true);
+      return;
+    default:
+      return;
+  }
+  event.preventDefault();
+  items[next]?.focus();
+}
+function outsideQuality(event: PointerEvent): void {
+  if (event.target === video.value || event.target === stage.value) return;
+  if (
+    event.target instanceof Node &&
+    !qualityOptions.value?.contains(event.target) &&
+    !qualityTrigger.value?.contains(event.target)
+  )
+    closeQuality();
 }
 async function fullscreen(): Promise<void> {
   try {
@@ -424,11 +525,11 @@ async function chooseBilibili(
       selected.bvid,
       selected.part,
       signal,
-      quality
+      quality ?? preferredQuality.value
     );
+    if (signal.aborted || generation !== selectionGeneration) return;
     streamInfo.value = local.mediaInfo;
     videoTitle.value = local.mediaInfo?.title ?? selected.bvid;
-    if (signal.aborted || generation !== selectionGeneration) return;
     descriptor.value = media;
     subscription = local.subscribe(() => {
       void sample();
@@ -564,6 +665,19 @@ async function replaceMedia(): Promise<void> {
   else if (selected.media.kind === 'bilibili')
     await chooseBilibili(selected.media, true);
 }
+function confirmMedia(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) {
+    event.preventDefault();
+    return;
+  }
+  if (
+    event.target instanceof Element &&
+    event.target.closest('button, a, select, textarea, input[type="file"]')
+  )
+    return;
+  event.preventDefault();
+  void replaceMedia();
+}
 async function openMedia(selection?: VideoSelection): Promise<void> {
   if (!canReplace.value) return;
   replaceOpen.value = true;
@@ -677,27 +791,26 @@ const commands = computed<QuickCommand[]>(() => [
             showDanmaku.value ? 'commands.hideDanmaku' : 'player.showDanmaku'
           ),
           group: 'watch' as const,
-          icon: 'chat',
+          icon: showDanmaku.value ? 'chat' : 'chat-off',
           shortcut: '/danmaku',
           aliases: 'comments danmaku 弹幕 显示 隐藏',
-          run: () => {
-            showDanmaku.value = !showDanmaku.value;
-            danmakuPreferences();
-          },
+          run: toggleDanmaku,
         },
       ]
     : []),
 ]);
 defineExpose({ commands });
-async function changeQuality(event: Event): Promise<void> {
+async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
-  const quality = Number((event.target as HTMLSelectElement).value);
   if (
     selected?.kind !== 'bilibili' ||
     !streamInfo.value?.qualities.includes(quality) ||
     loading.value
   )
     return;
+  closeQuality(true);
+  preferredQuality.value = quality;
+  if (streamInfo.value.quality === quality) return;
   await chooseBilibili(selected, false, quality);
 }
 function hoverSeek(event: PointerEvent): void {
@@ -722,15 +835,27 @@ function seek(event: Event): void {
 }
 function keyboard(event: KeyboardEvent): void {
   if (
-    event.target !== stage.value ||
+    event.defaultPrevented ||
+    event.isComposing ||
+    (event.target instanceof Element &&
+      event.target.closest(
+        'input, select, textarea, [contenteditable], [role="menu"], dialog'
+      )) ||
     event.altKey ||
     event.ctrlKey ||
     event.metaKey
   )
     return;
-  if (event.key === ' ' || event.key === 'k') {
+  const key = event.key.toLowerCase();
+  if (
+    key === ' ' &&
+    event.target instanceof Element &&
+    event.target.closest('button, a')
+  )
+    return;
+  if (key === ' ' || key === 'k') {
     event.preventDefault();
-    command(isPlaying.value ? 'pause' : 'play');
+    togglePlayback();
   } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     event.preventDefault();
     seekSeconds.value = Math.min(
@@ -738,8 +863,22 @@ function keyboard(event: KeyboardEvent): void {
       Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5))
     );
     command('seek');
-  } else if (event.key === 'm') muted.value = !muted.value;
-  else if (event.key === 'f') {
+  } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    volume.value = Math.max(
+      0,
+      Math.min(
+        1,
+        Math.round(volume.value * 100 + (event.key === 'ArrowUp' ? 10 : -10)) /
+          100
+      )
+    );
+    muted.value = false;
+  } else if (key === 'm') muted.value = !muted.value;
+  else if (key === 'd' && current.value.media?.kind === 'bilibili') {
+    event.preventDefault();
+    toggleDanmaku();
+  } else if (key === 'f') {
     event.preventDefault();
     void fullscreen();
   }
@@ -935,6 +1074,7 @@ onMounted(() => {
     void sample();
   }, 250);
   document.addEventListener('visibilitychange', visibility);
+  document.addEventListener('pointerdown', outsideQuality);
 });
 onUnmounted(() => {
   disposed = true;
@@ -942,6 +1082,7 @@ onUnmounted(() => {
   clearTimeout(idleTimer);
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
+  document.removeEventListener('pointerdown', outsideQuality);
   transport.dispose();
   clearMedia();
 });
@@ -955,10 +1096,13 @@ onUnmounted(() => {
     <div
       ref="stage"
       class="video-stage"
-      :class="{ 'controls-idle': idle && isPlaying && !playerMenu }"
+      :class="{
+        'controls-idle': idle && isPlaying && !danmakuMenu && !qualityMenu,
+      }"
       tabindex="0"
       :aria-label="t('player.shortcuts')"
       @keydown="keyboard"
+      @click="clickSurface"
       @pointermove="wake"
       @pointerdown="wake"
       @focusin="wake"
@@ -1129,15 +1273,7 @@ onUnmounted(() => {
               "
               :disabled="isPlaying ? !canControl : !canPlay"
               :aria-describedby="controlNote ? 'control-note' : undefined"
-              @click="
-                command(
-                  isPlaying
-                    ? 'pause'
-                    : current.playback.phase === 'ended'
-                      ? 'replay'
-                      : 'play'
-                )
-              "
+              @click="togglePlayback"
             >
               <Icon
                 :name="
@@ -1165,7 +1301,8 @@ onUnmounted(() => {
               type="range"
               min="0"
               max="1"
-              step="0.05"
+              step="0.1"
+              @input="muted = false"
               :aria-label="t('player.localVolume')"
               :aria-valuetext="
                 t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
@@ -1179,37 +1316,52 @@ onUnmounted(() => {
             >
           </div>
           <div class="control-end">
-            <button
+            <DanmakuControl
               v-if="current.media?.kind === 'bilibili'"
-              class="icon-button danmaku-toggle"
-              :aria-label="t('player.showDanmaku')"
-              :aria-pressed="showDanmaku"
-              @click="
-                showDanmaku = !showDanmaku;
-                danmakuPreferences();
+              :open="danmakuMenu"
+              :visible="showDanmaku"
+              :density="density"
+              :font-size="danmakuSize"
+              :status="translate(danmakuStatus)"
+              :stage="stage"
+              @update:open="
+                (value) => {
+                  danmakuMenu = value;
+                  if (value) closeQuality();
+                }
               "
-            >
-              <Icon name="chat" />
-            </button>
+              @toggle="toggleDanmaku"
+              @reload="reloadDanmaku"
+              @update:density="
+                (value) => {
+                  density = value;
+                  danmakuPreferences();
+                }
+              "
+              @update:font-size="
+                (value) => {
+                  danmakuSize = value;
+                  danmakuPreferences();
+                }
+              "
+            />
             <button
               v-if="current.media?.kind === 'bilibili'"
+              ref="qualityTrigger"
               class="quality-trigger quiet"
-              :aria-expanded="playerMenu"
-              @click="playerMenu = !playerMenu"
+              :aria-label="t('player.videoQuality')"
+              aria-haspopup="menu"
+              aria-controls="video-quality"
+              :disabled="!streamInfo || loading"
+              :aria-expanded="qualityMenu"
+              @click="openQuality"
+              @keydown.down.prevent="!qualityMenu && openQuality()"
             >
               {{
                 streamInfo
                   ? qualityName(streamInfo.quality)
                   : t('player.quality')
               }}<Icon name="chevron" :size="14" />
-            </button>
-            <button
-              class="icon-button"
-              :aria-label="t('player.settings')"
-              :aria-expanded="playerMenu"
-              @click="playerMenu = !playerMenu"
-            >
-              <Icon name="settings" />
             </button>
             <button
               class="icon-button"
@@ -1222,79 +1374,27 @@ onUnmounted(() => {
         </div>
       </div>
       <div
-        v-if="playerMenu"
-        class="player-menu"
-        @keydown.esc.stop="playerMenu = false"
+        v-if="qualityMenu && streamInfo"
+        id="video-quality"
+        ref="qualityOptions"
+        class="player-menu quality-menu"
+        role="menu"
+        :aria-label="t('player.videoQuality')"
+        @keydown.stop="qualityKeyboard"
       >
-        <div class="menu-heading">
-          <strong>{{ t('player.preferences') }}</strong
-          ><button
-            class="icon-button quiet"
-            :aria-label="t('player.closeSettings')"
-            @click="playerMenu = false"
-          >
-            <Icon name="close" :size="16" />
-          </button>
-        </div>
-        <label for="menu-volume">{{ t('player.volume') }}</label
-        ><input
-          id="menu-volume"
-          v-model.number="volume"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          :aria-valuetext="
-            t('player.volumeValue', { volume: Math.round(volume * 100) })
-          "
-        />
-        <template v-if="current.media?.kind === 'bilibili'">
-          <label for="video-quality">{{ t('player.videoQuality') }}</label
-          ><select
-            v-if="streamInfo"
-            id="video-quality"
-            :value="streamInfo.quality"
-            :disabled="loading"
-            @change="changeQuality"
-          >
-            <option v-for="q in streamInfo.qualities" :key="q" :value="q">
-              {{ qualityName(q) }}
-            </option>
-          </select>
-          <p v-else class="hint">{{ t('player.qualityHint') }}</p>
-          <label for="danmaku-density">{{ t('player.danmakuDensity') }}</label
-          ><input
-            id="danmaku-density"
-            v-model.number="density"
-            type="range"
-            min="1"
-            max="40"
-            :aria-valuetext="t('player.commentCount', { count: density })"
-            @input="danmakuPreferences"
-          />
-          <label for="danmaku-size">{{ t('player.danmakuSize') }}</label
-          ><input
-            id="danmaku-size"
-            v-model.number="danmakuSize"
-            type="range"
-            min="16"
-            max="32"
-            :aria-valuetext="t('player.pixelCount', { count: danmakuSize })"
-            @input="danmakuPreferences"
-          />
-          <p class="hint" role="status">
-            {{
-              showDanmaku
-                ? translate(danmakuStatus)
-                : t('player.hiddenDanmaku', {
-                    status: translate(danmakuStatus),
-                  })
-            }}
-          </p>
-          <button class="quiet" @click="reloadDanmaku">
-            {{ t('player.reloadDanmaku') }}
-          </button>
-        </template>
+        <button
+          v-for="q in [...streamInfo.qualities].sort((a, b) => b - a)"
+          :key="q"
+          type="button"
+          role="menuitemradio"
+          class="quiet"
+          tabindex="-1"
+          :aria-checked="streamInfo.quality === q"
+          @click="changeQuality(q)"
+        >
+          <span>{{ qualityName(q) }}</span
+          ><Icon v-if="streamInfo.quality === q" name="check" :size="16" />
+        </button>
       </div>
     </div>
     <div class="video-information">
@@ -1373,15 +1473,18 @@ onUnmounted(() => {
       v-if="replaceOpen"
       :title="t('player.changeTitle')"
       @close="replaceOpen = false"
-      ><MediaPicker
-        ref="mediaPicker"
-        :room-id="current.roomId"
-        :disabled="loading"
-      />
-      <p class="hint">{{ t('player.changeHint') }}</p>
-      <button :disabled="loading" @click="replaceMedia">
-        {{ t('player.useVideo') }}
-      </button></Modal
+      @keydown.enter="confirmMedia"
+      ><form @submit.prevent="replaceMedia">
+        <MediaPicker
+          ref="mediaPicker"
+          :room-id="current.roomId"
+          :disabled="loading"
+        />
+        <p class="hint">{{ t('player.changeHint') }}</p>
+        <button :disabled="loading">
+          {{ t('player.useVideo') }}
+        </button>
+      </form></Modal
     >
   </section>
 </template>

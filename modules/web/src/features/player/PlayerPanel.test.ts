@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import PlayerPanel from './PlayerPanel.vue';
 import { decodeSnapshot } from '../../transport/api';
 import { FakeSocket, roomFixture } from '../../test-support/room';
+import { BilibiliAdapter } from '../../player/bilibili/adapter';
+import type { MediaInfo } from '../../player/bilibili/media';
 
 vi.mock('../../player/fingerprint', () => ({
   localFingerprint: async () => 'f'.repeat(64),
@@ -138,6 +140,7 @@ const reported = (socket: FakeSocket) =>
     .filter((frame) => frame.type === 'member.readiness')
     .map((frame) => frame.payload.status);
 beforeEach(() => {
+  localStorage.clear();
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
   const nativeURL = URL;
@@ -150,6 +153,130 @@ beforeEach(() => {
       static revokeObjectURL(): void {}
     }
   );
+});
+
+// A component scenario owns the quality menu and browser preference lifecycle. The
+// helper regressions separately verify highest/fallback selection from synthetic metadata.
+test('quality choices use a small menu and survive player recreation', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('hover: hover'),
+  }));
+  const media = {
+    kind: 'bilibili' as const,
+    bvid: 'BV1hf4y1N75G',
+    cid: '1',
+    part: 1,
+    durationMs: 10000,
+  };
+  const snapshot = decodeSnapshot({
+    ...roomFixture,
+    mediaGeneration: 1,
+    media,
+    playback: { ...roomFixture.playback, phase: 'paused' },
+  });
+  let selectedQuality = 120;
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
+    async (_bvid, _part, _signal, quality) => {
+      selectedQuality = quality ?? 120;
+      return media;
+    }
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
+    (): MediaInfo => ({
+      ...media,
+      duration: 10,
+      title: 'Synthetic quality selection',
+      parts: 1,
+      quality: selectedQuality,
+      qualities: [120, 80],
+      handle: 'h1-1234',
+      tracks: [],
+    })
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
+    positionMs: 0,
+    durationMs: 10000,
+    paused: true,
+    seeking: false,
+    status: 'ready',
+  });
+  async function open() {
+    const wrapper = mount(PlayerPanel, {
+      props: { room: snapshot },
+      attachTo: document.body,
+    });
+    fakeMedia(wrapper.get('video').element);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.readyState = 1;
+    socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
+    await flushPromises();
+    return wrapper;
+  }
+  let wrapper = await open();
+  try {
+    expect(wrapper.get('.quality-trigger').text()).toBe('4K');
+    await wrapper.get('.quality-trigger').trigger('click');
+    expect(wrapper.find('.player-menu:not(.quality-menu)').exists()).toBe(
+      false
+    );
+    const option = wrapper
+      .findAll('[role="menuitemradio"]')
+      .find((node) => node.text() === '1080p')!;
+    await option.trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    wrapper.unmount();
+    wrapper = await open();
+    expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    await wrapper.get('.quality-trigger').trigger('click');
+    expect(wrapper.get('[aria-checked="true"]').text()).toBe('1080p');
+    await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Escape' });
+    expect(document.activeElement).toBe(
+      wrapper.get('.quality-trigger').element
+    );
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Player settings"]').exists()).toBe(false);
+    const trigger = wrapper.get('.danmaku-toggle');
+    await wrapper
+      .get('.danmaku-control')
+      .trigger('pointerenter', { pointerType: 'mouse' });
+    await flushPromises();
+    expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
+    await wrapper.get('input[id$="-density"]').setValue(12);
+    await wrapper.get('input[id$="-size"]').setValue(24);
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
+    ).toBe('12');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value
+    ).toBe('24');
+    await trigger.trigger('click');
+    expect(trigger.attributes('aria-pressed')).toBe('false');
+    expect(wrapper.get('.danmaku-menu').text()).toContain('Hidden by you');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
+    ).toBe('12');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value
+    ).toBe('24');
+    await wrapper
+      .get('.danmaku-control')
+      .trigger('pointerleave', { pointerType: 'mouse' });
+    await vi.waitFor(() =>
+      expect(wrapper.find('.danmaku-menu').exists()).toBe(false)
+    );
+    await trigger.trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
+    expect(document.activeElement).toBe(
+      wrapper.get('input[id$="-density"]').element
+    );
+    await wrapper.get('.danmaku-menu').trigger('keydown', { key: 'Escape' });
+    expect(wrapper.find('.danmaku-menu').exists()).toBe(false);
+    expect(document.activeElement).toBe(trigger.element);
+  } finally {
+    wrapper.unmount();
+  }
 });
 afterEach(() => vi.unstubAllGlobals());
 

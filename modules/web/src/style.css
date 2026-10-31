@@ -65,6 +65,30 @@
   --accent-light: #4d6686;
   --accent-dark: #a5b8d0;
 }
+[data-accent='teal'] {
+  --accent-light: #367773;
+  --accent-dark: #93c6be;
+}
+[data-accent='sage'] {
+  --accent-light: #547443;
+  --accent-dark: #aec59a;
+}
+[data-accent='rose'] {
+  --accent-light: #9b5269;
+  --accent-dark: #d8a3b3;
+}
+[data-accent='amber'] {
+  --accent-light: #87651f;
+  --accent-dark: #d4bc7f;
+}
+[data-accent='ocean'] {
+  --accent-light: #346f9c;
+  --accent-dark: #98c0de;
+}
+[data-accent='clay'] {
+  --accent-light: #985b42;
+  --accent-dark: #d9ad96;
+}
 * {
   box-sizing: border-box;
 }
@@ -255,6 +279,12 @@ small {
   gap: 1rem;
 }
 .brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
   padding: 0 !important;
   gap: 0.65rem !important;
   letter-spacing: 0.02em;
@@ -409,10 +439,7 @@ small {
   justify-content: center;
   gap: 1rem;
   flex-wrap: wrap;
-  min-height: 42px;
-  padding: 0.45rem 1.25rem;
-  background: var(--notice);
-  border-bottom: 1px solid var(--accent-border);
+  padding: 0;
   color: var(--text);
   font-size: 0.75rem;
 }
@@ -432,6 +459,66 @@ small {
 }
 .app-message:empty {
   display: none;
+}
+.toast-region {
+  position: fixed;
+  z-index: 30;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  right: calc(16px + env(safe-area-inset-right));
+  width: min(420px, calc(100% - 32px));
+  max-height: min(50dvh, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast-region[data-position='left'] {
+  right: auto;
+  left: calc(16px + env(safe-area-inset-left));
+}
+.toast-region[data-position='center'] {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 56px;
+  padding: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 32px var(--shadow);
+  pointer-events: auto;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.toast-content {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+}
+.toast .notice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.toast .notice.error {
+  color: var(--danger-text);
+}
+.toast .helper-banner {
+  justify-content: flex-start;
+  gap: 8px 12px;
+  padding: 0;
+}
+.toast .toast-dismiss {
+  width: 32px;
+  min-height: 32px;
+  padding: 6px;
 }
 main {
   flex: 1;
@@ -810,7 +897,7 @@ fieldset select {
 }
 .room {
   padding: 0 clamp(1rem, 3vw, 3rem) 20px;
-  max-width: 1800px;
+  max-width: 1600px;
   margin: auto;
 }
 .room-toolbar {
@@ -1241,6 +1328,32 @@ fieldset select {
   margin: 12px 0 8px;
   font-size: 0.68rem;
 }
+.quality-menu {
+  width: min(190px, calc(100% - 36px));
+  padding: 6px;
+  right: 100px;
+}
+.quality-menu button {
+  width: 100%;
+  justify-content: space-between;
+}
+.quality-menu button[aria-checked='true'] {
+  color: var(--primary);
+  background: var(--notice);
+}
+.danmaku-control {
+  display: flex;
+  align-items: center;
+}
+.danmaku-menu {
+  right: auto;
+}
+.danmaku-toggle[aria-pressed='false'] {
+  color: var(--muted);
+}
+.danmaku-toggle[aria-pressed='true'] {
+  color: var(--primary);
+}
 .video-information {
   display: flex;
   align-items: flex-start;
@@ -1578,8 +1691,14 @@ fieldset select {
     padding: 25px 8px 8px;
   }
   .player-controls button.icon-button {
-    width: 34px;
-    min-height: 40px;
+    width: 44px;
+    min-height: 44px;
+  }
+  .control-bar {
+    flex-wrap: wrap;
+  }
+  .control-end {
+    margin-left: auto;
   }
   .control-start,
   .control-end {
@@ -1589,7 +1708,9 @@ fieldset select {
     width: 18px;
   }
   .volume-slider {
-    display: none;
+    width: 45px;
+    height: 24px;
+    margin: 0 6px;
   }
   .player-time {
     font-size: 0.59rem;
@@ -1599,7 +1720,12 @@ fieldset select {
     margin-left: 3px;
   }
   .quality-trigger {
-    display: none;
+    display: inline-flex;
+    min-height: 44px;
+    font-size: 0.7rem;
+  }
+  .video-stage:has(.quality-trigger) .player-state {
+    padding-bottom: 132px;
   }
   .video-information {
     padding: 16px 14px 10px;
@@ -1713,15 +1839,9 @@ fieldset select {
 .shell {
   --player-space: 370px;
 }
-.shell:has(.helper-banner) {
-  --player-space: 414px;
-}
 @media (min-width: 761px) {
   .video-stage {
     max-height: calc(100dvh - var(--player-space));
-  }
-  .shell:has(.app-message .notice) .video-stage {
-    max-height: calc(100dvh - var(--player-space) - 52px);
   }
 }
 .played-track {

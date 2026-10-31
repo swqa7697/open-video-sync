@@ -28,15 +28,16 @@ Root [deploy/](deploy/README.md) contains shared Compose and Caddy configuration
 
 ## Watch together
 
-Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
-The header keeps server status, **Settings**, and your identity together. Open **Settings** for **Appearance**, **Language**, or **About**.
+Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile button.
+The header keeps server status, **Settings**, and your identity together. Open **Settings** for **Appearance**, **Language**, **Notifications**, or **About**.
 The interface supports English and Simplified Chinese. **Settings → Language** defaults to **Follow system**.
 Chinese device languages use Simplified Chinese; other device languages use English. Choose **简体中文** or **English** to override.
 Language changes apply immediately, including current status and error messages, and stay in this browser across reloads.
-Use **Settings → Appearance** to choose Slate blue (default), Soft iris, or Graphite.
+Use **Settings → Appearance** to choose Slate blue (default), Soft iris, Graphite, Quiet teal, Sage green, Dusty rose, Warm amber, Ocean blue, or Soft clay.
 The color mode defaults to **Dark**. Choose **Light** or **Dark** manually; device theme changes do not affect OVS.
 These choices stay in this browser across reloads; they are not room settings. If browser storage is blocked, choices last until reload.
 Dialogs use short transitions and buttons give subtle pointer feedback. Keyboard actions stay immediate; reduced motion uses a brief dialog fade.
+Notifications appear as dismissible bottom toasts without moving the page. **Settings → Notifications** selects Left, Center, or Right (default).
 **Settings → About** shows the running Sync service and the Web frontend and Helper script bundled in the deployed image.
 
 Press **Cmd/Ctrl + K** or select **Quick actions** beside the OVS logo to search available actions in English or Chinese.
@@ -70,11 +71,12 @@ For local media, select your own matching file inside the player. Reloading requ
 There is no home room directory. An existing member can revisit an authorized room URL while the room remains open.
 
 **Invite** shows the host's reusable link and code. Copy actions fall back to selectable text on ordinary HTTP.
-**Replace invitation** resets both values. Removing a participant also replaces the invitation.
+**Replace invitation** resets both values. Sharing again, joining, leaving, and removing a participant keep the invitation unchanged.
+Different participants can reuse it until replacement or closure. The host returns through the room URL instead of redeeming an invitation.
 Only the host can retrieve invitations, replace media, change settings, remove participants, or close the room for everyone.
 Room settings and destructive confirmation appear in dialogs. **Members** toggles a side panel or opens a narrow-screen dialog.
 
-**Leave** and the OVS home button leave the active session. After the host leaves, everyone can control playback without gaining management rights.
+**Leave** asks for confirmation before leaving the active session. The OVS logo opens home in a new tab and supports middle click. After the host leaves, everyone can control playback without gaining management rights.
 A returning host keeps Everyone enabled and can deliberately change it later. Ownership never transfers.
 The final explicit departure closes the room immediately. Closing a room page starts a 30-second reconnection grace.
 Refresh, brief disconnection, tab replacement, and backgrounding do not by themselves close the room.
@@ -96,9 +98,10 @@ Cookies are scoped to the browser profile and OVS origin. Private profiles recei
 Play/pause, replay, seeking, volume, mute, and fullscreen are inside the video surface.
 Shared controls follow server permissions. Volume, mute, fullscreen, quality, and danmaku affect only your browser.
 The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
-Focus the player to use Space/K for playback, arrows for seeking, M for mute, and F for fullscreen.
+Click the video surface or focus the player and use Space/K for playback. Left/Right seeks five seconds; Up/Down changes volume by 10%.
+M toggles mute, D toggles Bilibili danmaku, and F toggles fullscreen. Text inputs and sliders keep their native keyboard behavior.
 Controls remain available while keyboard focus is inside them. Dialogs support Escape and restore focus.
-Playback starts muted. When autoplay is blocked, select **Enable playback** inside the video.
+Change video supports Enter to confirm. Playback starts unmuted at 50% volume; volume and mute choices survive reloads in this browser. When autoplay is blocked, select **Enable playback** inside the video.
 
 Every participant supplies their own local file. OVS exchanges only a room-specific sampled SHA-256 digest, size, and duration.
 Filenames, paths, handles, timestamps, object URLs, samples, and video bytes stay in the browser.
@@ -118,9 +121,9 @@ A disconnected required participant retains a separate 15-second waiting grace.
 ## Bilibili helper and local preferences
 
 Install the Tampermonkey browser extension independently. OVS installation buttons install only the instance-specific **OVS playback helper**.
-A missing or outdated helper produces a top banner and an entry dialog. **Later** dismisses the dialog; local workflows remain available.
+A missing or outdated helper produces a bottom toast and an entry dialog. **Later** dismisses the dialog; local workflows remain available.
 Use **Install OVS helper**, **Update helper**, or **Install matching helper**, then confirm installation/replacement in Tampermonkey.
-Return to OVS and recheck or refresh when required. Updating uses the same script name and namespace within an instance.
+Return to OVS and select **Reload page** to activate the installed script. Updating uses the same script name and namespace within an instance.
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
 The bundled `modules/helper/dist/release.json`, generated from root `versions.toml`, supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
 For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
@@ -131,7 +134,8 @@ Provider responses and signed media locations stay in helper memory. The room re
 The page requests bounded byte ranges through opaque handles. It cannot supply URLs, headers, methods, or cookies.
 
 The player lists the returned playable AVC qualities and requests the selected quality through the helper.
-Initial loading prefers the previously validated quality 32 when available; Retry video returns to that safe default after a failed quality switch.
+The dedicated quality button opens a small selection menu. The browser remembers the preferred quality across media changes and reloads.
+Without a preference, or when the preferred tier is unavailable, choose the highest returned playable quality. Retry keeps the preference.
 Switching reloads local media buffers, reports readiness, and converges to the authoritative room position without changing room playback intent.
 Only an active loaded quality is displayed as selected. No adaptive Auto mode is offered.
 Large DASH fragments, including those above 64 MiB, stream through bounded chunks without whole-fragment assembly.
@@ -140,6 +144,9 @@ Quality switching needs new live-platform validation; the earlier B0 evidence co
 DASH AVC/AAC remains the supported path. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
 
 Danmaku follows observed playback through pause and seek. Visibility, density, and text size remain local.
+Click the danmaku icon to toggle comments; hover over it for density, text size, status, and reload controls.
+With keyboard focus on the icon, press Down to open settings and Escape to close. On touchscreens, long press the icon.
+The player has no separate settings button; local videos show no danmaku controls.
 Hidden comments and loading failures have separate status. **Reload danmaku** retries loading.
 Only ordinary scrolling, top, and bottom text comments are rendered; executable modes are ignored.
 Local files do not show quality or danmaku menus. There is no comment submission, OVS media relay, or media persistence.

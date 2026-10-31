@@ -6,7 +6,19 @@ try {
   if (saved && typeof saved === 'object') {
     if (['light', 'dark'].includes(saved.mode))
       document.documentElement.dataset.mode = saved.mode;
-    if (['slate', 'iris', 'neutral'].includes(saved.accent))
+    if (
+      [
+        'slate',
+        'iris',
+        'neutral',
+        'teal',
+        'sage',
+        'rose',
+        'amber',
+        'ocean',
+        'clay',
+      ].includes(saved.accent)
+    )
       document.documentElement.dataset.accent = saved.accent;
   }
 } catch {

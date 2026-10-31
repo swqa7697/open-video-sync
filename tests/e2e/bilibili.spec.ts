@@ -61,7 +61,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));
-  await page.getByRole('button', { name: 'Recheck', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   // The development version 0.0.0 has no older valid release. The component
   // regression covers outdated-helper onboarding with a fixed newer requirement.
   await expect(page.getByRole('dialog')).toContainText(
@@ -74,19 +74,17 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await page.evaluate(() =>
     sessionStorage.setItem('synthetic-helper', 'future')
   );
-  await page.getByRole('button', { name: 'Recheck', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('does not match');
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.evaluate(() =>
     sessionStorage.setItem('synthetic-helper', 'signed-out')
   );
-  await page.getByRole('button', { name: 'Recheck', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   await expect(
     page.getByRole('complementary', { name: 'Playback helper' })
   ).toHaveCount(0);
-  await expect(page.getByLabel('Video URL or BV identifier')).toHaveValue(
-    'BV1hf4y1N75G'
-  );
+  await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();
@@ -124,6 +122,33 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(page.locator('.roster')).toContainText(
     'Platform access unavailable'
   );
+  const danmaku = page.locator('.danmaku-toggle');
+  const preferences = page.getByRole('dialog', {
+    name: 'Danmaku settings',
+    exact: true,
+  });
+  await danmaku.hover();
+  await expect(preferences).toBeVisible();
+  await page
+    .getByRole('slider', { name: 'Danmaku density', exact: true })
+    .hover();
+  await expect(preferences).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(preferences).toHaveCount(0);
+  await danmaku.press('ArrowDown');
+  await expect(
+    page.getByRole('slider', { name: 'Danmaku density', exact: true })
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(danmaku).toBeFocused();
+  await expect(preferences).toHaveCount(0);
+  await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
+  const enabledIcon = await danmaku.locator('path').getAttribute('d');
+  await page.locator('.video-stage').press('d');
+  await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
+  expect(await danmaku.locator('path').getAttribute('d')).not.toBe(enabledIcon);
+  await danmaku.click();
+  await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('playback-phase')).toHaveAttribute(
     'data-state',
     'paused'
@@ -137,8 +162,8 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
   await page.locator('#create-local-video').setInputFiles(file);
   await page
-    .getByRole('button', { name: 'Use this video', exact: true })
-    .click();
+    .getByRole('dialog', { name: 'Change the video', exact: true })
+    .press('Enter');
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
     'ready'

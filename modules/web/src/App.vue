@@ -45,14 +45,19 @@ import HelperNotice from './features/media/HelperNotice.vue';
 import SettingsForm from './features/rooms/SettingsForm.vue';
 import Modal from './components/Modal.vue';
 import Icon from './components/Icon.vue';
+import ToastNotice from './components/ToastNotice.vue';
+import { useNotificationStore } from './stores/notifications';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
   identity = useIdentityStore();
 const language = useLanguageStore();
+const notifications = useNotificationStore();
 const stopLanguage = language.listen();
 const controller = new AbortController();
-const departing = ref(false);
+const departing = ref(false),
+  leaveConfirmation = ref(false);
+let destinationAfterLeave: string | undefined;
 const busy = ref(false),
   failure = ref<Failure>(),
   invalidField = ref<string>(),
@@ -463,6 +468,7 @@ async function share(): Promise<void> {
   );
 }
 async function back(): Promise<void> {
+  leaveConfirmation.value = false;
   room.value = undefined;
   invitation.value = undefined;
   history.replaceState(null, '', '/');
@@ -472,6 +478,7 @@ async function back(): Promise<void> {
 }
 // A room connection ended for good. Leave the room view and say why.
 async function ended(reason: EndReason): Promise<void> {
+  leaveConfirmation.value = false;
   const name = room.value?.title,
     active = document.activeElement,
     focusInside =
@@ -527,12 +534,26 @@ function visibility(): void {
     recheck();
 }
 function navigate(): void {
-  void perform(async () => {
-    const destination = location.pathname;
-    if (room.value) await manage('leave');
-    const route = /^\/rooms\/([a-f0-9]{32})$/.exec(destination);
-    if (route) await open(route[1]!, true);
-  });
+  const destination = location.pathname;
+  if (room.value) {
+    history.replaceState(null, '', `/rooms/${room.value.roomId}`);
+    destinationAfterLeave = destination;
+    leaveConfirmation.value = true;
+    return;
+  }
+  const route = /^\/rooms\/([a-f0-9]{32})$/.exec(destination);
+  if (route) void perform(() => open(route[1]!, true));
+}
+function requestLeave(): void {
+  destinationAfterLeave = undefined;
+  leaveConfirmation.value = true;
+}
+async function confirmLeave(): Promise<void> {
+  const destination = destinationAfterLeave;
+  await manage('leave');
+  if (room.value) return;
+  const route = destination && /^\/rooms\/([a-f0-9]{32})$/.exec(destination);
+  if (route) await open(route[1]!, true);
 }
 function keyboardInput(): void {
   document.documentElement.dataset.input = 'keyboard';
@@ -599,15 +620,16 @@ onUnmounted(() => {
     }}</a>
     <header class="app-header">
       <div class="header-start">
-        <button
+        <a
           class="brand quiet"
           :aria-label="t('app.home')"
-          :disabled="busy"
-          @click="room && perform(() => manage('leave'))"
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
         >
           <span class="brand-mark"><Icon name="play" :size="18" /></span
           ><span>OVS</span><span class="brand-name">Open Video Sync</span>
-        </button>
+        </a>
         <button
           class="quiet command-trigger"
           :aria-label="t('commands.open')"
@@ -634,29 +656,43 @@ onUnmounted(() => {
           <span class="avatar">{{
             Array.from(safeName)[0]?.toUpperCase()
           }}</span
-          ><span class="profile-name">{{ safeName }}</span
-          ><Icon name="chevron" :size="16" />
+          ><span class="profile-name">{{ safeName }}</span>
         </button>
       </div>
     </header>
+    <div
+      id="toast-region"
+      class="toast-region"
+      :data-position="notifications.position"
+    />
     <HelperNotice @ready="helperGeneration++" />
     <main id="main" tabindex="-1">
-      <div v-if="failure" id="app-alert" role="alert" class="notice error">
-        <p>
-          <strong>{{ t('common.error') }}</strong> {{ translate(failure.text) }}
-        </p>
-        <button
-          v-if="failure.reload"
-          id="app-reload"
-          class="quiet"
-          @click="reload"
-        >
-          {{ t('common.reload') }}
-        </button>
-      </div>
-      <div class="app-message" role="status">
-        <p v-if="message" class="notice">{{ translate(message) }}</p>
-      </div>
+      <ToastNotice v-if="failure" @dismiss="failure = undefined"
+        ><div id="app-alert" role="alert" class="notice error">
+          <p>
+            <strong>{{ t('common.error') }}</strong>
+            {{ translate(failure.text) }}
+          </p>
+          <button
+            v-if="failure.reload"
+            id="app-reload"
+            class="quiet"
+            @click="reload"
+          >
+            {{ t('common.reload') }}
+          </button>
+        </div></ToastNotice
+      >
+      <ToastNotice
+        v-if="message"
+        :key="translate(message)"
+        :duration="6000"
+        @dismiss="message = ''"
+      >
+        <div class="app-message" role="status">
+          <p class="notice">{{ translate(message) }}</p>
+        </div>
+      </ToastNotice>
       <template v-if="!identity.session"
         ><div class="initializing">
           <Icon name="screen" :size="32" />
@@ -699,7 +735,7 @@ onUnmounted(() => {
           @share="perform(share)"
           @rotate="perform(() => manage('rotate'))"
           @remove="(id) => perform(() => manage('remove', undefined, id))"
-          @leave="perform(() => manage('leave'))"
+          @leave="requestLeave"
           @close="perform(() => manage('close'))"
         >
           <PlayerPanel
@@ -768,7 +804,7 @@ onUnmounted(() => {
                   :disabled="busy || !!attempt"
                   @click="settingsOpen = true"
                 >
-                  <Icon name="settings" />
+                  <Icon name="sliders" />
                 </button>
               </div>
               <button class="create-submit" :disabled="busy || !!attempt">
@@ -819,6 +855,24 @@ onUnmounted(() => {
       :commands="commands"
       @close="paletteOpen = false"
     />
+    <Modal
+      v-if="leaveConfirmation && room"
+      :title="t('room.leaveTitle')"
+      @close="leaveConfirmation = false"
+    >
+      <p>{{ t('room.leaveWarning') }}</p>
+      <p v-if="failure" class="notice error" role="alert">
+        {{ translate(failure.text) }}
+      </p>
+      <div class="actions">
+        <button class="quiet" autofocus @click="leaveConfirmation = false">
+          {{ t('common.cancel') }}
+        </button>
+        <button :disabled="busy" @click="perform(confirmLeave)">
+          {{ t('room.confirmLeave') }}
+        </button>
+      </div>
+    </Modal>
     <Modal
       v-if="settingsOpen"
       :title="t('common.settings')"

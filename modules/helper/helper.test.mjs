@@ -267,7 +267,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     open = await f.open();
   assert.equal(open.ok, true);
   assert.equal(open.value.tracks.length, 2);
-  assert.equal(open.value.quality, 32);
+  assert.equal(open.value.quality, 64);
   assert.deepEqual(Array.from(open.value.qualities), [64, 32]);
   // A different inspection channel must not invalidate the active media owner.
   const inspection = {
@@ -327,17 +327,24 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     bvid: 'BV1hf4y1N75G',
     part: 1,
     generation: 2,
-    quality: 64,
+    quality: 32,
   });
-  assert.equal(switched.value.quality, 64);
-  assert.equal(switched.value.tracks[0].id, 64);
+  assert.equal(switched.value.quality, 32);
+  assert.equal(switched.value.tracks[0].id, 32);
   assert.equal(
     new URL(
       f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url
     ).searchParams.get('qn'),
-    '64'
+    '32'
   );
   assert(!JSON.stringify(switched).includes(CANARY));
+  const unavailable = await f.call('open', {
+    bvid: 'BV1hf4y1N75G',
+    part: 1,
+    generation: 3,
+    quality: 120,
+  });
+  assert.equal(unavailable.value.quality, 64);
 });
 test('provider failures and restricted access cannot leak raw canaries', async () => {
   for (const options of [

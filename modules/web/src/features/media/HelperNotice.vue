@@ -9,6 +9,7 @@ import {
 } from '../../player/bilibili/bridge';
 import Modal from '../../components/Modal.vue';
 import Icon from '../../components/Icon.vue';
+import ToastNotice from '../../components/ToastNotice.vue';
 const emit = defineEmits<{ ready: [] }>();
 type State =
   | 'checking'
@@ -20,7 +21,8 @@ type State =
   | 'stale';
 const state = ref<State>('checking'),
   installed = ref(''),
-  modal = ref(false);
+  modal = ref(false),
+  toastVisible = ref(true);
 const seen = new Set<string>();
 const lifetime = new AbortController();
 let bridge: HelperBridge | undefined;
@@ -134,27 +136,29 @@ onUnmounted(() => {
 defineExpose({ check });
 </script>
 <template>
-  <aside
-    v-if="state !== 'ready'"
-    class="helper-banner"
-    :aria-label="t('helper.label')"
+  <ToastNotice
+    v-if="state !== 'ready' && toastVisible"
+    @dismiss="toastVisible = false"
+    ><aside class="helper-banner" :aria-label="t('helper.label')">
+      <Icon name="screen" /><span>{{ text }}</span>
+      <template v-if="state !== 'checking'">
+        <button v-if="state === 'stale'" class="quiet" @click="refresh">
+          {{ t('helper.refresh') }}
+        </button>
+        <a
+          v-else-if="state !== 'communication'"
+          class="helper-link"
+          href="/userscripts/ovs-bilibili.user.js"
+          target="_blank"
+          rel="noopener noreferrer"
+          >{{ action }}</a
+        >
+        <button v-if="state !== 'stale'" class="quiet" @click="refresh">
+          {{ t('common.reload') }}
+        </button>
+      </template>
+    </aside></ToastNotice
   >
-    <Icon name="screen" /><span>{{ text }}</span>
-    <template v-if="state !== 'checking'">
-      <button v-if="state === 'stale'" class="quiet" @click="refresh">
-        {{ t('helper.refresh') }}
-      </button>
-      <a
-        v-else-if="state !== 'communication'"
-        class="helper-link"
-        href="/userscripts/ovs-bilibili.user.js"
-        target="_blank"
-        rel="noopener noreferrer"
-        >{{ action }}</a
-      >
-      <button class="quiet" @click="check">{{ t('common.recheck') }}</button>
-    </template>
-  </aside>
   <Modal v-if="modal" :title="t('helper.setup')" @close="modal = false">
     <div class="setup-symbol"><Icon name="screen" :size="32" /></div>
     <h3>{{ text }}</h3>
@@ -170,7 +174,7 @@ defineExpose({ check });
         target="_blank"
         rel="noopener noreferrer"
         >{{ action }}<Icon name="arrow" /></a
-      ><button class="quiet" @click="check">{{ t('common.recheck') }}</button
+      ><button class="quiet" @click="refresh">{{ t('common.reload') }}</button
       ><button class="quiet" @click="modal = false">
         {{ t('helper.later') }}
       </button>

@@ -6,15 +6,17 @@ import Modal from '../components/Modal.vue';
 import AppearancePanel from './AppearancePanel.vue';
 import LanguagePanel from './LanguagePanel.vue';
 import AboutPanel from './AboutPanel.vue';
+import NotificationPanel from './NotificationPanel.vue';
 
 const menuId = useId();
 const menu = ref<HTMLElement>();
 const trigger = ref<HTMLButtonElement>();
 const menuOpen = ref(false);
-const panel = ref<'appearance' | 'language' | 'about'>();
+const panel = ref<'appearance' | 'language' | 'notifications' | 'about'>();
 const options = [
   { value: 'appearance', label: 'common.appearance', icon: 'appearance' },
   { value: 'language', label: 'common.language', icon: 'language' },
+  { value: 'notifications', label: 'common.notifications', icon: 'bell' },
   { value: 'about', label: 'common.about', icon: 'info' },
 ] as const;
 const title = computed(() =>
@@ -124,6 +126,7 @@ onUnmounted(() => window.removeEventListener('resize', closeMenu));
   <Modal v-if="panel" :title="title" @close="panel = undefined">
     <AppearancePanel v-if="panel === 'appearance'" />
     <LanguagePanel v-else-if="panel === 'language'" />
+    <NotificationPanel v-else-if="panel === 'notifications'" />
     <AboutPanel v-else />
   </Modal>
 </template>

@@ -18,7 +18,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Browser Player: Provide a web player for selecting and watching supported videos within a room
 - Interface Language: Support English and Simplified Chinese. Follow the device language by default, with English fallback. Allow immediate browser-local overrides that survive reloads.
 - Appearance: Use a muted, cool accent by default and allow local accent changes. Default to dark mode and allow manual light/dark choices through settings or Quick actions. Remember browser-local choices and respect reduced motion. Keep playback and keyboard actions immediate.
-- Application Settings: Keep only server status, settings, and user identity on the right of the header. Group appearance, language, and About in the settings menu. About shows the Sync service, Web frontend, and Helper script versions bundled in the deployed image.
+- Application Settings: Keep only server status, settings, and user identity on the right of the header. Group appearance, language, notifications, and About in the settings menu. Show notifications as bottom toasts with a browser-local left/center/right position, defaulting to right. About shows the Sync service, Web frontend, and Helper script versions bundled in the deployed image.
 - Quick Actions: Open a searchable menu with Cmd/Ctrl + K or an entry beside the OVS logo. Support English/Chinese action search, `/` command matching, and `$` or direct Bilibili link/BV input. Prefill video selection for explicit confirmation. Respect current room permissions and keep keyboard interaction immediate.
 - Synchronized Playback: Keep play, pause, seeking, and playback position aligned across participants according to room preferences
 - Online Video Support: Support Bilibili video links in the first release, including loading and displaying danmaku; more sources (like YouTube) are planned after the first release
@@ -48,10 +48,12 @@ Keep the product small: select a video, create a room, share an invitation, and 
 
 ## Simplicity boundaries
 
-- Keep invitations reusable until the host resets them or closes the room. Sharing again does not replace the invitation. Removing a member also resets the invitation.
+- Keep invitations reusable until the host resets them or closes the room. Different participants can reuse the same link or code. Sharing again, joining, leaving, and removing a member do not replace the invitation. The host returns through the room URL.
 - Close rooms after everyone leaves. Explicit final departure closes immediately; disconnected pages have 30 seconds to return. Restored rooms have a 60-second startup reconnection window.
 - After host departure, persist Everyone playback control without transferring host management. A returning host can explicitly change that setting.
 - Create rooms with initial media directly on the home page. Invitation links enter automatically. Keep management in dialogs and playback controls inside the player, with local quality and danmaku controls but no speed menu.
+- Confirm room departure in a dialog. Open the OVS logo in a new tab. Bound room content width on ultrawide screens.
+- Toggle shared playback by clicking the video or using Space/K. Use Left/Right for seeking, Up/Down for 10% volume steps, M for mute, D for danmaku, and F for fullscreen. Remember volume, mute, and quality in this browser. Default to unmuted 50% volume and the highest playable quality. Use a dedicated quality menu. Remove the player settings button and open danmaku preferences by hovering its toggle; retain click-to-toggle, keyboard access, and a touch long-press path. Support Enter confirmation in video selection dialogs.
 - Late joiners catch up when ready. A new page takes over playback from the same identity's previous page in that room.
 - Do not add backup/restore commands, restored-credential invalidation, automatic database recovery, metrics services, or playback diagnostic telemetry.
 - Do not expose drift thresholds, correction modes, waiting timeouts, late-join modes, or per-member waiting exclusions.

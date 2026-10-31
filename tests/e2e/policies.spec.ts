@@ -160,6 +160,9 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
     // Explicit host departure changes server permission while preserving actual playback.
     await settings(returned, 'host');
     await returned.getByRole('button', { name: 'Leave', exact: true }).click();
+    await returned
+      .getByRole('button', { name: 'Confirm leave', exact: true })
+      .click();
     await expect(
       late.getByRole('status').filter({
         hasText: 'The host left. Everyone can now control playback.',
@@ -176,6 +179,9 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       )
       .toBe(true);
     await late.getByRole('button', { name: 'Leave', exact: true }).click();
+    await late
+      .getByRole('button', { name: 'Confirm leave', exact: true })
+      .click();
     await expect(
       late.getByRole('heading', { name: 'Start a watch party', exact: true })
     ).toBeVisible();

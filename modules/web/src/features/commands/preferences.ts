@@ -9,7 +9,7 @@ import { languageOptions, useLanguageStore } from '../../stores/language';
 import type { QuickCommand } from './search';
 
 export function usePreferenceCommands(
-  open: (panel: 'appearance' | 'language' | 'about') => void
+  open: (panel: 'appearance' | 'language' | 'notifications' | 'about') => void
 ) {
   const appearance = useAppearanceStore(),
     language = useLanguageStore();
@@ -27,6 +27,12 @@ export function usePreferenceCommands(
           icon: 'language',
           label: 'common.language',
           aliases: 'language locale 语言 设置',
+        },
+        {
+          panel: 'notifications',
+          icon: 'bell',
+          label: 'common.notifications',
+          aliases: 'notifications toast position 通知 提示 位置',
         },
         {
           panel: 'about',

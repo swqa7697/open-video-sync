@@ -35,7 +35,10 @@ test('an outdated helper notice switches languages and clears after an update', 
   i18n.global.locale.value = 'zh-CN';
   const wrapper = mount(HelperNotice, {
     global: {
-      stubs: { Modal: { template: '<div role="dialog"><slot /></div>' } },
+      stubs: {
+        Modal: { template: '<div role="dialog"><slot /></div>' },
+        ToastNotice: { template: '<div><slot /></div>' },
+      },
     },
   });
   try {
@@ -61,7 +64,9 @@ test('an outdated helper notice switches languages and clears after an update', 
       version: 1,
       maxChunk: 262144,
     });
-    await wrapper.get('aside button').trigger('click');
+    // Focus probing can detect an already active replacement script. Installation itself
+    // offers Reload because a newly installed userscript needs document startup.
+    window.dispatchEvent(new Event('focus'));
     await flushPromises();
     expect(wrapper.find('aside').exists()).toBe(false);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);

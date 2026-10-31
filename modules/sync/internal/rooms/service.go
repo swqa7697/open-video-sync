@@ -358,6 +358,9 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 		}
 		c := s.coordinator(id)
 		r := cloneRoom(c.room)
+		if p.IdentityID == r.HostIdentityID {
+			return contracts.Failure("invalid_invitation")
+		}
 		_, existing := member(r, p.IdentityID)
 		if replay {
 			if !existing {
@@ -466,7 +469,7 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 			removed = m.MemberID
 		case "settings":
 			r.Settings = m.Settings
-		case "rotate", "remove":
+		case "rotate":
 			if r.Invite.Generation >= contracts.MaxSafeInteger {
 				return contracts.Failure("capacity_reached")
 			}
@@ -475,10 +478,8 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 				return err
 			}
 			r.Invite = record
-			if m.Operation == "rotate" {
-				result.Invitation = &inv
-			}
-		case "close":
+			result.Invitation = &inv
+		case "close", "remove":
 		default:
 			return contracts.Failure("invalid_input")
 		}
@@ -489,10 +490,7 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 			case "rotate":
 				return tx.ResetInvitation(id, r.Invite)
 			case "remove":
-				if err := tx.RemoveMember(id, removed); err != nil {
-					return err
-				}
-				return tx.ResetInvitation(id, r.Invite)
+				return tx.RemoveMember(id, removed)
 			case "close":
 				return tx.DeleteRoom(id)
 			}

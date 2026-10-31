@@ -17,6 +17,7 @@ test('independent identities manage a private room over direct HTTP', async ({
   browser,
   baseURL,
 }, testInfo) => {
+  test.setTimeout(60000);
   if (!baseURL) throw new Error('Browser base URL required.');
   const failures: string[] = [];
   page.on('pageerror', (error) => failures.push(error.message));
@@ -80,6 +81,48 @@ test('independent identities manage a private room over direct HTTP', async ({
     ).toBeFocused();
     await expect(page).toHaveTitle('Room · Open Video Sync');
     expect(await page.locator('video').getAttribute('src')).toMatch(/^blob:/);
+    await expect(page.locator('#local-volume')).toHaveValue('0.5');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(false);
+    await page.locator('video').click({ position: { x: 150, y: 80 } });
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await page.locator('video').click({ position: { x: 150, y: 80 } });
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await page.locator('.video-stage').press('ArrowUp');
+    await page.locator('.video-stage').press('ArrowUp');
+    await page.locator('.video-stage').press('ArrowDown');
+    await page.locator('.video-stage').press('m');
+    await page.reload();
+    await dismissHelper(page);
+    await expect(page.locator('#local-volume')).toHaveValue('0.6');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(true);
+    await page.locator('.video-stage').press('m');
+    await page.locator('#local-video').setInputFiles(file);
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready'
+    );
+    // Branding is a native link, so normal and middle clicks open a separate page.
+    for (const button of ['left', 'middle'] as const) {
+      const popup = page.context().waitForEvent('page');
+      await page
+        .getByRole('link', { name: 'OVS home', exact: true })
+        .click({ button });
+      const home = await popup;
+      await home.waitForURL('**/');
+      await home.close();
+      await page.bringToFront();
+      await expect(page.locator('.room')).toBeVisible();
+    }
     const roomURL = page.url(),
       inviteURL = await invitationLink(page);
     // The quick video path only prefills the existing confirmation; it cannot publish early.
@@ -162,12 +205,12 @@ test('independent identities manage a private room over direct HTTP', async ({
       await other
         .locator('video')
         .evaluate((video: HTMLVideoElement) => video.muted)
-    ).toBe(false);
+    ).toBe(true);
     expect(
       await page
         .locator('video')
         .evaluate((video: HTMLVideoElement) => video.muted)
-    ).toBe(true);
+    ).toBe(false);
     await runQuickAction(page, '/seek');
     await expect(
       page.getByRole('slider', { name: 'Seek', exact: true })
@@ -205,6 +248,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       }));
     const darkPlayerColors = await playerColors();
     for (const [width, height] of [
+      [2560, 1080],
       [1440, 900],
       [1024, 768],
       [390, 844],
@@ -220,6 +264,9 @@ test('independent identities manage a private room over direct HTTP', async ({
           .check();
         await page.keyboard.press('Escape');
         expect(await playerColors()).toEqual(darkPlayerColors);
+        expect(
+          (await page.locator('.room').boundingBox())!.width
+        ).toBeLessThanOrEqual(1600);
         await page.screenshot({
           path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
           fullPage: true,
@@ -233,7 +280,6 @@ test('independent identities manage a private room over direct HTTP', async ({
       for (const control of [
         page.locator('.video-stage'),
         page.getByRole('button', { name: 'Fullscreen locally', exact: true }),
-        page.getByRole('button', { name: 'Player settings', exact: true }),
       ]) {
         const bounds = await control.boundingBox();
         expect(bounds).not.toBeNull();
@@ -303,6 +349,24 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       other.getByRole('status').filter({ hasText: 'You were removed' })
     ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Leave', exact: true })
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Leave', exact: true }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'Leave this room?' })
+    ).toBeVisible();
+    await page
+      .getByRole('dialog', { name: 'Leave this room?' })
+      .evaluate((node) =>
+        Promise.all(node.getAnimations().map((animation) => animation.finished))
+      );
+    await page.screenshot({
+      path: testInfo.outputPath('leave-confirmation.png'),
+      animations: 'disabled',
+    });
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.locator('.room')).toBeVisible();
     await closeRoom(page);
     await expect(
       page.getByRole('heading', { name: 'Start a watch party', exact: true })
@@ -333,10 +397,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(cookie?.secure).toBe(false);
     expect(
       await page.evaluate(() => ({
-        local: Object.keys(localStorage),
+        local: Object.keys(localStorage).sort(),
         session: sessionStorage.length,
       }))
-    ).toEqual({ local: ['ovs.appearance'], session: 0 });
+    ).toEqual({ local: ['ovs.appearance', 'ovs.player'], session: 0 });
     expect(failures).toEqual([]);
   } finally {
     await guest.close();
@@ -443,6 +507,35 @@ test('settings groups local preferences and shows packaged component versions', 
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
   }
+  await expect(page.locator('#toast-region')).toHaveAttribute(
+    'data-position',
+    'right'
+  );
+  const mainTop = (await page.getByRole('main').boundingBox())!.y;
+  for (const position of ['Left', 'Center']) {
+    await openAppPanel(page, 'Notifications');
+    await page.getByRole('radio', { name: position, exact: true }).check();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#toast-region')).toHaveAttribute(
+      'data-position',
+      position.toLowerCase()
+    );
+    expect((await page.getByRole('main').boundingBox())!.y).toBe(mainTop);
+  }
+  await page.reload();
+  await dismissHelper(page);
+  await expect(page.locator('#toast-region')).toHaveAttribute(
+    'data-position',
+    'center'
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('toast-mobile-center.png'),
+  });
+  await openAppPanel(page, 'Notifications');
+  await expect(
+    page.getByRole('radio', { name: 'Center', exact: true })
+  ).toBeChecked();
+  await page.keyboard.press('Escape');
 });
 
 // Appearance is a browser preference, independent of identity and room lifecycle.
@@ -534,6 +627,23 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   ).toBe(true);
   await page.keyboard.press('Escape');
   await expect(appearance).toBeFocused();
+  await openAppearance();
+  await page.getByRole('radio', { name: 'Quiet teal' }).check();
+  const teal = await accent();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await dismissHelper(page);
+  await expect.poll(accent).toBe(teal);
+  await openAppearance();
+  await expect(page.getByRole('radio', { name: 'Quiet teal' })).toBeChecked();
+  await dialog.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished))
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('appearance-expanded-mobile.png'),
+    animations: 'disabled',
+  });
+  await page.keyboard.press('Escape');
   // Keyboard entry/exit is immediate; reduced motion uses a short fade without scaling.
   await appearance.press('ArrowDown');
   await page

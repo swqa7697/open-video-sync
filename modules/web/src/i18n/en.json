@@ -37,7 +37,9 @@
     "localFile": "Local file",
     "localFileLabel": "LOCAL FILE",
     "appSettings": "Settings",
-    "about": "About"
+    "about": "About",
+    "notifications": "Notifications",
+    "dismissNotification": "Dismiss notification"
   },
   "app": {
     "description": "Private, self-hosted synchronized viewing. Video stays in each participant’s browser.",
@@ -78,7 +80,7 @@
     "join": "Join",
     "privacy": "Your media stays yours. Only playback stays in sync.",
     "footerTogether": "Made for watching together",
-    "footerPrivate": "Private rooms. Your own media.",
+    "footerPrivate": "Private rooms.",
     "applySettings": "Apply settings",
     "profile": "Your profile",
     "defaultRoomName": "Watch party",
@@ -87,12 +89,12 @@
     "recoveryFailed": "The original room could not be recovered. No second room was created. You can start a new request.",
     "preferencesSaved": "Preferences saved.",
     "invitationReplaced": "Invitation replaced. Previous links and codes no longer work.",
-    "participantRemoved": "Participant removed. The invitation was replaced.",
+    "participantRemoved": "Participant removed.",
     "alreadyLeft": "That participant already left.",
     "closedRoom": "You closed “{title}”.",
     "leftRoom": "You left “{title}”.",
     "hostClosed": "The host closed {room}.",
-    "removed": "You were removed from {room}. Ask the host for a new invitation.",
+    "removed": "You were removed from {room}.",
     "unavailable": "{room} is no longer available to you.",
     "sessionEnded": "Your identity session ended in this browser. Reload to continue with a new identity.",
     "connectionEnded": "The room connection ended. Reload to continue.",
@@ -146,7 +148,10 @@
     "closeWarning": "Everyone will leave and this invitation will stop working. This cannot be undone.",
     "confirmClose": "Confirm close room",
     "copied": "Copied.",
-    "selected": "Text selected. Use your browser’s Copy action."
+    "selected": "Text selected. Use your browser’s Copy action.",
+    "leaveTitle": "Leave this room?",
+    "leaveWarning": "You can return with an invitation while the room is open. If you are the last viewer, leaving closes the room.",
+    "confirmLeave": "Confirm leave"
   },
   "members": {
     "participants": "Participants",
@@ -183,7 +188,13 @@
     "neutral": "Graphite",
     "saved": "Your preferences are saved on this device.",
     "unsaved": "Browser storage is unavailable. Changes last until you reload this page.",
-    "modeHint": "Dark by default. Choose a mode here or in Quick actions."
+    "modeHint": "Dark by default. Choose a mode here or in Quick actions.",
+    "teal": "Quiet teal",
+    "sage": "Sage green",
+    "rose": "Dusty rose",
+    "amber": "Warm amber",
+    "ocean": "Ocean blue",
+    "clay": "Soft clay"
   },
   "language": {
     "label": "Interface language",
@@ -227,7 +238,7 @@
     "label": "Playback helper",
     "refresh": "Refresh application",
     "setup": "Set up Bilibili playback",
-    "instructions": "Install the Tampermonkey browser extension independently. Then install and enable the OVS helper from this instance.",
+    "instructions": "Install the helper in Tampermonkey, then reload this OVS page to activate the script.",
     "version": "Installed {installed} · Required {required}",
     "installHint": "Confirm replacement when updating an existing helper. Return here and refresh OVS if needed. Local files work without the helper.",
     "later": "Later",
@@ -265,7 +276,7 @@
     "applyFailed": "The player could not apply room state. Reload the media.",
     "blocked": "The browser still blocked playback. Select Enable playback again, or allow autoplay for this site.",
     "decodeFailed": "This browser cannot decode this video. Try another file or browser.",
-    "shortcuts": "Video player. Space to play or pause, arrows to seek, M to mute, F for fullscreen.",
+    "shortcuts": "Player: Space/K play or pause, Left/Right seek, Up/Down volume, M mute, D danmaku, F fullscreen",
     "roomVideo": "Room video",
     "moved": "Playback moved to another page",
     "movedHint": "This room is open elsewhere. Playback continues in the newer page.",
@@ -299,10 +310,7 @@
     "mutedVolume": "{volume}% (muted)",
     "showDanmaku": "Show danmaku locally",
     "quality": "Quality",
-    "settings": "Player settings",
     "fullscreen": "Fullscreen locally",
-    "preferences": "Playback preferences",
-    "closeSettings": "Close player settings",
     "volume": "Volume",
     "videoQuality": "Video quality",
     "qualityHint": "Quality is available after the video loads.",
@@ -326,7 +334,10 @@
     "danmakuLoading": "Loading danmaku…",
     "danmakuLoaded": "Danmaku loaded",
     "danmakuEmpty": "No danmaku in this segment",
-    "danmakuUnavailable": "Danmaku unavailable. Reload danmaku to retry."
+    "danmakuUnavailable": "Danmaku unavailable. Reload danmaku to retry.",
+    "danmakuSettings": "Danmaku settings",
+    "closeDanmakuSettings": "Close danmaku settings",
+    "danmakuSettingsHint": "Click to toggle danmaku. Hover or long press for settings; use ↓ on the keyboard."
   },
   "local": {
     "matchTimeout": "Local matching timed out. Select the file again.",
@@ -387,5 +398,12 @@
     "loading": "Loading versions…",
     "unavailable": "Versions are unavailable. Try again.",
     "retry": "Retry"
+  },
+  "notifications": {
+    "hint": "Notifications appear at the bottom without moving the page. This choice stays in this browser.",
+    "position": "Notification position",
+    "left": "Left",
+    "center": "Center",
+    "right": "Right"
   }
 }
