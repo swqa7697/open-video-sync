@@ -136,7 +136,11 @@ const commands = computed<QuickCommand[]>(() => [
 defineExpose({ commands });
 </script>
 <template>
-  <section class="room" aria-labelledby="room-title">
+  <section
+    class="room"
+    :class="{ 'with-members': membersOpen && !narrow }"
+    aria-labelledby="room-title"
+  >
     <div class="room-toolbar">
       <div class="room-heading">
         <span class="eyebrow">{{ t('room.private') }}</span>
@@ -188,10 +192,7 @@ defineExpose({ commands });
         </button>
       </div>
     </div>
-    <div
-      class="room-layout"
-      :class="{ 'with-members': membersOpen && !narrow }"
-    >
+    <div class="room-layout">
       <div class="viewing-column"><slot /></div>
       <aside v-if="membersOpen && !narrow" class="member-panel">
         <RoomSidebar

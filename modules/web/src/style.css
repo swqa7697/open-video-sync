@@ -896,18 +896,27 @@ fieldset select {
   letter-spacing: 0.13em;
 }
 .room {
-  padding: 0 clamp(1rem, 3vw, 3rem) 20px;
+  --room-gutter: clamp(1rem, 3vw, 3rem);
+  --room-sidebar-width: 0px;
+  --player-max-height: max(250px, calc(100dvh - 370px));
+  padding: 0 var(--room-gutter) 20px;
+  width: 100%;
   max-width: 1600px;
   margin: auto;
 }
+.room.with-members {
+  --room-sidebar-width: 260px;
+}
 .room-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
   padding: 24px 0;
 }
 .room-heading {
+  flex: 1 1 160px;
   min-width: 0;
 }
 .room-heading .eyebrow {
@@ -917,16 +926,19 @@ fieldset select {
   font-size: 1.2rem;
   letter-spacing: -0.02em;
   margin-top: 4px;
-  max-width: 60vw;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .room-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+  max-width: 100%;
+  margin-left: auto;
 }
 .room-actions button {
   min-height: 40px;
@@ -952,8 +964,8 @@ fieldset select {
   overflow: clip;
   background: var(--surface);
 }
-.room-layout.with-members {
-  grid-template-columns: minmax(0, 1fr) 260px;
+.room.with-members .room-layout {
+  grid-template-columns: minmax(0, 1fr) var(--room-sidebar-width);
 }
 .viewing-column {
   min-width: 0;
@@ -1185,7 +1197,7 @@ fieldset select {
   background: #080b10;
   color: var(--text);
   aspect-ratio: 16/9;
-  max-height: calc(100dvh - 315px);
+  max-height: var(--player-max-height);
   min-height: 250px;
   isolation: isolate;
   overflow: hidden;
@@ -1592,20 +1604,13 @@ fieldset select {
   .member-panel {
     max-height: calc(100dvh - 210px);
   }
-  .video-stage {
-    max-height: calc(100dvh - 300px);
-  }
 }
 @media (max-width: 1000px) {
   .brand-name {
     display: none;
   }
-  .room-layout.with-members {
-    grid-template-columns: minmax(0, 1fr) 225px;
-  }
   .room {
-    padding-left: 20px;
-    padding-right: 20px;
+    --room-gutter: 20px;
   }
   .roster .remove-member {
     font-size: 0.6rem;
@@ -1619,9 +1624,6 @@ fieldset select {
   }
   .playback-status {
     padding: 0 16px 14px;
-  }
-  .room-heading h2 {
-    max-width: 40vw;
   }
   .player-controls {
     padding-left: 12px;
@@ -1727,7 +1729,8 @@ fieldset select {
     display: none;
   }
   .room {
-    padding: 0 12px 24px;
+    --room-gutter: 12px;
+    padding-bottom: 24px;
   }
   .room-toolbar {
     padding: 18px 3px;
@@ -1940,12 +1943,16 @@ fieldset select {
   margin: 0 0 20px;
 }
 
-.shell {
-  --player-space: 370px;
-}
 @media (min-width: 761px) {
-  .video-stage {
-    max-height: calc(100dvh - var(--player-space));
+  .room {
+    /* Include the sidebar, page gutters, and layout border in the player height budget. */
+    max-width: min(
+      1600px,
+      calc(
+        var(--player-max-height) * 16 / 9 + var(--room-sidebar-width) +
+          var(--room-gutter) * 2 + 2px
+      )
+    );
   }
 }
 .played-track {

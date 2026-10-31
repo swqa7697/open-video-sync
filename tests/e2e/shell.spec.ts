@@ -288,9 +288,12 @@ test('independent identities manage a private room over direct HTTP', async ({
       }));
     const darkPlayerColors = await playerColors();
     for (const [width, height] of [
+      [3440, 1145],
+      [1966, 654],
       [2560, 1080],
       [1440, 900],
       [1024, 768],
+      [900, 500],
       [390, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
@@ -307,10 +310,40 @@ test('independent identities manage a private room over direct HTTP', async ({
         expect(
           (await page.locator('.room').boundingBox())!.width
         ).toBeLessThanOrEqual(1600);
+        if (width! > 760) {
+          const stage = (await page.locator('.video-stage').boundingBox())!;
+          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
+            1
+          );
+        }
         await page.screenshot({
           path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
           fullPage: true,
         });
+      }
+      if (width! > 760) {
+        const members = page.locator('.room-actions button[aria-expanded]');
+        for (const expanded of [false, true]) {
+          await members.click();
+          await expect(members).toHaveAttribute(
+            'aria-expanded',
+            String(expanded)
+          );
+          const stage = (await page.locator('.video-stage').boundingBox())!;
+          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
+            1
+          );
+          const toolbar = (await page.locator('.room-actions').boundingBox())!;
+          const room = (await page.locator('.room').boundingBox())!;
+          expect(toolbar.x).toBeGreaterThanOrEqual(room.x);
+          expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+            room.x + room.width
+          );
+          if (width === 1966 && !expanded)
+            await page.screenshot({
+              path: testInfo.outputPath('room-short-without-sidebar.png'),
+            });
+        }
       }
       expect(
         await page.evaluate(
