@@ -1,6 +1,6 @@
 services:
   ovs:
-    image: ovs:dev
+    image: ${IMAGE:?Set IMAGE from the combined sync/web/helper versions in versions.toml}
     build:
       context: ..
       pull: true

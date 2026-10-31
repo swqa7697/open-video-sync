@@ -34,7 +34,15 @@ export function readVersions() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const versions = readVersions();
   const name = process.argv[2];
-  if (!Object.hasOwn(versions, name))
-    throw new Error('Usage: node scripts/versions.mjs sync|web|helper');
-  process.stdout.write(`${versions[name]}\n`);
+  if (name === 'image-tag') {
+    process.stdout.write(
+      `s${versions.sync}-w${versions.web}-h${versions.helper}\n`
+    );
+  } else {
+    if (!Object.hasOwn(versions, name))
+      throw new Error(
+        'Usage: node scripts/versions.mjs sync|web|helper|image-tag'
+      );
+    process.stdout.write(`${versions[name]}\n`);
+  }
 }

@@ -182,9 +182,9 @@ func TestDeploymentSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	call(request{Action: "install-compose", Artifact: "compose-upload-test", SHA256: digest})
-	baseImage := os.Getenv("IMAGE")
-	if baseImage == "" {
-		baseImage = "ovs:dev"
+	baseImage, err := smoke.ApplicationImage(filepath.Join(root, "versions.toml"))
+	if err != nil {
+		t.Fatal(err)
 	}
 	image := "ovs:deploy-" + name
 	docker("tag", baseImage, image)

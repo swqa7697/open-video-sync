@@ -19,7 +19,20 @@ import (
 	"github.com/coder/websocket"
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
+	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/versions"
 )
+
+// ApplicationImage returns IMAGE or the application tag from the release manifest.
+func ApplicationImage(manifest string) (string, error) {
+	if image := os.Getenv("IMAGE"); image != "" {
+		return image, nil
+	}
+	modules, err := versions.Read(manifest)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("ovs:s%s-w%s-h%s", modules["sync"], modules["web"], modules["helper"]), nil
+}
 
 // Run executes name with args and extra environment entries and returns trimmed combined output.
 func Run(ctx context.Context, env []string, name string, args ...string) (string, error) {

@@ -162,8 +162,13 @@ require a real public server and remain a separate acceptance step.
 Build the image with `make image`. Start the Compose application from the repository root:
 
 ```bash
+export IMAGE="ovs:$(node scripts/versions.mjs image-tag)"
 docker compose -f deploy/compose.yaml up -d --wait
 ```
+
+Compose requires `IMAGE` in the shell environment for all manual recipes below.
+The export command combines all three module versions from root `versions.toml` as `ovs:s<sync>-w<web>-h<helper>`, matching the default tag from `make image`.
+Export `IMAGE` again in a new shell or after changing versions. For a custom image name, export that name before `make image`.
 
 The default publication is `127.0.0.1:8080`. The named volume preserves `/data` across container replacement.
 The application runs without root privileges and with a read-only root filesystem.

@@ -198,8 +198,8 @@ Run `make help` to list the available targets.
 | `release-commit`                         | Preview, stage, commit, and push release files after confirmation                                                      |
 | `release-tag`                            | Confirm and push an annotated `vX.Y.Z` tag from clean, current `main`                                                  |
 
-`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `versions.toml` supplies all module release versions; `versions.sync` selects the application version.
-Container targets accept `IMAGE=ovs:dev`; `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
+`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `versions.toml` supplies all module release versions; `versions.sync` selects the Go binary version.
+Container targets default to `ovs:s<sync>-w<web>-h<helper>`, using all three module versions, and accept an `IMAGE` override. The prefixes `s`, `w`, and `h` identify sync, web, and helper. `node scripts/versions.mjs image-tag` prints the combined tag without the `ovs:` prefix. `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
 
 Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
 Use `VERBOSE=1` to show recipe commands and enable tracing in installation and build scripts.
@@ -318,9 +318,13 @@ for prerequisites, proxy integration, persistence, and failure handling.
 For manual deployment, build the image and start Compose from the repository root:
 
 ```bash
+export IMAGE="ovs:$(node scripts/versions.mjs image-tag)"
 make image
 OVS_PUBLIC_ORIGIN=http://127.0.0.1:8080 docker compose -f deploy/compose.yaml up -d --wait
 ```
+
+Compose requires `IMAGE` in the shell environment. The command above combines the sync, web, and helper versions from `versions.toml`.
+Export `IMAGE` again in a new shell or after changing versions. To use a custom image name, export that name before building and starting Compose.
 
 Compose publishes OVS on `127.0.0.1:8080` and keeps `/data` in a named volume. For LAN access, set the Compose-only variable `OVS_BIND_ADDR` to the host's LAN address and `OVS_PUBLIC_ORIGIN` to the matching browser origin.
 OVS itself never reads `OVS_BIND_ADDR`. Direct HTTP needs no certificate, but it does not protect traffic on the network.
@@ -330,7 +334,7 @@ Give each OVS instance its own host name. Browsers share cookies across ports of
 
 To update OVS:
 
-1. Check out the new version and run `make image`.
+1. Check out the new version, refresh `IMAGE` with the export command above, and run `make image`.
 2. Stop the stack with `docker compose -f deploy/compose.yaml down`. Keep the named volume.
 3. Optionally make a stopped-directory copy, as described below.
 4. Start the stack again with the same `OVS_PUBLIC_ORIGIN` and `up -d --wait`.

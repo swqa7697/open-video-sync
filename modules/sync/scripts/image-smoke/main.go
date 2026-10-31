@@ -29,7 +29,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	image := flag.String("image", "ovs:dev", "application image")
+	defaultImage, err := smoke.ApplicationImage("versions.toml")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	image := flag.String("image", defaultImage, "application image")
 	flag.Parse()
 	if err := run(*image); err != nil {
 		fmt.Fprintln(os.Stderr, err)

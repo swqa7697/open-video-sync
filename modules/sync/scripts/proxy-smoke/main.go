@@ -39,7 +39,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	image := flag.String("image", "ovs:dev", "application image")
+	defaultImage, err := smoke.ApplicationImage("versions.toml")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	image := flag.String("image", defaultImage, "application image")
 	caddy := flag.String("caddy", "caddy:2", "Caddy image")
 	flag.Parse()
 	if err := run(*image, *caddy); err != nil {
@@ -75,16 +80,19 @@ func run(image, caddyImage string) (err error) {
 		return err
 	}
 	compose := []string{"compose", "-p", name, "-f", "deploy/compose.yaml", "-f", "deploy/compose.caddy.yaml", "-f", filepath.Join(directory, "override.yaml")}
+	runCompose := func(ctx context.Context, args ...string) (string, error) {
+		return smoke.Run(ctx, []string{"IMAGE=" + image}, "docker", append(compose, args...)...)
+	}
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if logs, logErr := smoke.Docker(cleanup, append(compose, "logs", "--no-color", "ovs")...); logErr == nil {
+		if logs, logErr := runCompose(cleanup, "logs", "--no-color", "ovs"); logErr == nil {
 			_ = os.WriteFile(filepath.Join(directory, "ovs.log"), []byte(logs+"\n"), 0o600)
 		}
 		if logs, logErr := smoke.Docker(cleanup, "logs", caddy); logErr == nil {
 			_ = os.WriteFile(filepath.Join(directory, "caddy.log"), []byte(logs+"\n"), 0o600)
 		}
-		_, _ = smoke.Docker(cleanup, append(compose, "down", "-v", "--remove-orphans")...)
+		_, _ = runCompose(cleanup, "down", "-v", "--remove-orphans")
 		_, _ = smoke.Docker(cleanup, "rm", "-f", "-v", caddy)
 		_, _ = smoke.Docker(cleanup, "network", "rm", network)
 	}()
@@ -92,7 +100,7 @@ func run(image, caddyImage string) (err error) {
 	if result.ImageID, err = smoke.Docker(ctx, "image", "inspect", "--format", "{{.Id}}", image); err != nil {
 		return err
 	}
-	if err := writeConfig(directory, image, network); err != nil {
+	if err := writeConfig(directory, network); err != nil {
 		return err
 	}
 	if _, err := smoke.Docker(ctx, "network", "create", network); err != nil {
@@ -112,7 +120,7 @@ func run(image, caddyImage string) (err error) {
 		return fmt.Errorf("read Caddy address %q: %v", caddyIP, err)
 	}
 	// Trust only Caddy itself. Other peers on the network, including the gateway, stay untrusted.
-	env := []string{"OVS_PUBLIC_ORIGIN=" + publicOrigin, "OVS_TRUSTED_PROXIES=" + caddyIP + "/32"}
+	env := []string{"IMAGE=" + image, "OVS_PUBLIC_ORIGIN=" + publicOrigin, "OVS_TRUSTED_PROXIES=" + caddyIP + "/32"}
 	if _, err := smoke.Run(ctx, env, "docker", append(compose, "up", "-d", "--wait", "--wait-timeout", "60", "--no-build", "--pull", "never")...); err != nil {
 		return err
 	}
@@ -120,7 +128,7 @@ func run(image, caddyImage string) (err error) {
 	if err != nil {
 		return err
 	}
-	directPort, err := smoke.Docker(ctx, append(compose, "port", "ovs", "8080")...)
+	directPort, err := runCompose(ctx, "port", "ovs", "8080")
 	if err != nil {
 		return err
 	}
@@ -151,11 +159,11 @@ func run(image, caddyImage string) (err error) {
 	if err := checkAddresses(ctx, httpClient, directPort, &result); err != nil {
 		return err
 	}
-	container, err := smoke.Docker(ctx, append(compose, "ps", "-q", "ovs")...)
+	container, err := runCompose(ctx, "ps", "-q", "ovs")
 	if err != nil {
 		return err
 	}
-	if _, err := smoke.Docker(ctx, append(compose, "stop", "--timeout", "15")...); err != nil {
+	if _, err := runCompose(ctx, "stop", "--timeout", "15"); err != nil {
 		return err
 	}
 	exit, err := smoke.Docker(ctx, "inspect", "--format", "{{.State.ExitCode}}", container)
@@ -174,8 +182,8 @@ func run(image, caddyImage string) (err error) {
 }
 
 // writeConfig renders the shipped container Caddyfile with a local CA and a harness-only
-// Compose override that selects the image, network, and a loopback port for direct probes.
-func writeConfig(directory, image, network string) error {
+// Compose override that selects the network and a loopback port for direct probes.
+func writeConfig(directory, network string) error {
 	example, err := os.ReadFile(filepath.Join("deploy", "Caddyfile.container.example"))
 	if err != nil {
 		return err
@@ -187,7 +195,7 @@ func writeConfig(directory, image, network string) error {
 	if err := os.WriteFile(filepath.Join(directory, "Caddyfile"), []byte(caddyfile), 0o644); err != nil {
 		return err
 	}
-	override := fmt.Sprintf("services:\n  ovs:\n    image: %s\n    ports: !override [\"127.0.0.1::8080\"]\nnetworks:\n  proxy:\n    name: %s\n", image, network)
+	override := fmt.Sprintf("services:\n  ovs:\n    ports: !override [\"127.0.0.1::8080\"]\nnetworks:\n  proxy:\n    name: %s\n", network)
 	return os.WriteFile(filepath.Join(directory, "override.yaml"), []byte(override), 0o600)
 }
 
