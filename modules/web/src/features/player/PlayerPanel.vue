@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import {
+  t,
+  message,
+  translate,
+  errorMessage,
+  i18n,
+  type Message,
+} from '../../i18n';
+
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
@@ -37,29 +46,29 @@ const emit = defineEmits<{
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
-const danmakuStatus = ref(''),
+const danmakuStatus = ref<Message | ''>(''),
   showDanmaku = ref(true),
   density = ref(20),
   danmakuSize = ref(20);
 let publishing = false;
 const video = ref<HTMLVideoElement>(),
   heading = ref<HTMLElement>(),
-  status = ref('Connecting…'),
-  error = ref(''),
+  status = ref<Message>(message('player.connecting')),
+  error = ref<Message | ''>(''),
   errorReload = ref(false),
-  roomError = ref(''),
+  roomError = ref<Message | ''>(''),
   roomErrorReload = ref(false),
   mediaStatus = ref<ReadinessStatus>('no_media'),
-  calibration = ref('Calibrating clocks…');
+  calibration = ref<Message>(message('player.calibrating'));
 // Sampled every 250 ms; only a changed label re-renders the panel.
 let quality: SyncQualityState = {
   quality: 'calibrating',
   degradedSince: undefined,
 };
 const qualityText = {
-  calibrating: 'Calibrating clocks…',
-  calibrated: 'Clock calibrated',
-  degraded: 'Synchronization may drift (unstable network timing)',
+  calibrating: message('player.calibrating'),
+  calibrated: message('player.calibrated'),
+  degraded: message('player.degraded'),
 };
 const active = ref(false),
   connected = ref(false),
@@ -115,9 +124,9 @@ const qualityName = (value: number): string =>
     116: '1080p 60',
     120: '4K',
     125: 'HDR',
-    126: 'Dolby Vision',
+    126: t('player.dolby'),
     127: '8K',
-  })[value] ?? `Quality ${value}`;
+  })[value] ?? t('player.qualityNumber', { value });
 const waitTimedOut = ref(false),
   replaced = ref(false);
 const current = ref(props.room);
@@ -137,17 +146,12 @@ const matched = computed(() =>
 );
 // One reason, in priority order, explains why room controls are unavailable.
 const controlNote = computed(() => {
-  if (replaced.value) return 'This page no longer controls playback.';
-  if (!connected.value || !active.value)
-    return 'Reconnecting. Room controls return when the connection is restored.';
-  if (uncertain.value)
-    return 'Checking the previous command before accepting another.';
-  if (!permitted.value)
-    return 'Only the host can play, pause, or seek in this room. Volume, mute, and fullscreen stay local.';
+  if (replaced.value) return t('player.controlReplaced');
+  if (!connected.value || !active.value) return t('player.controlReconnecting');
+  if (uncertain.value) return t('player.controlUncertain');
+  if (!permitted.value) return t('player.controlHost');
   if (!current.value.media)
-    return host.value
-      ? 'Select a video for the room to enable playback controls.'
-      : 'Waiting for the host to select a video.';
+    return host.value ? t('player.controlSelect') : t('player.controlWait');
   return '';
 });
 const canPlay = computed(
@@ -177,20 +181,23 @@ const blockers = computed(() => {
 const waitingText = computed(() => {
   const barrier = current.value.barrier;
   if (!barrier) return '';
-  const at = `${(barrier.targetPositionMs / 1000).toFixed(1)} seconds`;
+  const seconds = (barrier.targetPositionMs / 1000).toFixed(1);
   const names = blockers.value.map((m) =>
-    m.memberId === current.value.selfMemberId ? 'you' : m.displayName
+    m.memberId === current.value.selfMemberId
+      ? t('common.youLower')
+      : m.displayName
   );
-  if (!names.length) return `Waiting at ${at} for readiness to settle.`;
+  if (!names.length) return t('player.waitSettling', { seconds });
   const shown = names.slice(0, 5),
     more = names.length - shown.length;
-  const list =
-    more > 0
-      ? `${shown.join(', ')}, and ${more} more`
-      : shown.length > 1
-        ? `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`
-        : shown[0];
-  return `Waiting at ${at} for ${list}.`;
+  const list = new Intl.ListFormat(i18n.global.locale.value, {
+    type: 'conjunction',
+  }).format(shown);
+  return t('player.waitingFor', {
+    seconds,
+    names:
+      more > 0 ? t('player.moreNames', { names: list, count: more }) : list,
+  });
 });
 let adapter: PlayerAdapter | undefined;
 let autoAttempt = '';
@@ -352,13 +359,13 @@ async function fullscreen(): Promise<void> {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await stage.value?.requestFullscreen();
   } catch {
-    error.value = 'Fullscreen is unavailable in this browser.';
+    showError(message('player.fullscreenUnavailable'));
   }
 }
 function reloadDanmaku(): void {
   if (adapter instanceof BilibiliAdapter) adapter.reloadDanmaku();
 }
-function showError(value: string, reload = false): void {
+function showError(value: Message | '', reload = false): void {
   error.value = value;
   errorReload.value = reload;
 }
@@ -389,7 +396,7 @@ async function chooseBilibili(
       if (adapter === local) danmakuStatus.value = value;
     },
     (failure) => {
-      if (adapter === local) showError(failure.message, failure.reload);
+      if (adapter === local) showError(failure.text, failure.reload);
     }
   );
   adapter = local;
@@ -420,7 +427,7 @@ async function chooseBilibili(
         reason instanceof HelperError
           ? reason
           : new HelperError('invalid-media');
-      showError(failure.message, failure.reload);
+      showError(failure.text, failure.reload);
       clearMedia();
       // Platform access failures reach other participants as access_denied readiness.
       mediaStatus.value = failure.status;
@@ -481,9 +488,7 @@ async function loadLocal(
     await sample();
   } catch (reason) {
     if (!signal.aborted && generation === selectionGeneration) {
-      showError(
-        reason instanceof Error ? reason.message : 'Local matching failed.'
-      );
+      showError(errorMessage(reason, 'player.localFailed'));
       const failed =
         local.getState().status === 'unsupported' ? 'unsupported' : 'error';
       clearMedia();
@@ -686,7 +691,7 @@ async function sample(): Promise<void> {
         !(reason instanceof DOMException && reason.name === 'AbortError') &&
         local.getState().status !== 'gesture_required'
       )
-        showError('The player could not apply room state. Reload the media.');
+        showError(message('player.applyFailed'));
     }
     if (adapter !== local || disposed) return;
     mediaStatus.value = local.getState().status;
@@ -767,8 +772,8 @@ async function enable(): Promise<void> {
     }
     showError(
       local.getState().status === 'gesture_required'
-        ? 'The browser still blocked playback. Select Enable playback again, or allow autoplay for this site.'
-        : 'This browser cannot decode this video. Try another file or browser.'
+        ? message('player.blocked')
+        : message('player.decodeFailed')
     );
   }
 }
@@ -802,14 +807,14 @@ onUnmounted(() => {
 <template>
   <section class="player-panel" aria-labelledby="player-title">
     <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">
-      Watch together
+      {{ t('common.watchTogether') }}
     </h3>
     <div
       ref="stage"
       class="video-stage"
       :class="{ 'controls-idle': idle && isPlaying && !playerMenu }"
       tabindex="0"
-      aria-label="Video player. Space to play or pause, arrows to seek, M to mute, F for fullscreen."
+      :aria-label="t('player.shortcuts')"
       @keydown="keyboard"
       @pointermove="wake"
       @pointerdown="wake"
@@ -822,54 +827,51 @@ onUnmounted(() => {
         playsinline
         :muted="muted"
         :volume="volume"
-        aria-label="Room video"
+        :aria-label="t('player.roomVideo')"
       />
       <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
       <div v-if="replaced" class="player-state">
         <Icon name="screen" :size="36" />
-        <h3>Playback moved to another page</h3>
-        <p>
-          This room is open elsewhere. Playback continues in the newer page.
-        </p>
-        <button @click="reload">Use this page</button>
+        <h3>{{ t('player.moved') }}</h3>
+        <p>{{ t('player.movedHint') }}</p>
+        <button @click="reload">{{ t('player.usePage') }}</button>
       </div>
       <div v-else-if="error && !loading" class="player-state" role="alert">
         <Icon name="screen" :size="32" />
-        <p>{{ error }}</p>
-        <button v-if="errorReload" @click="reload">Reload page</button
+        <p>{{ translate(error) }}</p>
+        <button v-if="errorReload" @click="reload">
+          {{ t('common.reload') }}</button
         ><button
           v-else-if="current.media?.kind === 'bilibili'"
           @click="retryMedia"
         >
-          Retry video</button
+          {{ t('player.retryVideo') }}</button
         ><button v-else type="button" class="file-button" @click="chooseFile">
-          Choose another file
+          {{ t('common.chooseAnother') }}
         </button>
       </div>
       <div v-else-if="mediaStatus === 'gesture_required'" class="player-state">
         <Icon name="play" :size="36" />
-        <h3>Join the moment</h3>
-        <p>Your browser needs permission to play this video.</p>
-        <button @click="enable">Enable playback</button>
+        <h3>{{ t('player.joinMoment') }}</h3>
+        <p>{{ t('player.permission') }}</p>
+        <button @click="enable">{{ t('player.enable') }}</button>
       </div>
       <div
         v-else-if="!descriptor && !loading && current.media?.kind === 'local'"
         class="player-state"
       >
         <span class="state-symbol"><Icon name="file" :size="34" /></span>
-        <h3>Your seat is ready</h3>
-        <p>Select your copy of the room’s video to watch together.</p>
+        <h3>{{ t('player.seatReady') }}</h3>
+        <p>{{ t('player.selectCopy') }}</p>
         <label class="file-button" for="local-video"
-          ><Icon name="plus" />Choose matching video</label
-        ><small>Your file stays on your device.</small>
+          ><Icon name="plus" />{{ t('player.matchingVideo') }}</label
+        ><small>{{ t('player.filePrivate') }}</small>
       </div>
       <div v-else-if="mediaStatus === 'mismatch'" class="player-state">
-        <h3>A different video</h3>
-        <p>
-          This video does not match the room. Choose the same file as the host.
-        </p>
+        <h3>{{ t('player.differentVideo') }}</h3>
+        <p>{{ t('player.mismatchHint') }}</p>
         <button type="button" class="file-button" @click="chooseFile">
-          Choose matching video
+          {{ t('player.matchingVideo') }}
         </button>
       </div>
       <div
@@ -880,25 +882,19 @@ onUnmounted(() => {
       >
         <Icon name="screen" :size="36" />
         <h3>
-          {{
-            loading ? 'Preparing your video…' : 'Connect your playback helper'
-          }}
+          {{ loading ? t('common.preparingVideo') : t('player.connectHelper') }}
         </h3>
         <p>
-          {{
-            loading
-              ? 'Getting everything ready for you.'
-              : 'Set up the OVS helper to load this video automatically.'
-          }}
+          {{ loading ? t('player.preparingHint') : t('player.helperHint') }}
         </p>
         <button v-if="!loading" class="quiet" @click="retryMedia">
-          Retry video
+          {{ t('player.retryVideo') }}
         </button>
       </div>
       <div v-else-if="current.playback.phase === 'ended'" class="player-state">
-        <h3>One more time?</h3>
+        <h3>{{ t('player.again') }}</h3>
         <button :disabled="!canControl" @click="command('replay')">
-          <Icon name="replay" />Replay
+          <Icon name="replay" />{{ t('player.replay') }}
         </button>
       </div>
       <div
@@ -917,7 +913,7 @@ onUnmounted(() => {
         type="file"
         accept="video/*,.mkv"
         :disabled="!active || !connected || !!uncertain"
-        aria-label="Select matching local video"
+        :aria-label="t('player.selectMatching')"
         @change="choose"
       />
       <div
@@ -956,8 +952,13 @@ onUnmounted(() => {
             min="0"
             :max="totalSeconds || 1"
             step="0.1"
-            aria-label="Seek"
-            :aria-valuetext="`${formatTime(dragging ? seekSeconds : position)} of ${formatTime(totalSeconds)}`"
+            :aria-label="t('player.seek')"
+            :aria-valuetext="
+              t('player.seekValue', {
+                position: formatTime(dragging ? seekSeconds : position),
+                duration: formatTime(totalSeconds),
+              })
+            "
             :disabled="!canControl"
             @input="dragSeek"
             @change="seek"
@@ -972,13 +973,16 @@ onUnmounted(() => {
               class="icon-button"
               :aria-label="
                 isPlaying
-                  ? 'Pause together'
+                  ? t('player.pauseTogether')
                   : current.playback.phase === 'ended'
-                    ? 'Replay'
-                    : 'Play together'
+                    ? t('player.replay')
+                    : t('player.playTogether')
               "
               :title="
-                controlNote || (isPlaying ? 'Pause (Space)' : 'Play (Space)')
+                controlNote ||
+                (isPlaying
+                  ? t('player.pauseShortcut')
+                  : t('player.playShortcut'))
               "
               :disabled="isPlaying ? !canControl : !canPlay"
               :aria-describedby="controlNote ? 'control-note' : undefined"
@@ -1005,7 +1009,7 @@ onUnmounted(() => {
             </button>
             <button
               class="icon-button"
-              :aria-label="muted ? 'Unmute locally' : 'Mute locally'"
+              :aria-label="muted ? t('player.unmute') : t('player.mute')"
               :aria-pressed="muted"
               @click="muted = !muted"
             >
@@ -1019,8 +1023,12 @@ onUnmounted(() => {
               min="0"
               max="1"
               step="0.05"
-              aria-label="Local volume"
-              :aria-valuetext="`${Math.round(volume * 100)}%${muted ? ' (muted)' : ''}`"
+              :aria-label="t('player.localVolume')"
+              :aria-valuetext="
+                t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
+                  volume: Math.round(volume * 100),
+                })
+              "
             />
             <span class="player-time"
               >{{ formatTime(dragging ? seekSeconds : position)
@@ -1031,7 +1039,7 @@ onUnmounted(() => {
             <button
               v-if="current.media?.kind === 'bilibili'"
               class="icon-button danmaku-toggle"
-              aria-label="Show danmaku locally"
+              :aria-label="t('player.showDanmaku')"
               :aria-pressed="showDanmaku"
               @click="
                 showDanmaku = !showDanmaku;
@@ -1046,12 +1054,15 @@ onUnmounted(() => {
               :aria-expanded="playerMenu"
               @click="playerMenu = !playerMenu"
             >
-              {{ streamInfo ? qualityName(streamInfo.quality) : 'Quality'
+              {{
+                streamInfo
+                  ? qualityName(streamInfo.quality)
+                  : t('player.quality')
               }}<Icon name="chevron" :size="14" />
             </button>
             <button
               class="icon-button"
-              aria-label="Player settings"
+              :aria-label="t('player.settings')"
               :aria-expanded="playerMenu"
               @click="playerMenu = !playerMenu"
             >
@@ -1059,7 +1070,7 @@ onUnmounted(() => {
             </button>
             <button
               class="icon-button"
-              aria-label="Fullscreen locally"
+              :aria-label="t('player.fullscreen')"
               @click="fullscreen"
             >
               <Icon name="fullscreen" />
@@ -1073,16 +1084,16 @@ onUnmounted(() => {
         @keydown.esc.stop="playerMenu = false"
       >
         <div class="menu-heading">
-          <strong>Playback preferences</strong
+          <strong>{{ t('player.preferences') }}</strong
           ><button
             class="icon-button quiet"
-            aria-label="Close player settings"
+            :aria-label="t('player.closeSettings')"
             @click="playerMenu = false"
           >
             <Icon name="close" :size="16" />
           </button>
         </div>
-        <label for="menu-volume">Volume</label
+        <label for="menu-volume">{{ t('player.volume') }}</label
         ><input
           id="menu-volume"
           v-model.number="volume"
@@ -1090,10 +1101,12 @@ onUnmounted(() => {
           min="0"
           max="1"
           step="0.05"
-          :aria-valuetext="`${Math.round(volume * 100)}%`"
+          :aria-valuetext="
+            t('player.volumeValue', { volume: Math.round(volume * 100) })
+          "
         />
         <template v-if="current.media?.kind === 'bilibili'">
-          <label for="video-quality">Video quality</label
+          <label for="video-quality">{{ t('player.videoQuality') }}</label
           ><select
             v-if="streamInfo"
             id="video-quality"
@@ -1105,56 +1118,64 @@ onUnmounted(() => {
               {{ qualityName(q) }}
             </option>
           </select>
-          <p v-else class="hint">Quality is available after the video loads.</p>
-          <label for="danmaku-density">Danmaku density</label
+          <p v-else class="hint">{{ t('player.qualityHint') }}</p>
+          <label for="danmaku-density">{{ t('player.danmakuDensity') }}</label
           ><input
             id="danmaku-density"
             v-model.number="density"
             type="range"
             min="1"
             max="40"
-            :aria-valuetext="`${density} comments`"
+            :aria-valuetext="t('player.commentCount', { count: density })"
             @input="danmakuPreferences"
           />
-          <label for="danmaku-size">Danmaku text size</label
+          <label for="danmaku-size">{{ t('player.danmakuSize') }}</label
           ><input
             id="danmaku-size"
             v-model.number="danmakuSize"
             type="range"
             min="16"
             max="32"
-            :aria-valuetext="`${danmakuSize} pixels`"
+            :aria-valuetext="t('player.pixelCount', { count: danmakuSize })"
             @input="danmakuPreferences"
           />
           <p class="hint" role="status">
             {{
-              showDanmaku ? danmakuStatus : `Hidden by you · ${danmakuStatus}`
+              showDanmaku
+                ? translate(danmakuStatus)
+                : t('player.hiddenDanmaku', {
+                    status: translate(danmakuStatus),
+                  })
             }}
           </p>
-          <button class="quiet" @click="reloadDanmaku">Reload danmaku</button>
+          <button class="quiet" @click="reloadDanmaku">
+            {{ t('player.reloadDanmaku') }}
+          </button>
         </template>
       </div>
     </div>
     <div class="video-information">
       <div class="video-description">
         <span class="source-label">{{
-          current.media?.kind === 'local' ? 'LOCAL FILE' : 'BILIBILI'
+          current.media?.kind === 'local'
+            ? t('common.localFileLabel')
+            : t('media.bilibiliLabel')
         }}</span>
         <h3
           :title="
             videoTitle ||
             (current.media?.kind === 'local'
-              ? current.media.label || 'Watching together'
+              ? current.media.label || t('common.watchingTogether')
               : current.media?.bvid)
           "
         >
           {{
             videoTitle ||
             (current.media?.kind === 'local'
-              ? current.media.label || 'Watching together'
+              ? current.media.label || t('common.watchingTogether')
               : current.media?.bvid)
           }}<span v-if="current.media?.kind === 'bilibili'" class="hint">
-            · Part {{ current.media.part }}</span
+            · {{ t('player.part', { part: current.media.part }) }}</span
           >
         </h3>
         <p v-if="controlNote" id="control-note" class="hint">
@@ -1167,58 +1188,56 @@ onUnmounted(() => {
         :disabled="loading || !connected || !active || !!uncertain"
         @click="replaceOpen = true"
       >
-        <Icon name="plus" :size="16" />Change video
+        <Icon name="plus" :size="16" />{{ t('player.changeVideo') }}
       </button>
     </div>
     <div class="playback-status">
       <div role="status">
-        <span class="status-dot" />{{ status }}<span class="separator">·</span
-        >{{ calibration }}
+        <span class="status-dot" />{{ translate(status)
+        }}<span class="separator">·</span>{{ translate(calibration) }}
       </div>
       <span
         class="media-status"
         data-testid="media-status"
         :data-state="shownStatus"
-        >{{ readinessText[shownStatus] }}</span
+        >{{ t(readinessText[shownStatus]) }}</span
       ><span
         data-testid="playback-phase"
         :data-state="current.playback.phase"
-        >{{ phaseText[current.playback.phase] }}</span
+        >{{ t(phaseText[current.playback.phase]) }}</span
       >
     </div>
     <div v-if="roomError" class="notice error" role="alert">
-      <span>{{ roomError }}</span
+      <span>{{ translate(roomError) }}</span
       ><button v-if="roomErrorReload" class="quiet" @click="reload">
-        Reload page
+        {{ t('common.reload') }}
       </button>
     </div>
     <p v-if="hostNotice" class="notice" role="status">
-      The host left. Everyone can now control playback.
+      {{ t('player.hostLeft') }}
     </p>
     <div v-if="uncertain" class="notice" role="status">
-      <span>Checking the command result.</span
+      <span>{{ t('player.checkingCommand') }}</span
       ><button :disabled="!connected" @click="transport.resolveUncertain()">
-        Check original command
+        {{ t('player.checkOriginal') }}
       </button>
     </div>
     <p v-if="waitTimedOut" class="notice" role="status">
-      Waiting timed out. The room stays paused.
-      {{
-        permitted ? 'Select Play to try again.' : 'The host can retry playback.'
-      }}
+      {{ t('player.waitTimeout') }}
+      {{ permitted ? t('player.retryPlay') : t('player.hostRetry') }}
     </p>
     <Modal
       v-if="replaceOpen"
-      title="Change the video"
+      :title="t('player.changeTitle')"
       @close="replaceOpen = false"
       ><MediaPicker
         ref="mediaPicker"
         :room-id="current.roomId"
         :disabled="loading"
       />
-      <p class="hint">Everyone will pause at the start of the new video.</p>
+      <p class="hint">{{ t('player.changeHint') }}</p>
       <button :disabled="loading" @click="replaceMedia">
-        Use this video
+        {{ t('player.useVideo') }}
       </button></Modal
     >
   </section>

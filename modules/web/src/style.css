@@ -1695,7 +1695,8 @@ fieldset select {
   inset: 0;
 }
 
-.appearance-panel > .hint:first-child {
+.appearance-panel > .hint:first-child,
+.language-panel > .hint:first-child {
   margin: 0 0 24px;
 }
 .appearance-options legend {

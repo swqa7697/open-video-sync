@@ -1,0 +1,72 @@
+import { flushPromises, mount } from '@vue/test-utils';
+import { afterEach, expect, test, vi } from 'vite-plus/test';
+import { i18n } from '../../i18n';
+import HelperNotice from './HelperNotice.vue';
+
+const { handshake } = vi.hoisted(() => ({ handshake: vi.fn() }));
+vi.mock('../../player/bilibili/bridge', async (importOriginal) => {
+  const bridge =
+    await importOriginal<typeof import('../../player/bilibili/bridge')>();
+  return {
+    ...bridge,
+    helperRelease: { version: '1.2.0', protocol: 1 },
+    HelperBridge: class {
+      handshake = handshake;
+      close() {}
+    },
+  };
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  i18n.global.locale.value = 'en';
+});
+
+test('an outdated helper notice switches languages and clears after an update', async () => {
+  vi.stubGlobal(
+    'fetch',
+    async () => new Response(JSON.stringify({ version: '1.2.0', protocol: 1 }))
+  );
+  handshake.mockResolvedValue({
+    helper: '1.1.0',
+    version: 1,
+    maxChunk: 262144,
+  });
+  i18n.global.locale.value = 'zh-CN';
+  const wrapper = mount(HelperNotice, {
+    global: {
+      stubs: { Modal: { template: '<div role="dialog"><slot /></div>' } },
+    },
+  });
+  try {
+    await flushPromises();
+    expect(wrapper.get('[role="dialog"]').text()).toContain(
+      'OVS 播放助手需要更新'
+    );
+    expect(wrapper.get('[role="dialog"]').text()).toContain(
+      '已安装 1.1.0 · 需要 1.2.0'
+    );
+    expect(wrapper.get('aside a').text()).toBe('更新助手');
+    const checks = handshake.mock.calls.length;
+    i18n.global.locale.value = 'en';
+    await flushPromises();
+    expect(wrapper.get('[role="dialog"]').text()).toContain('needs an update');
+    expect(wrapper.get('[role="dialog"]').text()).toContain(
+      'Installed 1.1.0 · Required 1.2.0'
+    );
+    expect(wrapper.get('aside a').text()).toBe('Update helper');
+    expect(handshake.mock.calls).toHaveLength(checks);
+    handshake.mockResolvedValue({
+      helper: '1.2.0',
+      version: 1,
+      maxChunk: 262144,
+    });
+    await wrapper.get('aside button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('aside').exists()).toBe(false);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.emitted('ready')).toHaveLength(1);
+  } finally {
+    wrapper.unmount();
+  }
+});

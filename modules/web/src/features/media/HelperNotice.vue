@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '../../i18n';
+
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
   HelperBridge,
@@ -25,23 +27,21 @@ let bridge: HelperBridge | undefined;
 const text = computed(
   () =>
     ({
-      checking: 'Checking the OVS playback helper…',
+      checking: t('helper.checking'),
       ready: '',
-      missing: 'OVS playback helper not detected.',
-      outdated: 'OVS playback helper needs an update.',
-      mismatch: 'This helper does not match this OVS instance.',
-      communication:
-        'The playback helper could not be checked. Check network and script permissions.',
-      stale:
-        'OVS has been updated. Refresh the application before updating the helper.',
+      missing: t('helper.missing'),
+      outdated: t('helper.outdated'),
+      mismatch: t('helper.mismatch'),
+      communication: t('helper.communication'),
+      stale: t('helper.stale'),
     })[state.value]
 );
 const action = computed(() =>
   state.value === 'outdated'
-    ? 'Update helper'
+    ? t('helper.update')
     : state.value === 'mismatch'
-      ? 'Install matching helper'
-      : 'Install OVS helper'
+      ? t('helper.installMatching')
+      : t('helper.install')
 );
 async function check(): Promise<void> {
   if (bridge) return;
@@ -137,12 +137,12 @@ defineExpose({ check });
   <aside
     v-if="state !== 'ready'"
     class="helper-banner"
-    aria-label="Playback helper"
+    :aria-label="t('helper.label')"
   >
     <Icon name="screen" /><span>{{ text }}</span>
     <template v-if="state !== 'checking'">
       <button v-if="state === 'stale'" class="quiet" @click="refresh">
-        Refresh application
+        {{ t('helper.refresh') }}
       </button>
       <a
         v-else-if="state !== 'communication'"
@@ -152,23 +152,17 @@ defineExpose({ check });
         rel="noopener noreferrer"
         >{{ action }}</a
       >
-      <button class="quiet" @click="check">Recheck</button>
+      <button class="quiet" @click="check">{{ t('common.recheck') }}</button>
     </template>
   </aside>
-  <Modal v-if="modal" title="Set up Bilibili playback" @close="modal = false">
+  <Modal v-if="modal" :title="t('helper.setup')" @close="modal = false">
     <div class="setup-symbol"><Icon name="screen" :size="32" /></div>
     <h3>{{ text }}</h3>
-    <p>
-      Install the Tampermonkey browser extension independently. Then install and
-      enable the OVS helper from this instance.
-    </p>
+    <p>{{ t('helper.instructions') }}</p>
     <p v-if="installed" class="version-note">
-      Installed {{ installed }} · Required {{ helperRelease.version }}
+      {{ t('helper.version', { installed, required: helperRelease.version }) }}
     </p>
-    <p class="hint">
-      Confirm replacement when updating an existing helper. Return here and
-      refresh OVS if needed. Local files work without the helper.
-    </p>
+    <p class="hint">{{ t('helper.installHint') }}</p>
     <div class="actions">
       <a
         class="button"
@@ -176,8 +170,10 @@ defineExpose({ check });
         target="_blank"
         rel="noopener noreferrer"
         >{{ action }}<Icon name="arrow" /></a
-      ><button class="quiet" @click="check">Recheck</button
-      ><button class="quiet" @click="modal = false">Later</button>
+      ><button class="quiet" @click="check">{{ t('common.recheck') }}</button
+      ><button class="quiet" @click="modal = false">
+        {{ t('helper.later') }}
+      </button>
     </div>
   </Modal>
 </template>

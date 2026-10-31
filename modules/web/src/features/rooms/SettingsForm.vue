@@ -1,23 +1,23 @@
 <script setup lang="ts">
+import { t } from '../../i18n';
+
 import type { RoomSettings } from '../../transport/contracts';
 const settings = defineModel<RoomSettings>({ required: true });
 defineProps<{ disabled: boolean }>();
 </script>
 <template>
   <fieldset :disabled="disabled">
-    <legend>Room preferences</legend>
-    <label for="playback-controls">Playback controls</label>
+    <legend>{{ t('settings.preferences') }}</legend>
+    <label for="playback-controls">{{ t('settings.controls') }}</label>
     <select id="playback-controls" v-model="settings.controllers">
-      <option value="host">Host only</option>
-      <option value="everyone">Everyone</option>
+      <option value="host">{{ t('settings.hostOnly') }}</option>
+      <option value="everyone">{{ t('settings.everyone') }}</option>
     </select>
     <label class="checkbox"
-      ><input v-model="settings.waitForAll" type="checkbox" />Wait for
-      everyone</label
+      ><input v-model="settings.waitForAll" type="checkbox" />{{
+        t('settings.wait')
+      }}</label
     >
-    <p class="hint">
-      Wait for everyone to load media and recover from buffering. Changing this
-      preference pauses the room.
-    </p>
+    <p class="hint">{{ t('settings.waitHint') }}</p>
   </fieldset>
 </template>

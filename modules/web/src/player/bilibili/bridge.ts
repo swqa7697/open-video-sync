@@ -1,3 +1,4 @@
+import { message, LocalizedError, type Message } from '../../i18n';
 import release from '@ovs/helper/release';
 export const helperRelease = release;
 import { parseBridgeJSON } from '@ovs/helper/bridge-json';
@@ -5,7 +6,7 @@ import { parseBridgeJSON } from '@ovs/helper/bridge-json';
 type FailureStatus = 'access_denied' | 'unsupported' | 'error';
 interface FailureGroup {
   codes: RegExp;
-  message: string;
+  message: Message;
   status: FailureStatus;
   reload?: boolean;
 }
@@ -13,80 +14,69 @@ interface FailureGroup {
 const groups: FailureGroup[] = [
   {
     codes: /^helper-missing$/,
-    message:
-      'Install or enable the OVS Bilibili helper, then reload this page.',
+    message: message('helper.errorMissing'),
     status: 'error',
     reload: true,
   },
   {
     codes: /^helper-incompatible$/,
-    message:
-      'Update the OVS Bilibili helper from this instance, then reload this page.',
+    message: message('helper.errorIncompatible'),
     status: 'error',
     reload: true,
   },
   {
     codes: /^(bridge-timeout|invalid-reply|reply-too-large|invalid-request)$/,
-    message:
-      'The Bilibili helper did not respond correctly. Check that Tampermonkey runs it on this site, then load the video again.',
+    message: message('helper.errorReply'),
     status: 'error',
   },
   {
     codes: /^login-required$/,
-    message:
-      'Sign in to Bilibili in this browser profile, then load the video again.',
+    message: message('helper.errorLogin'),
     status: 'access_denied',
   },
   {
     codes: /^(platform-access-denied|access-expired)$/,
-    message:
-      'Bilibili refused access for this browser profile (sign-in, region, or membership). Fix your access, then load the video again.',
+    message: message('helper.errorAccess'),
     status: 'access_denied',
   },
   {
     codes: /^(unsupported-codec)$/,
-    message:
-      'This browser cannot decode the selected Bilibili AVC/AAC streams.',
+    message: message('helper.errorCodec'),
     status: 'unsupported',
   },
   {
     codes: /^(unsupported-stream)$/,
-    message:
-      'This Bilibili video does not provide a supported on-demand AVC/AAC stream.',
+    message: message('helper.errorStream'),
     status: 'unsupported',
   },
   {
     codes: /^(rate-limited|busy|http-412|http-429)$/,
-    message:
-      'Bilibili or the helper is limiting requests. Wait a minute, then load the video again.',
+    message: message('helper.errorRate'),
     status: 'error',
   },
   {
     codes: /^(unavailable|part-unavailable|http-404)$/,
-    message: 'This Bilibili video or part is unavailable to this browser.',
+    message: message('helper.errorUnavailable'),
     status: 'error',
   },
   {
     codes: /^(media-changed|stale-generation|unknown-handle)$/,
-    message:
-      'The video changed or loading was interrupted. Load the video again.',
+    message: message('helper.errorChanged'),
     status: 'error',
   },
   {
     codes:
       /^(network-or-permission-denied|request-timeout|destination-denied|redirect-denied|http-5[0-9]{2})$/,
-    message:
-      'Could not reach Bilibili from this browser. Check network access and Tampermonkey permissions for the helper.',
+    message: message('helper.errorNetwork'),
     status: 'error',
   },
 ];
 const unusable: FailureGroup = {
   codes: /./,
-  message:
-    'Bilibili returned data this player cannot use. Load the video again, or try another part or browser.',
+  message: message('helper.errorData'),
   status: 'error',
 };
-export class HelperError extends Error {
+export class HelperError extends LocalizedError {
   readonly status: FailureStatus;
   readonly reload: boolean;
   constructor(readonly code: string) {

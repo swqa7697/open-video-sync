@@ -1,3 +1,4 @@
+import { message, type Message } from '../i18n';
 import {
   APIError,
   decodeSnapshot,
@@ -38,10 +39,10 @@ export type ProbeResult =
   'reachable' | 'session_ended' | 'room_unavailable' | 'unreachable';
 export interface SocketEvents {
   snapshot(snapshot: Snapshot): void;
-  status(status: string): void;
+  status(status: Message): void;
   lease(active: boolean): void;
   error(
-    message: string,
+    message: Message | '',
     options?: { reload?: boolean; recheck?: boolean }
   ): void;
   uncertain(command: Command | undefined): void;
@@ -79,7 +80,7 @@ export class RoomSocket {
     this.timer = setInterval(() => {
       if (this.connected && performance.now() - this.lastMessage >= 5000) {
         this.connected = false;
-        this.events.status('Connection uncertain. Playback paused.');
+        this.events.status(message('socket.uncertain'));
         this.socket?.close();
       } else if (
         this.connected &&
@@ -93,7 +94,7 @@ export class RoomSocket {
     this.clock.reset();
     this.pings.clear();
     this.sequence = 0;
-    this.events.status('Connecting…');
+    this.events.status(message('player.connecting'));
     const url = new URL(`/ws/v2/rooms/${this.roomId}`, location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
@@ -106,9 +107,7 @@ export class RoomSocket {
         this.receive(parseFrame(event.data));
         this.lastMessage = performance.now();
       } catch {
-        this.events.error(
-          'The room connection returned invalid data. Reconnecting.'
-        );
+        this.events.error(message('socket.invalidData'));
         socket.close();
       }
     };
@@ -116,7 +115,7 @@ export class RoomSocket {
       if (this.socket !== socket || this.stopped || this.terminal) return;
       this.connected = false;
       this.clock.reset();
-      this.events.status('Disconnected. Playback paused.');
+      this.events.status(message('socket.disconnected'));
       if (this.welcomed) this.schedule();
       else void this.diagnose();
     };
@@ -145,9 +144,7 @@ export class RoomSocket {
       return;
     }
     if (result === 'reachable' && ++this.refusals === 3)
-      this.events.error(
-        'The server is reachable, but the room connection is refused. The server may be full, or a proxy may not forward WebSockets for the configured public origin. Retrying.'
-      );
+      this.events.error(message('socket.refused'));
     this.schedule();
   }
   private end(reason: EndReason): void {
@@ -160,8 +157,8 @@ export class RoomSocket {
     this.socket?.close();
     this.events.status(
       reason === 'replaced'
-        ? 'Playback is active in another page.'
-        : 'Room connection ended.'
+        ? message('socket.otherPage')
+        : message('socket.ended')
     );
     this.events.ended(reason);
   }
@@ -220,7 +217,7 @@ export class RoomSocket {
       if (this.refusals >= 3) this.events.error('');
       this.refusals = 0;
       sessionStorage.removeItem('ovs-protocol-reload');
-      this.events.status('Connected');
+      this.events.status(message('socket.connected'));
       this.acceptSnapshot(decodeSnapshot(p.snapshot), epoch);
       this.calibrate(5);
     } else if (kind === 'room.snapshot')
@@ -274,7 +271,7 @@ export class RoomSocket {
       shape(p, ['reason']);
       if (p.reason !== 'shutdown') throw new Error('Invalid shutdown.');
       this.connected = false;
-      this.events.status('Server is stopping. Playback paused.');
+      this.events.status(message('socket.stopping'));
       this.socket?.close();
     } else if (kind === 'room.closed') {
       shape(p, ['roomId', 'revision']);
@@ -293,17 +290,17 @@ export class RoomSocket {
       this.upgrade();
       return;
     }
-    const message =
+    const description =
       code === 'forbidden'
-        ? 'Only the host can do that in this room.'
+        ? message('socket.forbidden')
         : code === 'stale_state'
-          ? 'The room changed before your command arrived. Check the current state and try again.'
+          ? message('socket.stale')
           : code === 'storage_unavailable'
-            ? 'The server could not save this change. Current playback continues.'
+            ? message('socket.storage')
             : p.retryable
-              ? 'The server could not apply this command now. Try again in a few seconds.'
-              : new APIError(code).message;
-    this.events.error(message, { recheck: code === 'storage_unavailable' });
+              ? message('socket.retry')
+              : new APIError(code).text;
+    this.events.error(description, { recheck: code === 'storage_unavailable' });
   }
   private upgrade(): void {
     this.terminal = true;
@@ -311,11 +308,7 @@ export class RoomSocket {
     if (!sessionStorage.getItem('ovs-protocol-reload')) {
       sessionStorage.setItem('ovs-protocol-reload', '1');
       location.reload();
-    } else
-      this.events.error(
-        'Update required. Reload after the server and browser assets use the same version.',
-        { reload: true }
-      );
+    } else this.events.error(message('socket.upgrade'), { reload: true });
   }
   private acceptSnapshot(snapshot: Snapshot, epoch: string): void {
     if (snapshot.roomId !== this.roomId || snapshot.epoch !== epoch)
@@ -353,9 +346,7 @@ export class RoomSocket {
   command(payload: Command['payload']): void {
     const s = this.snapshot;
     if (!s || !this.connected || !this.active || this.pending) {
-      this.events.error(
-        'Controls need an active connection and a resolved previous command.'
-      );
+      this.events.error(message('socket.controls'));
       return;
     }
     const safePayload =

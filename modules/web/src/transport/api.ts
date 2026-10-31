@@ -1,3 +1,4 @@
+import { message, LocalizedError, type Message } from '../i18n';
 import {
   decodeProfilePatch,
   decodeRoomSettings,
@@ -307,35 +308,24 @@ export function decodeList(value: unknown): {
   };
 }
 
-const errors: Record<string, string> = {
-  request_outcome_unknown:
-    'Request recovery expired. Check the original room link before starting a new request.',
-  invalid_input: 'Check the entered values.',
-  invalid_command:
-    'This playback action is unavailable. Check room state and choose a new action.',
-  session_required:
-    'Your identity session ended. Reload to start a new identity.',
-  forbidden: 'You do not have permission for this action.',
-  not_found: 'This room is no longer available to you.',
-  invalid_invitation: 'This invitation is unavailable or the room has closed.',
-  invitation_reset_required:
-    'This older invitation needs replacement. Select Replace invitation to create new sharing details.',
-  upgrade_required:
-    'This page is out of date. Reload to use the updated application.',
-  stale_state:
-    'The room changed before your change was saved. Review the room and try again.',
-  idempotency_conflict:
-    'This request was already sent with different details. Reload and retry.',
-  message_too_large: 'The request is too large.',
-  unsupported_content_type:
-    'The page sent an unsupported request. Reload and try again.',
-  rate_limited:
-    'Too many requests from this browser or network. Wait a minute, then try again.',
-  capacity_reached:
-    'This server or room is full. Try again later or ask the host.',
-  busy: 'The server is busy. Try again in a few seconds.',
-  storage_unavailable:
-    'The server cannot save changes right now. Existing playback can continue. Try again later or ask the operator to check storage.',
+const errors: Record<string, Message> = {
+  request_outcome_unknown: message('api.request_outcome_unknown'),
+  invalid_input: message('api.invalid_input'),
+  invalid_command: message('api.invalid_command'),
+  session_required: message('api.session_required'),
+  forbidden: message('api.forbidden'),
+  not_found: message('api.not_found'),
+  invalid_invitation: message('api.invalid_invitation'),
+  invitation_reset_required: message('api.invitation_reset_required'),
+  upgrade_required: message('api.upgrade_required'),
+  stale_state: message('api.stale_state'),
+  idempotency_conflict: message('api.idempotency_conflict'),
+  message_too_large: message('api.message_too_large'),
+  unsupported_content_type: message('api.unsupported_content_type'),
+  rate_limited: message('api.rate_limited'),
+  capacity_reached: message('api.capacity_reached'),
+  busy: message('api.busy'),
+  storage_unavailable: message('api.storage_unavailable'),
 };
 // Codes whose recovery needs a fresh page: the page state or session is no longer usable.
 const reloadCodes = new Set([
@@ -345,30 +335,28 @@ const reloadCodes = new Set([
   'unsupported_content_type',
   'unknown',
 ]);
-export class APIError extends Error {
+export class APIError extends LocalizedError {
   readonly reload: boolean;
   constructor(public code: string) {
-    super(errors[code] ?? 'The request failed. Reload the page and try again.');
+    super(errors[code] ?? message('api.unknown'));
     this.reload = reloadCodes.has(code);
   }
 }
 // NetworkError means OVS did not answer: the connection failed or a proxy returned its own page.
-export class NetworkError extends Error {
+export class NetworkError extends LocalizedError {
   constructor(readonly status?: number) {
     super(
       status === undefined
-        ? 'Cannot reach the server. Check your connection and try again.'
-        : `The server is unreachable through its proxy (HTTP ${status}). Try again shortly.`
+        ? message('api.network')
+        : message('api.proxy', { status })
     );
   }
 }
 // ResponseError means OVS answered with data this page cannot use.
-export class ResponseError extends Error {
+export class ResponseError extends LocalizedError {
   readonly reload = true;
   constructor() {
-    super(
-      'The server sent an unexpected response. Reload the page; if this continues, check the server or proxy.'
-    );
+    super(message('api.response'));
   }
 }
 export async function request(

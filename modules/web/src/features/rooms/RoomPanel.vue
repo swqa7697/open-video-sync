@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t, message, translate, type Message } from '../../i18n';
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Invitation, Snapshot } from '../../transport/api';
 import type { RoomSettings } from '../../transport/contracts';
@@ -29,7 +31,7 @@ const inviteOpen = ref(false),
   closeConfirmation = ref(false),
   membersOpen = ref(true),
   narrow = ref(false),
-  copied = ref('');
+  copied = ref<Message | ''>('');
 const shareURL = computed(() =>
   props.invitation
     ? `${location.origin}/join#invite=${props.invitation.linkSecret}`
@@ -73,12 +75,12 @@ async function copy(value: string, field: string): Promise<void> {
   try {
     if (!navigator.clipboard) throw new Error('unavailable');
     await navigator.clipboard.writeText(value);
-    copied.value = 'Copied.';
+    copied.value = message('room.copied');
   } catch {
     const input = document.getElementById(field) as HTMLInputElement | null;
     input?.focus();
     input?.select();
-    copied.value = 'Text selected. Use your browser’s Copy action.';
+    copied.value = message('room.selected');
   }
 }
 </script>
@@ -86,7 +88,7 @@ async function copy(value: string, field: string): Promise<void> {
   <section class="room" aria-labelledby="room-title">
     <div class="room-toolbar">
       <div class="room-heading">
-        <span class="eyebrow">PRIVATE ROOM</span>
+        <span class="eyebrow">{{ t('room.private') }}</span>
         <h2 id="room-title" tabindex="-1" :title="room.title">
           {{ room.title }}
         </h2>
@@ -101,21 +103,23 @@ async function copy(value: string, field: string): Promise<void> {
             emit('share');
           "
         >
-          <Icon name="link" /><span>Invite</span>
+          <Icon name="link" /><span>{{ t('room.invite') }}</span>
         </button>
         <button
           class="quiet"
           :aria-expanded="membersOpen"
-          :aria-label="`Members (${room.members.length})`"
+          :aria-label="t('room.membersCount', { count: room.members.length })"
           @click="membersOpen = !membersOpen"
         >
-          <Icon name="users" /><span class="toolbar-label">Members</span
+          <Icon name="users" /><span class="toolbar-label">{{
+            t('room.members')
+          }}</span
           ><span>{{ room.members.length }}</span>
         </button>
         <button
           v-if="host"
           class="quiet icon-button"
-          aria-label="Room settings"
+          :aria-label="t('common.settings')"
           :disabled="busy"
           @click="openSettings"
         >
@@ -126,7 +130,9 @@ async function copy(value: string, field: string): Promise<void> {
           :disabled="busy"
           @click="emit('leave')"
         >
-          <Icon name="leave" /><span class="toolbar-label">Leave</span>
+          <Icon name="leave" /><span class="toolbar-label">{{
+            t('room.leave')
+          }}</span>
         </button>
       </div>
     </div>
@@ -151,7 +157,7 @@ async function copy(value: string, field: string): Promise<void> {
     </div>
     <Modal
       v-if="membersOpen && narrow"
-      title="Room members"
+      :title="t('room.membersTitle')"
       @close="membersOpen = false"
       ><MembersPanel
         :room="room"
@@ -161,14 +167,13 @@ async function copy(value: string, field: string): Promise<void> {
     /></Modal>
     <Modal
       v-if="inviteOpen"
-      title="A little better together"
+      :title="t('room.inviteTitle')"
       @close="inviteOpen = false"
       ><p>
-        Invite your people to <strong>{{ room.title }}</strong
-        >.
+        {{ t('room.inviteHint', { title: room.title }) }}
       </p>
       <template v-if="invitation"
-        ><label for="invite-link">Invitation link</label>
+        ><label for="invite-link">{{ t('room.invitationLink') }}</label>
         <div class="input-action">
           <input
             id="invite-link"
@@ -177,13 +182,13 @@ async function copy(value: string, field: string): Promise<void> {
             @focus="selectLink"
           /><button
             class="quiet icon-button"
-            aria-label="Copy invitation link"
+            :aria-label="t('room.copyLink')"
             @click="copy(shareURL, 'invite-link')"
           >
             <Icon name="copy" />
           </button>
         </div>
-        <label for="invite-code">Invitation code</label>
+        <label for="invite-code">{{ t('room.invitationCode') }}</label>
         <div class="input-action">
           <input
             id="invite-code"
@@ -193,27 +198,24 @@ async function copy(value: string, field: string): Promise<void> {
             @focus="selectLink"
           /><button
             class="quiet icon-button"
-            aria-label="Copy invitation code"
+            :aria-label="t('room.copyCode')"
             @click="copy(invitation.code, 'invite-code')"
           >
             <Icon name="copy" />
           </button>
         </div>
-        <p role="status" class="hint">{{ copied }}</p></template
+        <p role="status" class="hint">{{ translate(copied) }}</p></template
       >
-      <p v-else class="hint">Retrieving your invitation…</p>
+      <p v-else class="hint">{{ t('room.retrieving') }}</p>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
-      <p class="hint">
-        Only invited people can enter. This invitation works until replaced or
-        the room closes.
-      </p>
+      <p class="hint">{{ t('room.invitationHint') }}</p>
       <button class="quiet" :disabled="busy" @click="emit('rotate')">
-        Replace invitation
+        {{ t('room.replaceInvitation') }}
       </button></Modal
     >
     <Modal
       v-if="settingsOpen"
-      title="Room settings"
+      :title="t('common.settings')"
       @close="settingsOpen = false"
       ><form
         @submit.prevent="
@@ -223,10 +225,10 @@ async function copy(value: string, field: string): Promise<void> {
       >
         <SettingsForm v-model="settings" :disabled="busy" />
         <p v-if="error" class="notice error" role="alert">{{ error }}</p>
-        <button :disabled="busy">Save preferences</button>
+        <button :disabled="busy">{{ t('room.savePreferences') }}</button>
       </form>
       <div class="settings-danger">
-        <p class="hint">Close this room and end the session for everyone.</p>
+        <p class="hint">{{ t('room.closeHint') }}</p>
         <button
           type="button"
           class="danger quiet"
@@ -236,24 +238,21 @@ async function copy(value: string, field: string): Promise<void> {
             closeConfirmation = true;
           "
         >
-          Close room for everyone
+          {{ t('room.close') }}
         </button>
       </div></Modal
     >
     <Modal
       v-if="closeConfirmation"
-      title="Close room for everyone?"
+      :title="t('room.closeTitle')"
       @close="closeConfirmation = false"
-      ><p>
-        Everyone will leave and this invitation will stop working. This cannot
-        be undone.
-      </p>
+      ><p>{{ t('room.closeWarning') }}</p>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
       <div class="actions">
         <button class="quiet" autofocus @click="closeConfirmation = false">
-          Cancel</button
+          {{ t('common.cancel') }}</button
         ><button class="danger" :disabled="busy" @click="emit('close')">
-          Confirm close room
+          {{ t('room.confirmClose') }}
         </button>
       </div></Modal
     >

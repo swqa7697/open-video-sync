@@ -7,54 +7,68 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   browser,
   baseURL,
 }) => {
+  const parts = release.version.split('.').map(Number);
+  const previous = [...parts];
+  const lastNonzero = previous.findLastIndex((value) => value > 0);
+  if (lastNonzero >= 0) previous[lastNonzero]! -= 1;
+  const older = lastNonzero >= 0 ? previous.join('.') : undefined;
+  const firstNewer = `${parts[0]}.${parts[1]}.${parts[2]! + 1}`;
+  const newer = `${parts[0]! + 1}.0.0`;
   const foreign: string[] = [];
   page.on('request', (r) => {
     if (new URL(r.url()).hostname.endsWith('bilibili.com'))
       foreign.push(r.url());
   });
-  await page.addInitScript((expected) => {
-    window.addEventListener('message', (event) => {
-      const mode = sessionStorage.getItem('synthetic-helper');
-      if (!mode || event.source !== window || typeof event.data !== 'string')
-        return;
-      const q = JSON.parse(event.data);
-      if (q.channel !== 'ovs-bilibili-request' || q.op === 'dispose') return;
-      const reply =
-        q.op === 'hello' || q.op === 'probe'
-          ? {
-              ok: true,
-              value: {
-                version: 1,
-                helper:
-                  mode === 'old'
-                    ? '1.0.0'
-                    : mode === 'future'
-                      ? '9.0.0'
-                      : expected,
-                maxChunk: 262144,
-              },
-            }
-          : { ok: false, error: 'login-required' };
-      window.postMessage(
-        JSON.stringify({
-          channel: 'ovs-bilibili-response',
-          client: q.client,
-          id: q.id,
-          ...reply,
-        }),
-        location.origin
-      );
-    });
-  }, release.version);
+  await page.addInitScript(
+    (expected) => {
+      window.addEventListener('message', (event) => {
+        const mode = sessionStorage.getItem('synthetic-helper');
+        if (!mode || event.source !== window || typeof event.data !== 'string')
+          return;
+        const q = JSON.parse(event.data);
+        if (q.channel !== 'ovs-bilibili-request' || q.op === 'dispose') return;
+        const reply =
+          q.op === 'hello' || q.op === 'probe'
+            ? {
+                ok: true,
+                value: {
+                  version: 1,
+                  helper:
+                    mode === 'old'
+                      ? (expected.older ?? expected.firstNewer)
+                      : mode === 'future'
+                        ? expected.newer
+                        : expected.version,
+                  maxChunk: 262144,
+                },
+              }
+            : { ok: false, error: 'login-required' };
+        window.postMessage(
+          JSON.stringify({
+            channel: 'ovs-bilibili-response',
+            client: q.client,
+            id: q.id,
+            ...reply,
+          }),
+          location.origin
+        );
+      });
+    },
+    { version: release.version, older, firstNewer, newer }
+  );
   await page.goto('/');
   await expect(page.getByRole('dialog')).toContainText('not detected');
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));
   await page.getByRole('button', { name: 'Recheck', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('needs an update');
+  // The development version 0.0.0 has no older valid release. The component
+  // regression covers outdated-helper onboarding with a fixed newer requirement.
   await expect(page.getByRole('dialog')).toContainText(
-    `Installed 1.0.0 · Required ${release.version}`
+    older ? 'needs an update' : 'does not match'
+  );
+  await expect(page.getByRole('dialog')).toContainText(
+    `Installed ${older ?? firstNewer} · Required ${release.version}`
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.evaluate(() =>

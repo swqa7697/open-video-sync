@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '../../i18n';
+
 import { nextTick, ref, watch } from 'vue';
 import { useIdentityStore } from '../../stores/identity';
 const props = defineProps<{ busy: boolean; invalid: boolean }>();
@@ -35,13 +37,13 @@ watch(
 </script>
 <template>
   <section aria-labelledby="identity-title">
-    <h2 id="identity-title" tabindex="-1">Your identity</h2>
+    <h2 id="identity-title" tabindex="-1">{{ t('identity.title') }}</h2>
     <p>
-      {{ identity.session?.identity.displayName || 'Guest' }} · Saved in this
-      browser
+      {{ identity.session?.identity.displayName || t('common.guest') }} ·
+      {{ t('identity.browser') }}
     </p>
     <form @submit.prevent="!props.busy && emit('rename', name)">
-      <label for="display-name">Display name (optional)</label>
+      <label for="display-name">{{ t('identity.name') }}</label>
       <div class="form-row">
         <input
           id="display-name"
@@ -52,11 +54,11 @@ watch(
           :aria-invalid="props.invalid || undefined"
           :aria-describedby="props.invalid ? 'app-alert' : 'display-name-hint'"
           @input="emit('edit')"
-        /><button :aria-disabled="props.busy || undefined">Save name</button>
+        /><button :aria-disabled="props.busy || undefined">
+          {{ t('identity.save') }}
+        </button>
       </div>
-      <p id="display-name-hint" class="hint">
-        Up to 48 characters. Names do not grant room permissions.
-      </p>
+      <p id="display-name-hint" class="hint">{{ t('identity.hint') }}</p>
     </form>
     <button
       v-if="!confirming"
@@ -65,27 +67,24 @@ watch(
       :aria-disabled="props.busy || undefined"
       @click="confirm(true)"
     >
-      Forget this identity
+      {{ t('identity.forget') }}
     </button>
     <div
       v-else
       class="notice"
       role="group"
-      aria-label="Confirm identity removal"
+      :aria-label="t('identity.confirmLabel')"
     >
-      <p>
-        Forgetting this identity ends your session. Your owned rooms may become
-        inaccessible. Ownership does not transfer.
-      </p>
+      <p>{{ t('identity.warning') }}</p>
       <div class="actions">
         <button
           class="danger"
           :aria-disabled="props.busy || undefined"
           @click="forget"
         >
-          Confirm forget</button
+          {{ t('identity.confirm') }}</button
         ><button ref="cancelButton" class="quiet" @click="confirm(false)">
-          Cancel
+          {{ t('common.cancel') }}
         </button>
       </div>
     </div>

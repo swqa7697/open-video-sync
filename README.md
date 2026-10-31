@@ -29,6 +29,9 @@ Root [deploy/](deploy/README.md) contains shared Compose and Caddy configuration
 ## Watch together
 
 Open OVS to restore or create your anonymous identity. Edit your optional display name through the profile menu.
+The interface supports English and Simplified Chinese. **Language** in the header defaults to **Follow system**.
+Chinese device languages use Simplified Chinese; other device languages use English. Choose **简体中文** or **English** to override.
+Language changes apply immediately, including current status and error messages, and stay in this browser across reloads.
 Use **Appearance** in the header to choose Slate blue (default), Soft iris, or Graphite.
 Choose **System** (default), **Light**, or **Dark** for the color mode. System follows device changes automatically.
 These choices stay in this browser across reloads; they are not room settings. If browser storage is blocked, choices last until reload.

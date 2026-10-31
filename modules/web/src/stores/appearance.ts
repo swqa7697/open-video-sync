@@ -2,14 +2,14 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 export const appearanceModes = [
-  { value: 'system', label: 'System', icon: 'screen' },
-  { value: 'light', label: 'Light', icon: 'sun' },
-  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'system', label: 'appearance.system', icon: 'screen' },
+  { value: 'light', label: 'appearance.light', icon: 'sun' },
+  { value: 'dark', label: 'appearance.dark', icon: 'moon' },
 ] as const;
 export const appearanceAccents = [
-  { value: 'slate', label: 'Slate blue' },
-  { value: 'iris', label: 'Soft iris' },
-  { value: 'neutral', label: 'Graphite' },
+  { value: 'slate', label: 'appearance.slate' },
+  { value: 'iris', label: 'appearance.iris' },
+  { value: 'neutral', label: 'appearance.neutral' },
 ] as const;
 type Mode = (typeof appearanceModes)[number]['value'];
 type Accent = (typeof appearanceAccents)[number]['value'];

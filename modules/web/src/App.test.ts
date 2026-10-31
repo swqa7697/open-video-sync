@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import App from './App.vue';
 import { decodeSnapshot } from './transport/api';
 import { roomFixture } from './test-support/room';
+import { i18n } from './i18n';
 const identity = {
   identity: { identityId: 'a'.repeat(32), displayName: '' },
   csrfToken: 'A'.repeat(43),
@@ -52,6 +53,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   history.replaceState(null, '', '/');
+  localStorage.removeItem('ovs.language');
+  i18n.global.locale.value = 'en';
 });
 test.each([
   [
@@ -267,5 +270,16 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   expect(wrapper.get('#app-alert').text()).toContain(
     'through its proxy (HTTP 502)'
   );
+  // An error already on screen must follow the selection without retrying the request.
+  const requestCount = vi.mocked(fetch).mock.calls.length;
+  await wrapper.get('button[aria-label="Language"]').trigger('click');
+  await wrapper.get('input[name="language"][value="zh-CN"]').setValue(true);
+  await flushPromises();
+  expect(wrapper.get('#app-alert').text()).toContain(
+    '无法通过代理连接服务器（HTTP 502）'
+  );
+  expect(wrapper.find('button[aria-label="语言"]').exists()).toBe(true);
+  expect(document.title).toBe('一起观看 · Open Video Sync');
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(requestCount);
   wrapper.unmount();
 });

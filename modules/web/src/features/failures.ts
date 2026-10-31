@@ -1,28 +1,29 @@
+import { message, type Message } from '../i18n';
 import { APIError, NetworkError, ResponseError } from '../transport/api';
 
 // InputError marks values the user can correct before sending.
 export class InputError extends Error {}
 
 export interface Failure {
-  text: string;
+  text: Message;
   reload?: boolean;
   recheck?: boolean;
   field?: string;
 }
 export type FailureContext = 'rename' | 'create' | 'join' | 'other';
 
-const input: Partial<Record<FailureContext, { text: string; field: string }>> =
+const input: Partial<Record<FailureContext, { text: Message; field: string }>> =
   {
     rename: {
-      text: 'Use up to 48 characters without line breaks or control characters.',
+      text: message('failure.rename'),
       field: 'display-name',
     },
     create: {
-      text: 'Enter a room title of up to 120 characters.',
+      text: message('failure.create'),
       field: 'room-name',
     },
     join: {
-      text: 'Enter the 16-character invitation code, or open the full invitation link.',
+      text: message('failure.join'),
       field: 'join-code',
     },
   };
@@ -44,14 +45,14 @@ export function describeFailure(
     reason instanceof APIError &&
     reason.code === 'invalid_invitation'
   )
-    return { text: reason.message, field: 'join-code' };
+    return { text: reason.text, field: 'join-code' };
   if (reason instanceof APIError)
     return {
-      text: reason.message,
+      text: reason.text,
       reload: reason.reload,
       recheck: ['busy', 'storage_unavailable'].includes(reason.code),
     };
   if (reason instanceof NetworkError)
-    return { text: reason.message, recheck: true };
-  return { text: new ResponseError().message, reload: true };
+    return { text: reason.text, recheck: true };
+  return { text: new ResponseError().text, reload: true };
 }

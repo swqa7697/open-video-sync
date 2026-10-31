@@ -1,6 +1,15 @@
 <script setup lang="ts">
+import {
+  t,
+  message,
+  translate,
+  errorMessage,
+  LocalizedError,
+  type Message,
+} from '../../i18n';
+
 import { onUnmounted, ref, watch } from 'vue';
-import { HelperBridge, HelperError } from '../../player/bilibili/bridge';
+import { HelperBridge } from '../../player/bilibili/bridge';
 import { decodeInfo, parseSelection } from '../../player/bilibili/media';
 import { LocalAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
@@ -12,7 +21,8 @@ const url = ref(''),
   part = ref(1),
   parts = ref(1),
   summary = ref(''),
-  error = ref(''),
+  localSummary = ref<Message | ''>(''),
+  error = ref<Message | ''>(''),
   working = ref(false);
 const fileName = ref('');
 let file: File | undefined,
@@ -26,6 +36,7 @@ function invalidate(): void {
   bridge = undefined;
   prepared = undefined;
   summary.value = '';
+  localSummary.value = '';
   error.value = '';
   working.value = false;
 }
@@ -65,7 +76,7 @@ async function prepare(): Promise<
     let media: MediaDescriptor;
     if (source.value === 'local') {
       if (!file || !file.size)
-        throw new Error('Select a supported video file first.');
+        throw new LocalizedError(message('media.selectFirst'));
       const video = document.createElement('video');
       video.preload = 'auto';
       video.muted = true;
@@ -81,7 +92,11 @@ async function prepare(): Promise<
         sizeBytes: file.size,
         durationMs: local.getState().durationMs,
       });
-      summary.value = `${fileName.value} · ${Math.round(media.durationMs / 1000)} seconds`;
+      summary.value = '';
+      localSummary.value = message('media.summary', {
+        name: fileName.value,
+        seconds: Math.round(media.durationMs / 1000),
+      });
     } else {
       const selected = parseSelection(url.value, part.value);
       bridge = new HelperBridge();
@@ -109,10 +124,7 @@ async function prepare(): Promise<
     return { media, ...(source.value === 'local' && file ? { file } : {}) };
   } catch (reason) {
     if (!signal.aborted)
-      error.value =
-        reason instanceof HelperError || reason instanceof Error
-          ? reason.message
-          : 'This video could not be prepared.';
+      error.value = errorMessage(reason, 'media.prepareFailed');
   } finally {
     local?.dispose();
     bridge?.close(2);
@@ -129,14 +141,14 @@ defineExpose({ prepare });
 </script>
 <template>
   <div class="media-picker">
-    <div class="source-tabs" role="group" aria-label="Video source">
+    <div class="source-tabs" role="group" :aria-label="t('media.source')">
       <button
         type="button"
         :aria-pressed="source === 'bilibili'"
         :disabled="disabled || working"
         @click="switchSource('bilibili')"
       >
-        <Icon name="screen" />Bilibili
+        <Icon name="screen" />{{ t('media.bilibili') }}
       </button>
       <button
         type="button"
@@ -144,18 +156,18 @@ defineExpose({ prepare });
         :disabled="disabled || working"
         @click="switchSource('local')"
       >
-        <Icon name="file" />Local file
+        <Icon name="file" />{{ t('common.localFile') }}
       </button>
     </div>
     <template v-if="source === 'bilibili'">
-      <label for="bilibili-url">Video URL or BV identifier</label>
+      <label for="bilibili-url">{{ t('media.url') }}</label>
       <div class="input-action">
         <input
           id="bilibili-url"
           v-model="url"
           :readonly="disabled || working"
           maxlength="2048"
-          placeholder="Paste a Bilibili link or BV identifier"
+          :placeholder="t('media.urlPlaceholder')"
           @input="invalidate"
         /><button
           type="button"
@@ -163,11 +175,11 @@ defineExpose({ prepare });
           :disabled="disabled || working || !url.trim()"
           @click="prepare"
         >
-          {{ working ? 'Checking…' : 'Preview video' }}
+          {{ working ? t('media.checking') : t('media.preview') }}
         </button>
       </div>
       <div v-if="parts > 1" class="part-row">
-        <label for="bilibili-part">Part</label
+        <label for="bilibili-part">{{ t('media.part') }}</label
         ><input
           id="bilibili-part"
           v-model.number="part"
@@ -176,18 +188,16 @@ defineExpose({ prepare });
           :max="parts"
           :readonly="disabled || working"
           @input="invalidate"
-        /><span class="hint">of {{ parts }}</span>
+        /><span class="hint">{{ t('media.partTotal', { count: parts }) }}</span>
       </div>
     </template>
     <div v-else class="file-drop" @dragover.prevent @drop="drop">
       <Icon name="file" :size="30" /><strong>{{
-        fileName || 'Bring your own video'
+        fileName || t('media.bringVideo')
       }}</strong
-      ><span class="hint"
-        >Your file stays on your device. Everyone needs their own copy.</span
-      >
+      ><span class="hint">{{ t('media.fileHint') }}</span>
       <label class="file-button" for="create-local-video">{{
-        fileName ? 'Choose another file' : 'Choose a video file'
+        fileName ? t('common.chooseAnother') : t('media.chooseFile')
       }}</label>
       <input
         id="create-local-video"
@@ -197,12 +207,14 @@ defineExpose({ prepare });
         :disabled="disabled || working"
         @change="fileInput"
       />
-      <span class="hint">or drop a file here</span>
+      <span class="hint">{{ t('media.drop') }}</span>
     </div>
-    <p v-if="summary" class="media-preview">
-      <Icon name="check" />{{ summary }}
+    <p v-if="summary || localSummary" class="media-preview">
+      <Icon name="check" />{{ translate(localSummary) || summary }}
     </p>
-    <p v-if="error" role="alert" class="notice error">{{ error }}</p>
-    <p v-if="working" role="status" class="hint">Preparing your video…</p>
+    <p v-if="error" role="alert" class="notice error">{{ translate(error) }}</p>
+    <p v-if="working" role="status" class="hint">
+      {{ t('common.preparingVideo') }}
+    </p>
   </div>
 </template>

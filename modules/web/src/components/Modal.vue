@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '../i18n';
+
 import { nextTick, onMounted, onBeforeUnmount, ref, useId } from 'vue';
 import Icon from './Icon.vue';
 defineProps<{ title: string }>();
@@ -80,7 +82,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="icon-button quiet"
-        aria-label="Close dialog"
+        :aria-label="t('common.closeDialog')"
         @click="close"
       >
         <Icon name="close" />

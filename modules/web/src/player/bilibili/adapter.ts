@@ -1,3 +1,4 @@
+import { message, type Message } from '../../i18n';
 import type { MediaDescriptor } from '../../transport/contracts';
 import {
   LocalAdapter,
@@ -34,7 +35,7 @@ export class BilibiliAdapter implements PlayerAdapter {
   constructor(
     private video: HTMLVideoElement,
     overlay: HTMLElement,
-    private onDanmaku: (status: string) => void,
+    private onDanmaku: (status: Message) => void,
     private onError: (failure: HelperError) => void
   ) {
     this.native = new LocalAdapter(video);
@@ -358,7 +359,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (segment === this.dmSegment) return;
     this.dmSegment = segment;
     const request = ++this.dmRequest;
-    this.onDanmaku('Loading danmaku…');
+    this.onDanmaku(message('player.danmakuLoading'));
     try {
       const reply = await this.bridge.call('danmaku', {
         handle: this.info.handle,
@@ -369,13 +370,13 @@ export class BilibiliAdapter implements PlayerAdapter {
       this.danmaku.comments = decodeComments(reply, this.info.duration);
       this.onDanmaku(
         this.danmaku.comments.length
-          ? 'Danmaku loaded'
-          : 'No danmaku in this segment'
+          ? message('player.danmakuLoaded')
+          : message('player.danmakuEmpty')
       );
     } catch {
       if (!this.disposed && request === this.dmRequest) {
         this.danmaku.clear();
-        this.onDanmaku('Danmaku unavailable. Reload danmaku to retry.');
+        this.onDanmaku(message('player.danmakuUnavailable'));
       }
     }
   }

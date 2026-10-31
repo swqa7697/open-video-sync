@@ -1,3 +1,4 @@
+import { message, LocalizedError } from '../../i18n';
 import { boundedText, exact, HelperError, integer, object } from './bridge';
 export interface TrackInfo {
   id: number;
@@ -35,15 +36,13 @@ export function parseSelection(
     part > 10000 ||
     raw.length > 2048
   )
-    throw new Error(
-      'Enter a canonical Bilibili video URL or BV identifier and a valid part.'
-    );
+    throw new LocalizedError(message('media.validSelection'));
   if (/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(raw)) return { bvid: raw, part };
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new Error('Enter a canonical Bilibili video URL or BV identifier.');
+    throw new LocalizedError(message('media.validURL'));
   }
   if (
     !['https:', 'http:'].includes(url.protocol) ||
@@ -52,21 +51,16 @@ export function parseSelection(
     url.password ||
     url.port
   )
-    throw new Error(
-      'Open the video on Bilibili and copy its canonical video URL. Short links cannot be expanded here.'
-    );
+    throw new LocalizedError(message('media.noShortLinks'));
   const match = url.pathname.match(
     /^\/video\/(BV[1-9A-HJ-NP-Za-km-z]{10})\/?$/
   );
-  if (!match)
-    throw new Error(
-      'Open the video on Bilibili and copy its canonical video URL.'
-    );
+  if (!match) throw new LocalizedError(message('media.canonicalURL'));
   const selected = url.searchParams.has('p')
     ? Number(url.searchParams.get('p'))
     : part;
   if (!Number.isSafeInteger(selected) || selected < 1 || selected > 10000)
-    throw new Error('Enter a valid Bilibili part.');
+    throw new LocalizedError(message('media.validPart'));
   return { bvid: match[1]!, part: selected };
 }
 export function decodeInfo(

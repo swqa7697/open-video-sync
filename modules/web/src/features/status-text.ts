@@ -1,37 +1,46 @@
+import { t, type MessageKey } from '../i18n';
 import type { Member, Snapshot } from '../transport/api';
 import type { ReadinessStatus } from '../transport/protocol-values';
 
 // Readable status text. Raw protocol codes stay in data-state attributes for tools.
-export const readinessText: Record<ReadinessStatus, string> = {
-  no_media: 'No video selected',
-  loading: 'Loading video…',
-  ready: 'Ready',
-  buffering: 'Buffering…',
-  gesture_required: 'Needs Enable playback',
-  mismatch: 'Different video from the room',
-  access_denied: 'Platform access unavailable',
-  unsupported: 'Not playable in this browser',
-  error: 'Video failed to load',
+export const readinessText: Record<ReadinessStatus, MessageKey> = {
+  no_media: 'status.noMedia',
+  loading: 'status.loading',
+  ready: 'status.ready',
+  buffering: 'status.buffering',
+  gesture_required: 'status.gesture',
+  mismatch: 'status.mismatch',
+  access_denied: 'status.accessDenied',
+  unsupported: 'status.unsupported',
+  error: 'status.error',
 };
-export const phaseText: Record<Snapshot['playback']['phase'], string> = {
-  empty: 'No video',
-  paused: 'Paused',
-  waiting: 'Waiting for participants',
-  playing: 'Playing',
-  ended: 'Ended',
+export const phaseText: Record<Snapshot['playback']['phase'], MessageKey> = {
+  empty: 'status.empty',
+  paused: 'status.paused',
+  waiting: 'status.waiting',
+  playing: 'status.playing',
+  ended: 'status.ended',
 };
 // Presence overrides readiness: an offline member's last report is not current.
 export function memberState(member: Member, mediaGeneration: number): string {
-  if (member.presence !== 'connected') return 'Offline';
+  if (member.presence !== 'connected') return t('status.offline');
   const readiness = member.readiness;
   if (!readiness || readiness.mediaGeneration !== mediaGeneration)
-    return readinessText.no_media;
+    return t(readinessText.no_media);
   const note =
     readiness.capabilities.canPlay && !readiness.capabilities.canDetectBuffering
-      ? ' · buffering not detected'
+      ? t('status.noBufferDetection')
       : '';
-  return readinessText[readiness.status] + note;
+  return t(readinessText[readiness.status]) + note;
 }
 export function settingsSummary(settings: Snapshot['settings']): string {
-  return `${settings.controllers === 'host' ? 'Host controls playback' : 'Everyone controls playback'} · ${settings.waitForAll ? 'Waits for everyone' : 'Does not wait'}`;
+  return t('settings.summary', {
+    controllers:
+      settings.controllers === 'host'
+        ? t('settings.hostSummary')
+        : t('settings.everyoneSummary'),
+    waiting: settings.waitForAll
+      ? t('settings.waitSummary')
+      : t('settings.noWaitSummary'),
+  });
 }

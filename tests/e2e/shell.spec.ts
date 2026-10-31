@@ -388,3 +388,188 @@ test('appearance follows the system and preserves explicit local choices', async
   );
   expect(failures).toEqual([]);
 });
+
+// Language owns a separate browser-local preference. This journey verifies rendered text,
+// existing failures, system changes, room playback, cross-tab storage, and blocked storage.
+test.describe('interface language', () => {
+  test.use({ locale: 'zh-TW' });
+  test('follows the system and switches open workflows without changing room state', async ({
+    page,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(60000);
+    const failures: string[] = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    page.on('console', (event) => {
+      if (/intlify|message compilation|not found.*locale/i.test(event.text()))
+        failures.push(event.text());
+    });
+    const language = () =>
+      page.getByRole('button', { name: /^(Language|语言)$/, exact: true });
+    const selectLanguage = async (value: 'system' | 'zh-CN' | 'en') => {
+      await language().click();
+      await page.locator(`input[name="language"][value="${value}"]`).check();
+      await page.keyboard.press('Escape');
+    };
+    const systemLanguage = async (values: string[]) => {
+      await page.evaluate((languages) => {
+        Object.defineProperty(navigator, 'languages', {
+          configurable: true,
+          value: languages,
+        });
+        window.dispatchEvent(new Event('languagechange'));
+      }, values);
+    };
+    const dismissChineseHelper = async () => {
+      await expect(
+        page.getByRole('complementary', { name: '播放助手' })
+      ).not.toContainText('正在检查', { timeout: 8000 });
+      const later = page.getByRole('button', { name: '稍后', exact: true });
+      if (await later.isVisible()) await later.click();
+    };
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await dismissChineseHelper();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    await expect(page).toHaveTitle('一起观看 · Open Video Sync');
+    await expect(page.locator('header [role="status"]')).toHaveText(
+      '服务器：就绪'
+    );
+    expect(
+      await page.evaluate(() => localStorage.getItem('ovs.language'))
+    ).toBeNull();
+    await page.screenshot({
+      path: testInfo.outputPath('i18n-home-zh.png'),
+      fullPage: true,
+    });
+    await page.getByRole('button', { name: '本地文件', exact: true }).click();
+    await page.getByRole('button', { name: '创建房间', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText(
+      '请先选择支持的视频文件'
+    );
+    await selectLanguage('en');
+    await expect(page.getByRole('alert')).toContainText(
+      'Select a supported video file first.'
+    );
+    await expect(page.getByLabel('Room name', { exact: false })).toBeVisible();
+    await page.reload();
+    await dismissHelper(page);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await systemLanguage(['zh-HK']);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+    const file = {
+      name: 'private-language-video.webm',
+      mimeType: 'video/webm',
+      buffer: await generatedVideo(browser, 6),
+    };
+    const title = 'Locale <b>聚会 😀</b>';
+    await createLocalRoom(page, file, title);
+    const videoSource = await page.locator('video').getAttribute('src');
+    const before = await (
+      await page.request.get(`/api/v2${new URL(page.url()).pathname}`)
+    ).json();
+    await selectLanguage('zh-CN');
+    await expect(page).toHaveTitle('房间 · Open Video Sync');
+    await expect(
+      page.getByRole('heading', { name: title, exact: true })
+    ).toBeVisible();
+    await expect(page.getByTestId('media-status')).toHaveText('已就绪');
+    await expect(page.getByTestId('playback-phase')).toHaveText('已暂停');
+    await expect(
+      page.getByRole('button', { name: '一起播放', exact: true })
+    ).toBeEnabled();
+    await expect(page.locator('.playback-status')).toContainText('已连接');
+    expect(await page.locator('video').getAttribute('src')).toBe(videoSource);
+    const after = await (
+      await page.request.get(`/api/v2${new URL(page.url()).pathname}`)
+    ).json();
+    expect(after.revision).toBe(before.revision);
+    expect(after.mediaGeneration).toBe(before.mediaGeneration);
+    expect(after.title).toBe(title);
+    await page.getByRole('button', { name: '邀请', exact: true }).click();
+    await expect(
+      page.getByRole('dialog', { name: '一起看，更精彩' })
+    ).toContainText(title);
+    await expect(page.locator('.modal b')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '房间设置', exact: true }).click();
+    await expect(page.getByLabel('播放控制权限', { exact: true })).toHaveValue(
+      'host'
+    );
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.screenshot({
+      path: testInfo.outputPath('i18n-room-zh-mobile.png'),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth
+      )
+    ).toBe(true);
+    await page.getByRole('button', { name: '外观', exact: true }).click();
+    await expect(
+      page.getByRole('radio', { name: '石板蓝', exact: true })
+    ).toBeChecked();
+    await page.keyboard.press('Escape');
+    await language().click();
+    await page.screenshot({
+      path: testInfo.outputPath('i18n-language-zh-mobile.png'),
+      animations: 'disabled',
+    });
+    await page.locator('input[name="language"][value="system"]').check();
+    await page.keyboard.press('Escape');
+    await systemLanguage(['de-DE', 'zh-CN']);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(
+      page.getByRole('button', { name: 'Play together', exact: true })
+    ).toBeEnabled();
+    await closeRoom(page);
+    await expect(page.locator('.app-message')).toContainText(
+      `You closed “${title}”.`
+    );
+    await systemLanguage(['zh-CN']);
+    await expect(page.locator('.app-message')).toContainText(
+      `你已关闭“${title}”。`
+    );
+
+    // An actual storage event from another same-origin tab updates the open page.
+    const other = await page.context().newPage();
+    try {
+      await other.goto('/');
+      await other.evaluate(() => localStorage.setItem('ovs.language', 'en'));
+      await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+      await other.evaluate(() =>
+        localStorage.setItem('ovs.language', 'invalid')
+      );
+      await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    } finally {
+      await other.close();
+    }
+    await page.reload();
+    await dismissChineseHelper();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    await page.addInitScript(() => {
+      Storage.prototype.getItem = () => {
+        throw new DOMException('Blocked', 'SecurityError');
+      };
+      Storage.prototype.setItem = () => {
+        throw new DOMException('Blocked', 'SecurityError');
+      };
+    });
+    await page.reload();
+    await dismissChineseHelper();
+    await language().click();
+    await page.locator('input[name="language"][value="en"]').check();
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Language', exact: true })
+        .getByRole('status')
+    ).toContainText('storage is unavailable');
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveTitle('Watch together · Open Video Sync');
+    expect(failures).toEqual([]);
+  });
+});

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
+import { translate } from '../i18n';
 import { FakeSocket, roomFixture } from '../test-support/room';
 import {
   RoomSocket,
@@ -26,7 +27,7 @@ function harness(results: ProbeResult[]) {
     status() {},
     lease() {},
     uncertain: (command) => uncertain.push(command),
-    error: (message) => errors.push(message),
+    error: (message) => errors.push(translate(message)),
     ended: (reason) => ended.push(reason),
   };
   const probe = vi.fn((signal: AbortSignal) => {

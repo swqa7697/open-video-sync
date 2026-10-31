@@ -1,6 +1,11 @@
 # Web module
 
 The private `@ovs/web` pnpm package owns the Vue interface, browser player adapters, and synchronization engine.
+Vue I18n owns interface translation. `src/i18n/en.json` defines the message schema; `zh-CN.json` must contain the same keys.
+Use `t` when rendering and keep `Message` descriptors for stored status, errors, and notices so language switches update existing text.
+Keep user names, room titles, video titles, and danmaku as text without translation. Use named parameters instead of sentence fragments.
+The language store resolves the first browser language, follows `languagechange` in system mode, and saves only an allowlisted preference in `ovs.language`.
+English is the fallback. Blocked storage still allows language changes until reload. Browser journeys cover both supported languages.
 The package declares a local link to `../helper` and consumes the helper's public bridge parser and generated release metadata through `@ovs/helper` exports.
 
 Run these commands from the repository root:

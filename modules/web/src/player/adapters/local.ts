@@ -1,3 +1,4 @@
+import { message, LocalizedError } from '../../i18n';
 import type {
   PlayerCapabilities,
   ReadinessStatus,
@@ -79,9 +80,7 @@ export class LocalAdapter implements PlayerAdapter {
       this.video.videoWidth === 0
     ) {
       this.status = 'unsupported';
-      throw new Error(
-        'This browser cannot decode this file or determine its duration. Select a supported video.'
-      );
+      throw new LocalizedError(message('local.unsupported'));
     }
     this.status = 'ready';
   }
@@ -170,7 +169,7 @@ export class LocalAdapter implements PlayerAdapter {
         },
         fail = () => {
           cleanup();
-          reject(new Error('This browser cannot decode this video.'));
+          reject(new LocalizedError(message('local.decodeFailed')));
         },
         abort = () => {
           cleanup();
@@ -178,11 +177,7 @@ export class LocalAdapter implements PlayerAdapter {
         };
       const timer = setTimeout(() => {
         cleanup();
-        reject(
-          new Error(
-            'The local video did not become ready. Select the file again.'
-          )
-        );
+        reject(new LocalizedError(message('local.notReady')));
       }, 15000);
       this.video.addEventListener(event, done, { once: true });
       this.video.addEventListener('error', fail, { once: true });

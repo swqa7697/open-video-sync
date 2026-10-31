@@ -1,3 +1,4 @@
+import { message, LocalizedError } from '../i18n';
 export function localFingerprint(
   file: File,
   roomId: string,
@@ -25,18 +26,18 @@ export function localFingerprint(
     };
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('Local matching timed out. Select the file again.'));
+      reject(new LocalizedError(message('local.matchTimeout')));
     }, 30000);
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = (event: MessageEvent<unknown>) => {
       cleanup();
       if (typeof event.data === 'string' && /^[a-f0-9]{64}$/.test(event.data))
         resolve(event.data);
-      else reject(new Error('Local matching failed. Select the file again.'));
+      else reject(new LocalizedError(message('local.matchFailed')));
     };
     worker.onerror = () => {
       cleanup();
-      reject(new Error('Local matching failed. Select the file again.'));
+      reject(new LocalizedError(message('local.matchFailed')));
     };
     worker.postMessage({ file, roomId });
   });

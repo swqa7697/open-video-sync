@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { t, message as msg, translate, type Message } from './i18n';
+import { useLanguageStore } from './stores/language';
+import LanguagePanel from './features/LanguagePanel.vue';
+
 import {
   computed,
   nextTick,
@@ -42,12 +46,14 @@ import AppearancePanel from './features/AppearancePanel.vue';
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
   identity = useIdentityStore();
+const language = useLanguageStore();
+const stopLanguage = language.listen();
 const controller = new AbortController();
 const departing = ref(false);
 const busy = ref(false),
   failure = ref<Failure>(),
   invalidField = ref<string>(),
-  message = ref('');
+  message = ref<Message | ''>('');
 const title = ref(''),
   code = ref('');
 const room = ref<Snapshot>(),
@@ -57,11 +63,12 @@ const picker = ref<InstanceType<typeof MediaPicker>>();
 const draftSettings = ref(defaultSettings()),
   settingsOpen = ref(false),
   profileOpen = ref(false);
-const appearanceOpen = ref(false);
+const appearanceOpen = ref(false),
+  languageOpen = ref(false);
 const helperGeneration = ref(0);
 let initialFile: File | undefined;
 const safeName = computed(
-  () => identity.session?.identity.displayName || 'Guest'
+  () => identity.session?.identity.displayName || t('common.guest')
 );
 const host = computed(
   () => room.value?.selfMemberId === room.value?.hostMemberId
@@ -78,22 +85,22 @@ const pendingLink = ref(props.initialInvitation);
 const serverText = computed(
   () =>
     ({
-      checking: 'Server: checking…',
-      ready: 'Server: ready',
-      not_ready: 'Server: online, but cannot save changes',
-      unreachable: 'Server: unreachable',
+      checking: t('app.serverChecking'),
+      ready: t('app.serverReady'),
+      not_ready: t('app.serverNotReady'),
+      unreachable: t('app.serverUnreachable'),
     })[connection.status]
 );
 // Room titles stay out of browser history; the room heading names the room.
 watchEffect(() => {
   document.title = `${
     room.value
-      ? 'Room'
+      ? t('app.titleRoom')
       : !identity.session && !busy.value
-        ? 'Connection problem'
+        ? t('app.titleConnection')
         : pendingLink.value
-          ? 'Join a room'
-          : 'Watch together'
+          ? t('app.titleJoin')
+          : t('common.watchTogether')
   } · Open Video Sync`;
 });
 const api = (
@@ -177,7 +184,7 @@ async function open(id: string, moveFocus = false): Promise<void> {
         reason instanceof APIError &&
         reason.code === 'invitation_reset_required'
       )
-        message.value = reason.message;
+        message.value = reason.text;
       else throw reason;
     }
   }
@@ -196,8 +203,7 @@ async function submitAttempt(): Promise<void> {
       }
     }
     if (pending.path === '/rooms') creationKey.value = requestKey();
-    message.value =
-      'Request recovery expired. No second room was created. Check the room link or start a new request explicitly.';
+    message.value = msg('app.recoveryExpired');
     return;
   }
   try {
@@ -212,7 +218,7 @@ async function submitAttempt(): Promise<void> {
     title.value = '';
     show(value.snapshot, value.invitation ?? undefined);
     if (pending.path !== '/rooms') initialFile = undefined;
-    message.value = 'Room ready.';
+    message.value = msg('app.roomReady');
     void focus('room-title');
   } catch (reason) {
     if (
@@ -226,8 +232,7 @@ async function submitAttempt(): Promise<void> {
       } catch {
         /* No unauthorized state is exposed. */
       }
-      message.value =
-        'The original room could not be recovered. No second room was created. You can start a new request.';
+      message.value = msg('app.recoveryFailed');
       creationKey.value = requestKey();
       return;
     }
@@ -247,7 +252,7 @@ async function create(): Promise<void> {
   attempt.value = {
     path: '/rooms',
     payload: {
-      title: title.value.trim() || 'Watch party',
+      title: title.value.trim() || t('app.defaultRoomName'),
       settings: { ...draftSettings.value },
       media: selection.media,
     },
@@ -291,10 +296,10 @@ async function join(): Promise<void> {
   };
   await submitAttempt();
 }
-const managed: Record<'settings' | 'rotate' | 'remove', string> = {
-  settings: 'Preferences saved.',
-  rotate: 'Invitation replaced. Previous links and codes no longer work.',
-  remove: 'Participant removed. The invitation was replaced.',
+const managed: Record<'settings' | 'rotate' | 'remove', Message> = {
+  settings: msg('app.preferencesSaved'),
+  rotate: msg('app.invitationReplaced'),
+  remove: msg('app.participantRemoved'),
 };
 async function manage(
   operation: 'settings' | 'rotate' | 'remove' | 'close' | 'leave',
@@ -339,7 +344,7 @@ async function manage(
       // The room may still exist; only a missing room ends this view.
       await open(current.roomId);
       if (room.value && operation === 'remove' && !self) {
-        message.value = 'That participant already left.';
+        message.value = msg('app.alreadyLeft');
         return;
       }
       if (!room.value) return;
@@ -351,8 +356,8 @@ async function manage(
   if (self) {
     message.value =
       operation === 'close'
-        ? `You closed “${current.title}”.`
-        : `You left “${current.title}”.`;
+        ? msg('app.closedRoom', { title: current.title })
+        : msg('app.leftRoom', { title: current.title });
     await back();
     return;
   }
@@ -392,25 +397,28 @@ async function ended(reason: EndReason): Promise<void> {
   room.value = undefined;
   invitation.value = undefined;
   history.replaceState(null, '', '/');
-  const quoted = name ? `“${name}”` : 'This room';
   if (reason === 'session_ended' || reason === 'revoked') {
     failure.value = {
       text:
         reason === 'session_ended'
-          ? 'Your identity session ended in this browser. Reload to continue with a new identity.'
-          : 'The room connection ended. Reload to continue.',
+          ? msg('app.sessionEnded')
+          : msg('app.connectionEnded'),
       reload: true,
     };
     if (reason === 'session_ended') identity.session = undefined;
     if (focusInside) void focus('app-reload');
     return;
   }
-  message.value =
-    reason === 'closed'
-      ? `The host closed ${quoted}.`
-      : reason === 'removed'
-        ? `You were removed from ${quoted}. Ask the host for a new invitation.`
-        : `${quoted} is no longer available to you.`;
+  message.value = name
+    ? msg(
+        reason === 'closed'
+          ? 'app.hostClosed'
+          : reason === 'removed'
+            ? 'app.removed'
+            : 'app.unavailable',
+        { room: `“${name}”` }
+      )
+    : msg('api.not_found');
   if (focusInside || !active?.isConnected) void focus('create-title');
 }
 async function forget(): Promise<void> {
@@ -426,7 +434,7 @@ async function forget(): Promise<void> {
   pendingLink.value = undefined;
   history.replaceState(null, '', '/');
   await identity.bootstrap(controller.signal);
-  message.value = 'A new identity is active.';
+  message.value = msg('app.newIdentity');
   void focus('identity-title');
 }
 function connectionChanged(): void {
@@ -463,10 +471,11 @@ onMounted(() => {
     if (route) await open(route[1]!);
     if (pendingLink.value) await join();
     else if (location.pathname === '/join')
-      message.value = 'This invitation is unavailable or the room has closed.';
+      message.value = msg('api.invalid_invitation');
   });
 });
 onUnmounted(() => {
+  stopLanguage();
   document.removeEventListener('keydown', keyboardInput, true);
   document.removeEventListener('pointerdown', pointerInput, true);
   controller.abort();
@@ -480,13 +489,13 @@ onUnmounted(() => {
 
 <template>
   <div class="shell" :class="{ viewing: !!room }">
-    <a class="skip" href="#main" @click.prevent="focusMain"
-      >Skip to main content</a
-    >
+    <a class="skip" href="#main" @click.prevent="focusMain">{{
+      t('app.skip')
+    }}</a>
     <header class="app-header">
       <button
         class="brand quiet"
-        aria-label="OVS home"
+        :aria-label="t('app.home')"
         :disabled="busy"
         @click="room && perform(() => manage('leave'))"
       >
@@ -499,8 +508,16 @@ onUnmounted(() => {
         </p>
         <button
           class="quiet icon-button"
-          aria-label="Appearance"
-          title="Appearance"
+          :aria-label="t('common.language')"
+          :title="t('common.language')"
+          @click="languageOpen = true"
+        >
+          <Icon name="language" />
+        </button>
+        <button
+          class="quiet icon-button"
+          :aria-label="t('common.appearance')"
+          :title="t('common.appearance')"
           @click="appearanceOpen = true"
         >
           <Icon name="appearance" />
@@ -522,49 +539,44 @@ onUnmounted(() => {
     <HelperNotice @ready="helperGeneration++" />
     <main id="main" tabindex="-1">
       <div v-if="failure" id="app-alert" role="alert" class="notice error">
-        <p><strong>Error:</strong> {{ failure.text }}</p>
+        <p>
+          <strong>{{ t('common.error') }}</strong> {{ translate(failure.text) }}
+        </p>
         <button
           v-if="failure.reload"
           id="app-reload"
           class="quiet"
           @click="reload"
         >
-          Reload page
+          {{ t('common.reload') }}
         </button>
       </div>
       <div class="app-message" role="status">
-        <p v-if="message" class="notice">{{ message }}</p>
+        <p v-if="message" class="notice">{{ translate(message) }}</p>
       </div>
       <template v-if="!identity.session"
         ><div class="initializing">
           <Icon name="screen" :size="32" />
           <h2>
-            {{
-              busy
-                ? 'Getting things ready…'
-                : 'Your identity could not be restored.'
-            }}
+            {{ busy ? t('app.gettingReady') : t('app.identityUnavailable') }}
           </h2>
           <button
             v-if="!busy"
             @click="perform(() => identity.bootstrap(controller.signal))"
           >
-            Retry connection
+            {{ t('app.retryConnection') }}
           </button>
         </div></template
       >
       <template v-else>
         <div v-if="attempt" class="notice">
-          <p>
-            The request outcome is uncertain. Check the original request to
-            recover its result.
-          </p>
+          <p>{{ t('app.uncertain') }}</p>
           <button
             id="retry-attempt"
             :disabled="busy"
             @click="perform(submitAttempt)"
           >
-            Retry original request
+            {{ t('app.retryOriginal') }}
           </button>
         </div>
         <RoomPanel
@@ -573,7 +585,7 @@ onUnmounted(() => {
           :host="host"
           :invitation="invitation"
           :busy="busy"
-          :error="failure?.text"
+          :error="failure ? translate(failure.text) : undefined"
           @refresh="
             perform(async () => {
               if (room) await open(room.roomId);
@@ -604,16 +616,22 @@ onUnmounted(() => {
         <div v-else class="home">
           <div class="home-heading">
             <p class="eyebrow">
-              <span class="status-dot" />A private place to press play
+              <span class="status-dot" />{{ t('app.eyebrow') }}
             </p>
-            <h1>Good company.<br /><span>Perfectly in sync.</span></h1>
-            <p>Pick a video. Invite your people. Watch together.</p>
+            <h1>
+              {{ t('app.heroFirst') }}<br /><span>{{
+                t('app.heroSecond')
+              }}</span>
+            </h1>
+            <p>{{ t('app.heroHint') }}</p>
           </div>
           <section class="create-card" aria-labelledby="create-title">
             <div class="card-heading">
-              <h2 id="create-title" tabindex="-1">Start a watch party</h2>
+              <h2 id="create-title" tabindex="-1">{{ t('app.startParty') }}</h2>
               <span class="private-badge"
-                ><Icon name="shield" :size="14" />Private room</span
+                ><Icon name="shield" :size="14" />{{
+                  t('app.privateRoom')
+                }}</span
               >
             </div>
             <form @submit.prevent="!attempt && perform(create, 'create')">
@@ -624,13 +642,14 @@ onUnmounted(() => {
               />
               <div class="room-draft">
                 <label for="room-name"
-                  >Room name <span class="hint">optional</span></label
+                  >{{ t('app.roomName') }}
+                  <span class="hint">{{ t('common.optional') }}</span></label
                 ><input
                   id="room-name"
                   v-model="title"
                   :readonly="busy || !!attempt"
                   maxlength="120"
-                  placeholder="e.g. Friday movie night"
+                  :placeholder="t('app.roomPlaceholder')"
                   :aria-invalid="invalidField === 'room-name' || undefined"
                   @input="invalidField = undefined"
                 />
@@ -639,18 +658,18 @@ onUnmounted(() => {
                 <span
                   ><Icon name="users" :size="16" />{{
                     draftSettings.controllers === 'host'
-                      ? 'Host controls'
-                      : 'Everyone controls'
+                      ? t('app.hostControls')
+                      : t('app.everyoneControls')
                   }}<span class="separator">·</span
                   >{{
                     draftSettings.waitForAll
-                      ? 'Wait for everyone'
-                      : 'Join when ready'
+                      ? t('settings.wait')
+                      : t('app.joinWhenReady')
                   }}</span
                 ><button
                   type="button"
                   class="quiet icon-button"
-                  aria-label="Room settings"
+                  :aria-label="t('common.settings')"
                   :disabled="busy || !!attempt"
                   @click="settingsOpen = true"
                 >
@@ -658,13 +677,13 @@ onUnmounted(() => {
                 </button>
               </div>
               <button class="create-submit" :disabled="busy || !!attempt">
-                {{ busy ? 'Preparing room…' : 'Create room'
+                {{ busy ? t('app.preparingRoom') : t('app.createRoom')
                 }}<Icon name="arrow" />
               </button>
             </form>
           </section>
           <section class="join-section" aria-labelledby="join-title">
-            <h2 id="join-title">Already have an invitation?</h2>
+            <h2 id="join-title">{{ t('app.haveInvitation') }}</h2>
             <form
               class="input-action"
               @submit.prevent="!attempt && perform(join, 'join')"
@@ -672,10 +691,10 @@ onUnmounted(() => {
               <input
                 id="join-code"
                 v-model="code"
-                aria-label="Invitation link or code"
+                :aria-label="t('app.invitationInput')"
                 :readonly="busy || !!attempt"
                 maxlength="2048"
-                placeholder="Paste an invitation link or code"
+                :placeholder="t('app.invitationPlaceholder')"
                 autocomplete="off"
                 spellcheck="false"
                 :aria-invalid="invalidField === 'join-code' || undefined"
@@ -685,39 +704,48 @@ onUnmounted(() => {
                 class="quiet"
                 :disabled="busy || !!attempt"
               >
-                Join<Icon name="arrow" :size="16" />
+                {{ t('app.join') }}<Icon name="arrow" :size="16" />
               </button>
             </form>
           </section>
           <p class="privacy-note">
-            <Icon name="shield" :size="15" />Your media stays yours. Only
-            playback stays in sync.
+            <Icon name="shield" :size="15" />{{ t('app.privacy') }}
           </p>
         </div>
       </template>
     </main>
     <footer>
-      <span>OVS<span class="separator">/</span>Made for watching together</span
-      ><span>Private rooms. Your own media.</span>
+      <span
+        >OVS<span class="separator">/</span>{{ t('app.footerTogether') }}</span
+      ><span>{{ t('app.footerPrivate') }}</span>
     </footer>
     <Modal
       v-if="settingsOpen"
-      title="Room settings"
+      :title="t('common.settings')"
       @close="settingsOpen = false"
       ><form @submit.prevent="settingsOpen = false">
         <SettingsForm v-model="draftSettings" :disabled="busy" /><button>
-          Apply settings
+          {{ t('app.applySettings') }}
         </button>
       </form></Modal
     >
     <Modal
+      v-if="languageOpen"
+      :title="t('common.language')"
+      @close="languageOpen = false"
+      ><LanguagePanel
+    /></Modal>
+    <Modal
       v-if="appearanceOpen"
-      title="Appearance"
+      :title="t('common.appearance')"
       @close="appearanceOpen = false"
     >
       <AppearancePanel />
     </Modal>
-    <Modal v-if="profileOpen" title="Your profile" @close="profileOpen = false"
+    <Modal
+      v-if="profileOpen"
+      :title="t('app.profile')"
+      @close="profileOpen = false"
       ><IdentityPanel
         :busy="busy || !!attempt"
         :invalid="invalidField === 'display-name'"
@@ -726,7 +754,7 @@ onUnmounted(() => {
           (name) =>
             perform(async () => {
               await identity.rename(name, controller.signal);
-              message = 'Name saved.';
+              message = msg('app.nameSaved');
             }, 'rename')
         "
         @forget="perform(forget)"
