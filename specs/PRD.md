@@ -49,7 +49,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
 
 ## Simplicity boundaries
 
-- Keep invitations reusable until the host resets them or closes the room. Different participants can reuse the same link or code. Sharing again, joining, leaving, and removing a member do not replace the invitation. The host returns through the room URL.
+- Keep invitations reusable until the host explicitly resets them or the room closes. Different participants and the host can reuse the same link or code. While the room remains open, sharing, failed joins, helper installation, reloads, departure, removal, and elapsed time never invalidate invitations. Apply no invitation expiry, including to legacy invitations. Preserve pending invitation entry across reloads until joining succeeds.
 - Close rooms after everyone leaves. Explicit final departure closes immediately; disconnected pages have 30 seconds to return. Restored rooms have a 60-second startup reconnection window.
 - After host departure, persist Everyone playback control without transferring host management. A returning host can explicitly change that setting.
 - Create rooms with initial media directly on the home page. Invitation links enter automatically. Keep management in dialogs and playback controls inside the player, with local quality and danmaku controls but no speed menu.

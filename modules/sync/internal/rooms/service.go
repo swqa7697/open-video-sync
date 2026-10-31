@@ -358,9 +358,6 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 		}
 		c := s.coordinator(id)
 		r := cloneRoom(c.room)
-		if p.IdentityID == r.HostIdentityID {
-			return contracts.Failure("invalid_invitation")
-		}
 		_, existing := member(r, p.IdentityID)
 		if replay {
 			if !existing {
@@ -374,7 +371,7 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 			if kind == "code" {
 				expected = r.Invite.CodeHash
 			}
-			if expected != hash || (r.Invite.LinkSecret == "" && r.Invite.ExpiresAtMs <= s.Now().UnixMilli()) {
+			if expected != hash {
 				return contracts.Failure("invalid_invitation")
 			}
 			if !existing {

@@ -119,15 +119,15 @@ Bound stored rooms and membership with existing internal resource limits. Do not
 ### 4.3 Invitations
 
 Keep a random 128-bit link secret and an independent 16-character Crockford Base32 code.
-Use `/join#invite=<secret>`; remove the fragment before loading provider components, then redeem through a JSON body.
+Use `/join#invite=<secret>`; remove the fragment before loading provider components, then redeem through a JSON body. Retain the validated pending secret in the current history entry across helper installation and reloads. Clear it when joining succeeds or the page leaves the join route. Do not put it in local storage or a shared frontend store.
 Normalize only documented Crockford aliases, ASCII spaces, and hyphens. Do not use short numeric room IDs as secrets.
 
-Invitations remain valid until explicitly reset or the room closes. The host can retrieve the same invitation again without invalidating earlier shares.
+Invitations remain valid until the host explicitly resets them or the room closes. While the room remains open, failed joins, helper installation, reloads, departure, removal, and elapsed time never invalidate them. Ignore historical expiry metadata on legacy invitations. The host can retrieve the same invitation again without invalidating earlier shares.
 Only the host may retrieve raw invitation values. Never include them in room snapshots, lists, logs, or other participants' responses.
 Store the values in the private invitation record, with indexed hashes for redemption. Do not introduce encryption-key management for this purpose.
 
 Joining persists membership once. Redeeming again as an existing member does not duplicate membership.
-Removal atomically removes membership, then disconnects the removed member. Joining, leaving, removal, and sharing do not replace the invitation; only explicit rotation or closure invalidates it. A removed participant can rejoin with the current invitation. Hosts return through the room URL; redemption rejects the current host without exposing room details.
+Removal atomically removes membership, then disconnects the removed member. Joining, leaving, removal, and sharing do not replace the invitation; only host rotation or room closure invalidates it. A removed participant can rejoin with the current invitation. Hosts can return through the room URL or redeem the current invitation without changing membership or losing management rights.
 Return one safe error for unknown, revoked, or closed-room invitations. Rate-limit redemption in memory.
 
 ### 4.4 Connections and multiple tabs
@@ -332,7 +332,7 @@ A reused in-memory request ID with changed input is rejected. Never promise reco
 | Sessions          | Token hash, identity, CSRF metadata, expiry              | Create, daily renewal if needed, revoke |
 | Rooms             | ID, title, host, two settings                            | Create, change settings, close          |
 | Members           | Room, identity, room-scoped member ID                    | Join, leave, remove                     |
-| Invitations       | Current link/code values and indexed verification hashes | Create or reset; member removal         |
+| Invitations       | Current link/code values and indexed verification hashes | Create or explicit host reset           |
 | Selected media    | Allowlisted local or Bilibili descriptor                 | Select or replace media                 |
 
 SQLite is not a runtime state store, queue, authorization polling mechanism, or synchronization clock.

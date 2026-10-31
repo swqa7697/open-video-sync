@@ -1,6 +1,6 @@
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
-import { closeRoom, dismissHelper, invitationLink } from './flows';
+import { closeRoom, invitationLink } from './flows';
 import release from '../../modules/helper/dist/release.json';
 test('Bilibili helper failures preserve local playback and dispose closed rooms', async ({
   page,
@@ -173,7 +173,52 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   try {
     const other = await guest.newPage();
     await other.goto(invitation);
-    await dismissHelper(other);
+    const roomURL = `${baseURL}/rooms/${room.snapshot.roomId}`;
+    await expect(other).toHaveURL(roomURL);
+    const setup = other.getByRole('dialog', {
+      name: 'Set up Bilibili playback',
+      exact: true,
+    });
+    await expect(setup).toContainText('not detected');
+    const beforeInstall = await (await other.request.get('/api/v2/me')).json();
+    const script = await other.request.get('/userscripts/ovs-bilibili.user.js');
+    expect(script.ok()).toBe(true);
+    // Start the actual distributed helper on the next document, as installation does.
+    // This local-media journey needs no privileged platform requests.
+    await other.addInitScript({
+      content: `(() => {
+        const unsafeWindow = window;
+        const GM_xmlhttpRequest = () => { throw new Error('Unexpected platform request'); };
+        ${await script.text()}
+      })();`,
+    });
+    const reloaded = other.waitForEvent('load');
+    await setup
+      .getByRole('button', { name: 'Reload page', exact: true })
+      .click();
+    await reloaded;
+    await expect(other).toHaveURL(roomURL);
+    await expect(
+      other.getByRole('heading', {
+        name: 'Bilibili helper boundaries',
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(
+      other.getByRole('complementary', { name: 'Playback helper' })
+    ).toHaveCount(0);
+    await expect(
+      other.getByRole('button', { name: 'Join', exact: true })
+    ).toHaveCount(0);
+    const afterInstall = await (await other.request.get('/api/v2/me')).json();
+    expect(afterInstall.identity.identityId).toBe(
+      beforeInstall.identity.identityId
+    );
+    const restored = await (
+      await other.request.get(`/api/v2/rooms/${room.snapshot.roomId}`)
+    ).json();
+    expect(restored.members).toHaveLength(2);
+    expect(await invitationLink(page)).toBe(invitation);
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',

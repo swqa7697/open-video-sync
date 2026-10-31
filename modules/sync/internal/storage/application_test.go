@@ -268,8 +268,10 @@ func TestVersionFiveUpgradePreservesSessionsMetadataAndLegacyInvitations(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Redeem(ctx, guest, recoveryKey(t), "link", expiredLink); err != contracts.Failure("invalid_invitation") {
-		t.Fatal("expired legacy invite became valid", err)
+	for kind, secret := range map[string]string{"link": expiredLink, "code": "FEDCBA9876543210"} {
+		if _, err := service.Redeem(ctx, guest, recoveryKey(t), kind, secret); err != nil {
+			t.Fatal("legacy invitation expired without host rotation", kind, err)
+		}
 	}
 	if _, err := service.Redeem(ctx, guest, recoveryKey(t), "link", link); err != nil {
 		t.Fatal("valid legacy invitation lost", err)

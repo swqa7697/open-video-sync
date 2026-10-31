@@ -39,7 +39,8 @@ type Room struct {
 	Invite                    InvitationRecord
 }
 
-// InvitationRecord keeps private sharing values and indexed verifiers. Legacy records have hashes and expiry only.
+// InvitationRecord keeps private sharing values and indexed verifiers.
+// ExpiresAtMs is legacy metadata; invitations never expire by time.
 type InvitationRecord struct {
 	Generation, ExpiresAtMs int64
 	LinkHash, CodeHash      string

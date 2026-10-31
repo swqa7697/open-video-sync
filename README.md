@@ -66,6 +66,8 @@ The creator's selected local file stays available through this in-app transition
 
 Paste an invitation link or code on home, or open an invitation link to enter automatically.
 Links use `/join#invite=...`; OVS removes the fragment before mounting provider components.
+Pending invitations remain in the current browser history entry until joining succeeds, so helper installation and page reloads can resume joining.
+After installing the helper, reload the original tab to enter the invited room automatically. You do not need to reopen the invitation or select **Join** again.
 Bilibili loads automatically on entry and media changes, using each participant's own helper and access.
 When a loaded Bilibili video has multiple parts or belongs to a collection, switch the right sidebar between **Members** and **Episodes**.
 The current episode is marked. Only the host can select another episode for the room; playback restarts paused at zero.
@@ -75,7 +77,7 @@ There is no home room directory. An existing member can revisit an authorized ro
 
 **Invite** shows the host's reusable link and code. Copy actions fall back to selectable text on ordinary HTTP.
 **Replace invitation** resets both values. Sharing again, joining, leaving, and removing a participant keep the invitation unchanged.
-Different participants can reuse it until replacement or closure. The host returns through the room URL instead of redeeming an invitation.
+Different participants can reuse it until the host replaces it or the room closes. The host can return through the room URL or the current invitation.
 Only the host can retrieve invitations, replace media, change settings, remove participants, or close the room for everyone.
 Room settings and destructive confirmation appear in dialogs. **Members** toggles a side panel or opens a narrow-screen dialog.
 

@@ -12,14 +12,22 @@ test('browser JSON encoding agrees with server HTTP request digests', () => {
       createHash('sha256').update(JSON.stringify(vector.input)).digest('hex')
     ).toBe(vector.digest);
 });
-test('consumes invitation fragments before component startup', () => {
+test('removes invitation fragments and retains pending entry across reloads', () => {
   history.replaceState(null, '', '/join#invite=AAECAwQFBgcICQoLDA0ODw');
   expect(consumeInvitation()).toBe('AAECAwQFBgcICQoLDA0ODw');
   expect(location.hash).toBe('');
-  expect(consumeInvitation()).toBeUndefined();
+  expect(consumeInvitation()).toBe('AAECAwQFBgcICQoLDA0ODw');
   history.replaceState(null, '', '/join#invite=malformed');
   expect(consumeInvitation()).toBeUndefined();
   expect(location.hash).toBe('');
+  history.replaceState({ pendingInvitation: 'malformed' }, '', '/join');
+  expect(consumeInvitation()).toBeUndefined();
+  history.replaceState(
+    { pendingInvitation: 'AAECAwQFBgcICQoLDA0ODw' },
+    '',
+    '/'
+  );
+  expect(consumeInvitation()).toBeUndefined();
   history.replaceState(null, '', '/');
 });
 test('classifies transport failures separately from unusable OVS answers', async () => {

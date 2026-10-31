@@ -79,8 +79,10 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 		t.Fatal("private listing leaked")
 	}
 	redeemKey := key(t)
-	_, err = service.Redeem(ctx, host, key(t), "code", created.Invitation.Code)
-	expectCode(t, err, "invalid_invitation")
+	returned, err := service.Redeem(ctx, host, key(t), "code", created.Invitation.Code)
+	if err != nil || returned.Snapshot.SelfMemberID != created.Snapshot.HostMemberID || returned.Snapshot.Revision != 1 {
+		t.Fatal("host could not return through its current invitation", err)
+	}
 	joined, err := service.Redeem(ctx, guest, redeemKey, "code", strings.ToLower(created.Invitation.Code[:4])+"-"+created.Invitation.Code[4:])
 	if err != nil {
 		t.Fatal(err)

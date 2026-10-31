@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import App from './App.vue';
 import { decodeSnapshot } from './transport/api';
+import { consumeInvitation } from './transport/invitation';
 import { roomFixture } from './test-support/room';
 import { i18n } from './i18n';
 const identity = {
@@ -179,30 +180,64 @@ test.each([true, false])(
     wrapper.unmount();
   }
 );
-test('automatically redeems an invitation after identity restoration and preserves safe failure', async () => {
-  const requests: RequestInit[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((url: string, options: RequestInit) => {
-      if (url.startsWith('/health'))
-        return Promise.resolve(new Response(null, { status: 204 }));
-      if (url.endsWith('/session')) return Promise.resolve(json(identity));
-      requests.push(options);
-      return Promise.resolve(
-        json({ snapshot, invitation: null, replayed: false })
+test.each(['session', 'redeem'])(
+  'recovers invitation after a failed %s request and helper reload',
+  async (failed) => {
+    const requests: RequestInit[] = [];
+    let interrupted = true;
+    const secret = 'AAECAwQFBgcICQoLDA0ODw';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, options: RequestInit) => {
+        if (url.startsWith('/health'))
+          return Promise.resolve(new Response(null, { status: 204 }));
+        if (url.endsWith('/session'))
+          return interrupted && failed === 'session'
+            ? Promise.reject(new TypeError('network failure'))
+            : Promise.resolve(json(identity));
+        if (url.endsWith('/invitations'))
+          return Promise.resolve(
+            json({
+              invitation: { linkSecret: secret, code: '0123456789ABCDEF' },
+            })
+          );
+        requests.push(options);
+        if (interrupted)
+          return Promise.reject(new TypeError('network failure'));
+        return Promise.resolve(
+          json({ snapshot, invitation: null, replayed: false })
+        );
+      })
+    );
+    history.replaceState(null, '', `/join#invite=${secret}`);
+    let wrapper = app({ initialInvitation: consumeInvitation()! });
+    try {
+      await flushPromises();
+      expect(wrapper.get('[role="alert"]').text()).toContain(
+        'Cannot reach the server'
       );
-    })
-  );
-  const wrapper = app({ initialInvitation: 'A'.repeat(22) });
-  await flushPromises();
-  expect(requests).toHaveLength(1);
-  expect(JSON.parse(requests[0]!.body as string)).toEqual({
-    linkSecret: 'A'.repeat(22),
-  });
-  expect(wrapper.get('#room-title').text()).toBe('Private room');
-  expect(wrapper.find('#join-submit').exists()).toBe(false);
-  wrapper.unmount();
-});
+      expect(location.hash).toBe('');
+      wrapper.unmount();
+      interrupted = false;
+      wrapper = app({ initialInvitation: consumeInvitation()! });
+      await flushPromises();
+      expect(requests).toHaveLength(failed === 'session' ? 1 : 2);
+      expect(JSON.parse(requests.at(-1)!.body as string)).toEqual({
+        linkSecret: secret,
+      });
+      expect(wrapper.get('#room-title').text()).toBe('Private room');
+      expect(wrapper.find('#join-submit').exists()).toBe(false);
+      await wrapper.get('.invite-button').trigger('click');
+      expect(
+        wrapper.get<HTMLInputElement>('#invite-link').element.value
+      ).toContain(secret);
+      expect(history.state).toBeNull();
+      expect(consumeInvitation()).toBeUndefined();
+    } finally {
+      wrapper.unmount();
+    }
+  }
+);
 test('rejects malformed room responses before rendering authority', () => {
   expect(() =>
     decodeSnapshot({ ...snapshot, selfMemberId: 'f'.repeat(32) })

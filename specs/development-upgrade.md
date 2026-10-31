@@ -12,7 +12,7 @@ Controller permission is preserved. Old `waitMode=all` becomes `waitForAll=true`
 Playback checkpoints, command receipts, retry results, activity fields, and runtime counters are removed.
 Playback restarts paused at zero. Reload old browser pages to use protocol v2. Helper protocol 1 and local fingerprints are unchanged.
 
-Old invitations contain hashes only. Their original validity and expiry remain until the host explicitly replaces them.
+Old invitations contain hashes only. Their existing verifiers remain usable until the host explicitly replaces them; historical expiry no longer applies.
 Sharing an old invitation returns `invitation_reset_required`; the room shows a replacement prompt.
 Rooms whose expired invitation rows were already removed also remain accessible and require explicit replacement.
 Select **Replace invitation** to create recoverable values without expiry. Old links/codes then stop working.

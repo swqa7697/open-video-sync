@@ -304,6 +304,7 @@ async function submitAttempt(): Promise<void> {
     code.value = '';
     title.value = '';
     show(value.snapshot, value.invitation ?? undefined);
+    if (pending.path !== '/rooms' && host.value) await share();
     if (pending.path !== '/rooms') initialFile = undefined;
     message.value = msg('app.roomReady');
     void focus('room-title');
@@ -350,8 +351,8 @@ async function create(): Promise<void> {
   await submitAttempt();
 }
 function invitationInput(): { linkSecret: string } | { code: string } {
-  if (pendingLink.value) return { linkSecret: pendingLink.value };
   const raw = code.value.trim();
+  if (!raw && pendingLink.value) return { linkSecret: pendingLink.value };
   if (/^[a-zA-Z0-9 -]{16,32}$/.test(raw)) return { code: raw };
   try {
     const url = new URL(raw);

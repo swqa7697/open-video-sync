@@ -51,7 +51,7 @@ Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate
 `GET /version` needs no session and performs no storage access. Return the running binary's build version and the release versions of its embedded frontend and helper. Keep this metadata uncached; it does not report the helper installed in the browser.
 
 `Invitation` is `{linkSecret,code}`. It has no expiry. GET reuses the current invitation without rotating it.
-Joining, leaving, sharing, and removing a participant preserve the current invitation. Only explicit reset or room closure invalidates it. A current host cannot redeem an invitation; use the room URL to return.
+While the room remains open, joining, failed joins, helper installation, reloads, leaving, sharing, removal, and elapsed time preserve the current invitation. Only an explicit host reset or room closure invalidates it. The current host can redeem the current invitation without changing membership. Empty rooms still close after the normal departure grace.
 No snapshot, list, or non-host response contains invitation secrets.
 
 Existing-room mutations use current runtime epoch/revision, even when their persistent fields are stored in SQLite.
@@ -151,6 +151,6 @@ No receipts, runtime counters, waiting state, or playback positions survive rest
 Shared v2 fixtures verify the current settings and metadata boundaries. Fingerprint version-1 vectors remain unchanged.
 The obsolete v1 application reference and fixtures are retired.
 Preserve the existing session cookie so identity and membership survive the upgrade.
-Legacy hash-only invitations keep their existing verification and validity until host replacement. A host GET for such a record returns `invitation_reset_required` (409), prompting an explicit reset; no unknown secret is reconstructed. This is a development-only migration path, not an expiry policy for new invitations.
+Legacy hash-only invitations keep their existing verification until host replacement; historical expiry is ignored. A host GET for such a record returns `invitation_reset_required` (409), prompting an explicit reset; no unknown secret is reconstructed. This is a development-only migration path.
 Use a new recorded schema migration; preserve persistent data and explicitly discard only retired runtime records and settings.
 Update frontend retry, sharing, settings, and tab-replacement behavior with the server. No mixed-version playback fallback is required.

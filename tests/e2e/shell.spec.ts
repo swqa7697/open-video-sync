@@ -151,7 +151,37 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(unchangedMedia.media).toEqual(selectedMedia.media);
     await expect(page.locator('.roster')).toContainText('<b>Alice 😀</b>');
     expect(await page.locator('.roster b').count()).toBe(0);
+    // Keep the host online while a lost join response and helper reload interrupt the guest.
+    let interrupted = true;
+    await other.route('**/api/v2/invitations/redeem', async (route) => {
+      if (interrupted) {
+        // Commit membership, then lose the reply before the guest can enter.
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        await route.abort('failed');
+      } else await route.continue();
+    });
     await other.goto(inviteURL);
+    await expect(other.locator('#app-alert')).toContainText(
+      'Cannot reach the server'
+    );
+    expect(new URL(other.url()).hash).toBe('');
+    expect(new URL(other.url()).pathname).toBe('/join');
+    const duringJoin = await (
+      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+    ).json();
+    expect(
+      duringJoin.members.find(
+        (member: { role: string }) => member.role === 'host'
+      ).presence
+    ).toBe('connected');
+    expect(duringJoin.members).toHaveLength(2);
+    expect(await invitationLink(page)).toBe(inviteURL);
+    interrupted = false;
+    await other
+      .getByRole('dialog', { name: 'Set up Bilibili playback', exact: true })
+      .getByRole('button', { name: 'Reload page', exact: true })
+      .click();
     await dismissHelper(other);
     expect(new URL(other.url()).hash).toBe('');
     await expect(
@@ -160,6 +190,16 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       other.getByRole('heading', { name: 'Friday watch party' })
     ).toBeVisible();
+    const afterJoin = await (
+      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+    ).json();
+    expect(afterJoin.members).toHaveLength(2);
+    expect(
+      afterJoin.members.find(
+        (member: { role: string }) => member.role === 'host'
+      ).presence
+    ).toBe('connected');
+    expect(await invitationLink(page)).toBe(inviteURL);
     await expect(other.locator('#control-note')).toContainText('Only the host');
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
