@@ -177,6 +177,9 @@ export class SyncController {
             await adapter.setPlaybackRate?.(correction.rate);
         }
       } else await adapter.pause();
+    } catch (error) {
+      // A newer room state or connection owns playback once this operation is superseded.
+      if (current()) throw error;
     } finally {
       if (current()) this.applying = false;
     }

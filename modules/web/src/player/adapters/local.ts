@@ -34,6 +34,7 @@ export class LocalAdapter implements PlayerAdapter {
   private url: string | undefined;
   private disposed = false;
   private lifetime = new AbortController();
+  private seekController: AbortController | undefined;
   private status: ReadinessStatus = 'no_media';
   private listeners = new Set<() => void>();
   constructor(private video: HTMLVideoElement) {
@@ -112,14 +113,22 @@ export class LocalAdapter implements PlayerAdapter {
   }
   async seek(positionMs: number): Promise<void> {
     if (this.disposed) throw new DOMException('Disposed', 'AbortError');
+    this.seekController?.abort();
+    this.seekController = undefined;
     if (
       Math.abs(this.video.currentTime * 1000 - positionMs) < 20 &&
       !this.video.seeking
     )
       return;
-    const completed = this.wait('seeked', this.lifetime.signal);
-    this.video.currentTime = positionMs / 1000;
-    await completed;
+    const controller = new AbortController();
+    this.seekController = controller;
+    try {
+      await this.wait('seeked', controller.signal, () => {
+        this.video.currentTime = positionMs / 1000;
+      });
+    } finally {
+      if (this.seekController === controller) this.seekController = undefined;
+    }
   }
   async setPlaybackRate(rate: number): Promise<void> {
     if (!this.disposed) this.video.playbackRate = rate;
@@ -154,7 +163,11 @@ export class LocalAdapter implements PlayerAdapter {
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = undefined;
   }
-  private wait(event: string, signal: AbortSignal): Promise<void> {
+  private wait(
+    event: string,
+    signal: AbortSignal,
+    operation?: () => void
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timer);
@@ -175,15 +188,29 @@ export class LocalAdapter implements PlayerAdapter {
           cleanup();
           reject(new DOMException('Cancelled', 'AbortError'));
         };
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new LocalizedError(message('local.notReady')));
-      }, 15000);
+      // MediaSource seeks can need more data than an initial local-file load.
+      // Wait for playable data; replacement, disposal, and media errors still cancel the wait.
+      const timer =
+        event === 'seeked'
+          ? undefined
+          : setTimeout(() => {
+              cleanup();
+              reject(new LocalizedError(message('local.notReady')));
+            }, 15000);
       this.video.addEventListener(event, done, { once: true });
       this.video.addEventListener('error', fail, { once: true });
       signal.addEventListener('abort', abort, { once: true });
       this.lifetime.signal.addEventListener('abort', abort, { once: true });
-      if (signal.aborted || this.lifetime.signal.aborted) abort();
+      if (signal.aborted || this.lifetime.signal.aborted) {
+        abort();
+        return;
+      }
+      try {
+        operation?.();
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
     });
   }
 }

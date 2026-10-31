@@ -1,6 +1,45 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { LocalAdapter } from './local';
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+test('a streamed seek waits for data and a newer seek or disposal cancels the old wait', async () => {
+  vi.useFakeTimers();
+  const video = document.createElement('video');
+  video.pause = () => {};
+  video.load = () => {};
+  const adapter = new LocalAdapter(video);
+  const outcomes: string[] = [];
+  const seek = (position: number) =>
+    adapter.seek(position).then(
+      () => outcomes.push('seeked'),
+      (error: Error) => outcomes.push(error.name)
+    );
+  try {
+    const first = seek(60000);
+    // Streaming can continue to supply bounded chunks while the target lacks a full fragment.
+    await vi.advanceTimersByTimeAsync(16000);
+    expect(outcomes).toEqual([]);
+    const second = seek(70000);
+    await first;
+    expect(outcomes).toEqual(['AbortError']);
+    video.dispatchEvent(new Event('seeked'));
+    await second;
+    expect(outcomes).toEqual(['AbortError', 'seeked']);
+    const failed = seek(75000);
+    video.dispatchEvent(new Event('error'));
+    await failed;
+    expect(outcomes).toEqual(['AbortError', 'seeked', 'Error']);
+    const last = seek(80000);
+    adapter.dispose();
+    await last;
+    expect(outcomes).toEqual(['AbortError', 'seeked', 'Error', 'AbortError']);
+  } finally {
+    adapter.dispose();
+  }
+});
 test('a disposed adapter cannot pause the replacement when an old play promise completes', async () => {
   const nativeURL = URL;
   let number = 0;

@@ -86,7 +86,7 @@ class Player implements PlayerAdapter {
     seeking: false,
     status: 'ready',
   };
-  pendingSeek?: () => void;
+  pendingSeek?: (error?: Error) => void;
   blockSeek = false;
   async load(): Promise<void> {}
   async play(): Promise<void> {
@@ -97,8 +97,8 @@ class Player implements PlayerAdapter {
   }
   async seek(position: number): Promise<void> {
     if (this.blockSeek)
-      await new Promise<void>((resolve) => {
-        this.pendingSeek = resolve;
+      await new Promise<void>((resolve, reject) => {
+        this.pendingSeek = (error) => (error ? reject(error) : resolve());
       });
     this.state.positionMs = position;
   }
@@ -157,39 +157,44 @@ const timeline = (
     desiredPlaying: phase === 'playing',
   },
 });
-test('a pause during an asynchronous remote seek wins without discarding the new intent', async () => {
-  const c = new SyncController(),
-    p = new Player();
-  p.blockSeek = true;
-  const original = c.reconcile(
-    p,
-    timeline('playing', 1),
-    { offsetMs: 0, uncertaintyMs: 1 },
-    0,
-    true
-  );
-  await Promise.resolve();
-  expect(p.pendingSeek).toBeDefined();
-  p.blockSeek = false;
-  await c.reconcile(
-    p,
-    timeline('paused', 2, 0),
-    { offsetMs: 0, uncertaintyMs: 1 },
-    0,
-    true
-  );
-  p.pendingSeek?.();
-  await original;
-  await c.reconcile(
-    p,
-    timeline('paused', 2, 0),
-    { offsetMs: 0, uncertaintyMs: 1 },
-    250,
-    true
-  );
-  expect(p.getState().paused).toBe(true);
-  expect(p.getState().positionMs).toBe(0);
-});
+test.each([false, true])(
+  'a pause supersedes a remote seek even when the old seek fails: %s',
+  async (failed) => {
+    const c = new SyncController(),
+      p = new Player();
+    p.blockSeek = true;
+    const original = c.reconcile(
+      p,
+      timeline('playing', 1),
+      { offsetMs: 0, uncertaintyMs: 1 },
+      0,
+      true
+    );
+    await Promise.resolve();
+    expect(p.pendingSeek).toBeDefined();
+    p.blockSeek = false;
+    await c.reconcile(
+      p,
+      timeline('paused', 2, 0),
+      { offsetMs: 0, uncertaintyMs: 1 },
+      0,
+      true
+    );
+    p.pendingSeek?.(
+      failed ? new Error('Superseded seek timed out') : undefined
+    );
+    await original;
+    await c.reconcile(
+      p,
+      timeline('paused', 2, 0),
+      { offsetMs: 0, uncertaintyMs: 1 },
+      250,
+      true
+    );
+    expect(p.getState().paused).toBe(true);
+    expect(p.getState().positionMs).toBe(0);
+  }
+);
 test('loss of connection cancels pending playback application', async () => {
   const c = new SyncController(),
     p = new Player();

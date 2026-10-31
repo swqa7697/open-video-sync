@@ -14,5 +14,6 @@ SIDX direct references use their full 31-bit size. The adapter reads and appends
 Audio/video work alternates within bounded passes. Each track owns one cursor and at most one pending chunk. SIDX byte rates estimate 32 MiB video / 4 MiB audio budgets with 1–12 seconds ahead and bounded history.
 Browser quota pressure triggers eviction and one retry, then holds the same chunk while playback can free space. No playable headroom means a bounded playback failure.
 Seeks reset incomplete parsers and discard late replies. Browser memory and codec limits still apply; the byte budgets estimate compressed buffering rather than actual allocations.
+Native seeks wait for target data without the initial file-load deadline. A newer seek, disposal, or media error ends the wait; superseded synchronization failures cannot replace the current room state with an error.
 Root `versions.toml` supplies the helper release version; `modules/helper/dist/release.json` is generated metadata for script delivery, handshake validation, and onboarding. The protocol version remains separate.
 Live quality-switching evidence is required beyond the historical B0 fixed-quality baseline.
