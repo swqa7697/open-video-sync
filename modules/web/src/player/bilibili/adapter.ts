@@ -6,7 +6,13 @@ import {
   type PlayerObservation,
 } from '../adapters/local';
 import { exact, HelperBridge, HelperError, object } from './bridge';
-import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
+import {
+  decodeInfo,
+  MAX_SEGMENT_BYTES,
+  parseIndex,
+  type MediaInfo,
+  type Segment,
+} from './media';
 import { DanmakuRenderer, decodeComments } from './danmaku';
 interface Track {
   index: number;
@@ -172,7 +178,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     length: number,
     seek = this.seekGeneration
   ): Promise<Uint8Array<ArrayBuffer>> {
-    if (length < 1 || length > 4 * 1024 * 1024)
+    if (length < 1 || length > MAX_SEGMENT_BYTES)
       throw new HelperError('segment-limit');
     const output = new Uint8Array(length);
     for (let at = 0; at < length; at += 256 * 1024) {

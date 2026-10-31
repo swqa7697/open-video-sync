@@ -296,6 +296,7 @@ Visibility, density, and text size remain local. Ignore executable/advanced-scri
 Comment failure is distinct from playback failure and from hiding comments.
 
 The helper returns actual AVC quality IDs from the participant's DASH response and accepts a requested ID on `open`.
+SIDX parsing and range assembly allow media fragments up to 64 MiB for high-bitrate AVC qualities. Each helper byte request remains at or below 256 KiB.
 Only returned tracks are offered. Quality switching opens a new local adapter, retains room playback intent, reports readiness, and converges to the current timeline.
 Never claim a pending/failed quality is active. No adaptive Auto mode is implemented. Live quality switching requires evidence beyond the fixed-quality B0 baseline.
 Root `versions.toml` is the sole module release-version source. The helper build generates `modules/helper/dist/release.json`; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.
