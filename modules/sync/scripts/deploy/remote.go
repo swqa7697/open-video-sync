@@ -32,6 +32,7 @@ type response struct {
 	Settings    settings
 	NeedCompose bool
 	Text        string
+	Progress    string `json:",omitempty"`
 }
 
 type remote struct {
@@ -40,6 +41,13 @@ type remote struct {
 	compose     []string
 	pending     settings
 	renderCaddy func(settings) string
+	report      func(string)
+}
+
+func (r *remote) progress(message string) {
+	if r.report != nil {
+		r.report(message)
+	}
 }
 
 func output(ctx context.Context, name string, args ...string) (string, error) {
@@ -141,6 +149,11 @@ func serveWithCaddy(ctx context.Context, dir string, in io.Reader, out io.Writer
 	defer lock.Close()
 	r := &remote{ctx: ctx, dir: dir, renderCaddy: render}
 	decoder, encoder := json.NewDecoder(in), json.NewEncoder(out)
+	r.report = func(message string) {
+		// A failed event write is reported by the final response write. Progress
+		// must never change the outcome of a deployment operation.
+		_ = encoder.Encode(response{Progress: message})
+	}
 	for {
 		var req request
 		if err := decoder.Decode(&req); errors.Is(err, io.EOF) {
@@ -166,17 +179,21 @@ func (r *remote) handle(req request) (response, error) {
 	}
 	switch req.Action {
 	case "prepare":
+		r.progress("Read saved settings and validate deployment configuration.")
 		c, err := mergeSettings(saved, req.Settings)
 		if err != nil {
 			return res, err
 		}
+		r.progress("Check deployment ownership and existing containers.")
 		if err := r.checkOwnership(true); err != nil {
 			return res, err
 		}
+		r.progress("Check proxy network, subnet and published ports.")
 		if err := r.preflight(c); err != nil {
 			return res, err
 		}
 		r.pending = c
+		r.progress("Detect a compatible Docker Compose installation.")
 		res.Settings, res.NeedCompose = c, !r.findCompose()
 		if saved.URL != "" && saved.URL != c.URL {
 			res.Text = "Public origin changes browser identity, invitations and helper installation scope."
@@ -203,6 +220,7 @@ func (r *remote) handle(req request) (response, error) {
 		if saved.Release == "" {
 			return res, errors.New("no active deployment")
 		}
+		r.progress("Save successful release metadata.")
 		if err := writeJSON(filepath.Join(r.dir, "successful.json"), saved); err != nil {
 			return res, err
 		}
@@ -210,6 +228,7 @@ func (r *remote) handle(req request) (response, error) {
 		if saved.Release == "" {
 			return res, errors.New("no managed deployment in this directory")
 		}
+		r.progress("Check deployment ownership and Docker Compose.")
 		if err := r.checkOwnership(false); err != nil {
 			return res, err
 		}
@@ -219,12 +238,16 @@ func (r *remote) handle(req request) (response, error) {
 		res.Settings = saved
 		switch req.Action {
 		case "status":
+			r.progress("Inspect containers, running image digests and application version.")
 			res.Text, err = r.status(saved)
 		case "stop":
+			r.progress("Stop managed containers (15s shutdown timeout); preserve volumes.")
 			res.Text, err = r.composeRun(saved, "stop", "--timeout", "15")
 		case "restart":
+			r.progress("Restart OVS (15s shutdown timeout).")
 			res.Text, err = r.composeRun(saved, "restart", "--timeout", "15", "ovs")
 			if err == nil {
+				r.progress("Wait for OVS container health (up to 90s).")
 				_, err = r.composeRun(saved, "up", "-d", "--wait", "--wait-timeout", "90", "--no-build", "--pull", "never", "ovs")
 			}
 		case "logs-info":
@@ -554,6 +577,7 @@ func (r *remote) activate(c, previous settings) error {
 	if !r.findCompose() {
 		return errors.New("Compose is not prepared")
 	}
+	r.progress("Verify transferred image configuration and layer digests.")
 	for _, image := range []struct{ name, content string }{{c.Image, c.ImageContent}, {caddyImage, c.CaddyContent}} {
 		if image.name == caddyImage && !c.managedTLS() {
 			continue
@@ -571,12 +595,15 @@ func (r *remote) activate(c, previous settings) error {
 			c.CaddyID = id
 		}
 	}
+	r.progress("Recheck network and ports before activation.")
 	if err := r.preflight(c); err != nil {
 		return err
 	}
+	r.progress("Prepare persistent volumes and deployment network.")
 	if err := r.ensureResources(&c); err != nil {
 		return err
 	}
+	r.progress("Write release configuration and validate Docker Compose.")
 	releaseDir := filepath.Join(r.dir, "releases", c.Release)
 	if err := os.MkdirAll(releaseDir, 0o700); err != nil {
 		return err
@@ -592,6 +619,7 @@ func (r *remote) activate(c, previous settings) error {
 		return fmt.Errorf("Compose configuration: %w", err)
 	}
 	if c.managedTLS() {
+		r.progress("Validate Caddy configuration without contacting a certificate authority.")
 		if err := os.WriteFile(filepath.Join(releaseDir, "Caddyfile"), []byte(r.renderCaddy(c)), 0o600); err != nil {
 			return err
 		}
@@ -601,19 +629,23 @@ func (r *remote) activate(c, previous settings) error {
 	}
 	// Everything above is preparatory. From here, a failed start needs operator repair,
 	// never an automatic downgrade of a database that may have been migrated.
+	r.progress("Record the active release.")
 	if err := writeJSON(filepath.Join(r.dir, "active.json"), c); err != nil {
 		return err
 	}
 	if previous.Release != "" {
+		r.progress("Stop previous OVS container (15s shutdown timeout).")
 		if _, err := r.composeRun(previous, "stop", "--timeout", "15", "ovs"); err != nil {
 			return err
 		}
 		if previous.managedTLS() && !c.managedTLS() {
+			r.progress("Stop previous managed Caddy container (15s shutdown timeout).")
 			if _, err := r.composeRun(previous, "stop", "--timeout", "15", "caddy"); err != nil {
 				return err
 			}
 		}
 	}
+	r.progress("Start release containers and wait for health (up to 90s).")
 	if _, err := r.composeRun(c, "up", "-d", "--wait", "--wait-timeout", "90", "--no-build", "--pull", "never", "--remove-orphans"); err != nil {
 		return fmt.Errorf("container startup failed; attempted release recorded in active.json, data preserved: %w", err)
 	}
@@ -675,6 +707,7 @@ func (r *remote) installCompose(artifact, digest string) error {
 		return errors.New("invalid Compose artifact")
 	}
 	src := filepath.Join(r.dir, "bin", artifact)
+	r.progress("Verify uploaded Compose SHA-256 checksum and executable version.")
 	defer os.Remove(src)
 	f, err := os.Open(src)
 	if err != nil {
@@ -702,6 +735,7 @@ func (r *remote) installCompose(artifact, digest string) error {
 	if strings.TrimPrefix(v, "v") != strings.TrimPrefix(composeVersion, "v") {
 		return errors.New("unexpected Compose version")
 	}
+	r.progress("Install verified Compose executable; preserve existing plugins.")
 	target := filepath.Join(r.dir, "bin", "docker-compose")
 	if _, err := r.docker("compose", "version", "--short"); err != nil {
 		home, err := os.UserHomeDir()

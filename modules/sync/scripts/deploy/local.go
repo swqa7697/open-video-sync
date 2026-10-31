@@ -39,7 +39,7 @@ func (s sshTarget) output(ctx context.Context, command string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-func (s sshTarget) upload(ctx context.Context, local, remote string, executable bool) error {
+func (s sshTarget) upload(ctx context.Context, local, remote string, executable bool, p *progress) (err error) {
 	f, err := os.Open(local)
 	if err != nil {
 		return err
@@ -51,6 +51,15 @@ func (s sshTarget) upload(ctx context.Context, local, remote string, executable 
 	}
 	cmd := s.command(ctx, command)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = f, os.Stderr, os.Stderr
+	if p != nil {
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		transfer := p.transfer("Upload "+filepath.Base(local), info.Size())
+		defer func() { transfer.finish(err) }()
+		cmd.Stdin = transfer.reader(f)
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
@@ -58,10 +67,11 @@ func (s sshTarget) upload(ctx context.Context, local, remote string, executable 
 }
 
 type session struct {
-	cmd     *exec.Cmd
-	in      io.WriteCloser
-	encoder *json.Encoder
-	decoder *json.Decoder
+	cmd      *exec.Cmd
+	in       io.WriteCloser
+	encoder  *json.Encoder
+	decoder  *json.Decoder
+	progress func(string)
 }
 
 func openSession(ctx context.Context, target sshTarget, helper, dir string) (*session, error) {
@@ -90,8 +100,17 @@ func (s *session) call(req request) (response, error) {
 	if err := s.encoder.Encode(req); err != nil {
 		return res, err
 	}
-	if err := s.decoder.Decode(&res); err != nil {
-		return res, fmt.Errorf("remote helper connection: %w (check SSH output above)", err)
+	for {
+		res = response{}
+		if err := s.decoder.Decode(&res); err != nil {
+			return res, fmt.Errorf("remote helper connection: %w (check SSH output above)", err)
+		}
+		if res.Progress == "" {
+			break
+		}
+		if s.progress != nil {
+			s.progress(res.Progress)
+		}
 	}
 	if res.Error != "" {
 		return res, errors.New(res.Error)
@@ -105,7 +124,7 @@ func runLocal(ctx context.Context, action string) error {
 	return runTarget(ctx, action, sshTarget{host: os.Getenv("HOST")}, http.DefaultClient)
 }
 
-func runTarget(ctx context.Context, action string, target sshTarget, publicClient *http.Client) error {
+func runTarget(ctx context.Context, action string, target sshTarget, publicClient *http.Client) (err error) {
 	if action != "deploy" && action != "status" && action != "logs" && action != "restart" && action != "stop" {
 		return errors.New("unknown deploy action")
 	}
@@ -114,7 +133,9 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
-	fmt.Fprintln(os.Stderr, "Checking SSH and remote Docker...")
+	p := newProgress(action, target.host)
+	defer func() { p.finish(err) }()
+	p.begin("Check SSH and remote Docker")
 	info, err := target.output(ctx, "docker info --format '{{.OSType}} {{.Architecture}}' && printf '%s\\n' \"$HOME\"")
 	if err != nil {
 		return err
@@ -132,6 +153,8 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	default:
 		return fmt.Errorf("unsupported remote architecture %q", arch)
 	}
+	p.note("Remote platform: linux/" + arch)
+	p.begin("Prepare remote deployment directory")
 	dir := os.Getenv("DEPLOY_DIR")
 	if dir == "" {
 		dir = filepath.Join(lines[1], ".local", "share", "ovs")
@@ -144,6 +167,7 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	if err != nil {
 		return err
 	}
+	p.note(dir)
 	if err := os.MkdirAll("/tmp/codex", 0o700); err != nil {
 		return err
 	}
@@ -153,6 +177,7 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	}
 	defer os.RemoveAll(scratch)
 	helper := filepath.Join(scratch, "remote")
+	p.begin("Build remote helper")
 	build := exec.CommandContext(ctx, "go", "-C", "modules/sync", "build", "-trimpath", "-o", helper, "./scripts/deploy")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
@@ -161,19 +186,24 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	}
 	id := time.Now().UTC().Format("20060102t150405") + "-" + strings.ToLower(rand.Text()[:10])
 	remoteHelper := filepath.Join(dir, "bin", "helper-"+id)
-	if err := target.upload(ctx, helper, remoteHelper, true); err != nil {
+	p.begin("Upload remote helper")
+	if err := target.upload(ctx, helper, remoteHelper, true, p); err != nil {
 		return err
 	}
+	p.begin("Open remote management session")
 	s, err := openSession(ctx, target, remoteHelper, dir)
 	if err != nil {
 		return err
 	}
 	defer s.close()
+	s.progress = p.note
 	if action != "deploy" {
 		remoteAction := action
 		if action == "logs" {
 			remoteAction = "logs-info"
 		}
+		titles := map[string]string{"status": "Inspect remote deployment", "restart": "Restart OVS and wait for container health", "stop": "Stop managed services", "logs": "Prepare service logs"}
+		p.begin(titles[action])
 		res, err := s.call(request{Action: remoteAction})
 		if action != "logs" && res.Text != "" {
 			fmt.Println(res.Text)
@@ -182,6 +212,8 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 			return err
 		}
 		if action == "logs" {
+			p.finish(nil)
+			p.note("Following the last 100 service log lines; press Ctrl+C to stop.")
 			// Release the management lock before following an unbounded log stream.
 			_ = s.in.Close()
 			cmd := target.command(ctx, res.Text)
@@ -189,11 +221,13 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 			return cmd.Run()
 		}
 		if action == "status" || action == "restart" {
+			p.begin("Verify public UI and readiness (up to 30s)")
 			return waitPublic(ctx, res.Settings.URL, 30*time.Second, publicClient, os.Stdout)
 		}
 		return nil
 	}
 	input := settings{URL: os.Getenv("URL"), Proxy: os.Getenv("PROXY"), Network: os.Getenv("PROXY_NETWORK"), Trusted: os.Getenv("TRUSTED_PROXIES"), Subnet: os.Getenv("PROXY_SUBNET")}
+	p.begin("Check remote settings, ownership, network and ports")
 	prepared, err := s.call(request{Action: "prepare", Settings: input})
 	if err != nil {
 		return err
@@ -202,22 +236,25 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 		fmt.Fprintln(os.Stderr, prepared.Text)
 	}
 	c := prepared.Settings
+	p.note("Public URL: " + c.URL + " | Proxy: " + c.Proxy)
+	p.begin("Prepare Docker Compose")
 	if prepared.NeedCompose {
-		fmt.Fprintln(os.Stderr, "Preparing verified Compose binary locally...")
-		artifact, digest, err := downloadCompose(ctx, arch)
+		artifact, digest, err := downloadCompose(ctx, arch, p)
 		if err != nil {
 			return err
 		}
 		name := "compose-upload-" + id
-		if err := target.upload(ctx, artifact, filepath.Join(dir, "bin", name), false); err != nil {
+		if err := target.upload(ctx, artifact, filepath.Join(dir, "bin", name), false, p); err != nil {
 			return err
 		}
 		if _, err := s.call(request{Action: "install-compose", Artifact: name, SHA256: digest}); err != nil {
 			return err
 		}
+	} else {
+		p.note("Reuse compatible remote Compose; download and installation skipped.")
 	}
 	c.Release, c.Image = id, "ovs:deploy-"+id
-	fmt.Fprintln(os.Stderr, "Building OVS for linux/"+arch+"...")
+	p.begin("Build OVS image for linux/" + arch)
 	channel := os.Getenv("CHANNEL")
 	if channel == "" {
 		channel = "dev"
@@ -226,11 +263,17 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 		return fmt.Errorf("build image: %w", err)
 	}
 	images := []string{c.Image}
+	p.begin("Prepare Caddy image")
 	if c.managedTLS() {
 		if err := runVisible(ctx, "docker", "pull", "--platform", "linux/"+arch, caddyImage); err != nil {
 			return err
 		}
 		images = append(images, caddyImage)
+	} else {
+		p.note("Managed HTTPS is disabled; Caddy image skipped.")
+	}
+	p.begin("Inspect local image IDs and content digests")
+	if c.managedTLS() {
 		c.CaddyID, c.CaddyContent, err = inspectImage(ctx, caddyImage, "linux/"+arch)
 		if err != nil {
 			return err
@@ -240,22 +283,24 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "Transferring images over SSH...")
-	if err := transferImages(ctx, target, images, "linux/"+arch); err != nil {
+	p.begin("Stream images over SSH and load into remote Docker")
+	if err := transferImages(ctx, target, images, "linux/"+arch, p); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "Validating configuration and activating the release...")
+	p.begin("Validate remote images and configuration, then activate release")
 	activated, err := s.call(request{Action: "activate", Settings: c})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "Checking the public endpoint (up to five minutes for certificate issuance)...")
+	p.begin("Verify public UI and readiness (up to 5m, including HTTPS certificates)")
 	if err := waitPublic(ctx, c.URL, 5*time.Minute, publicClient, os.Stdout); err != nil {
 		return fmt.Errorf("public verification failed; containers and data remain available for diagnosis: %w", err)
 	}
+	p.begin("Record successful deployment")
 	if _, err := s.call(request{Action: "commit"}); err != nil {
 		return err
 	}
+	p.finish(nil)
 	fmt.Printf("Deployed %s to %s\nRemote directory: %s\n", activated.Settings.Image, c.URL, dir)
 	return nil
 }
@@ -266,7 +311,7 @@ func runVisible(ctx context.Context, name string, args ...string) error {
 	return cmd.Run()
 }
 
-func transferImages(ctx context.Context, target sshTarget, images []string, platform string) error {
+func transferImages(ctx context.Context, target sshTarget, images []string, platform string, p *progress) (err error) {
 	transferCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	save := exec.CommandContext(transferCtx, "docker", append([]string{"image", "save", "--platform", platform}, images...)...)
@@ -274,9 +319,22 @@ func transferImages(ctx context.Context, target sshTarget, images []string, plat
 	if err != nil {
 		return err
 	}
+	defer pipe.Close()
 	save.Stderr = os.Stderr
 	load := target.command(transferCtx, "docker image load --quiet")
 	load.Stdin, load.Stdout, load.Stderr = pipe, os.Stderr, os.Stderr
+	var loaded strings.Builder
+	if p != nil {
+		p.note("Archive size is unknown; bytes measure the local stream. Completion also waits for remote image loading.")
+		transfer := p.transfer("Image stream", 0)
+		defer func() {
+			transfer.finish(err)
+			if loaded.Len() > 0 {
+				p.note(strings.TrimSpace(loaded.String()))
+			}
+		}()
+		load.Stdin, load.Stdout = transfer.reader(pipe), &loaded
+	}
 	if err := save.Start(); err != nil {
 		return err
 	}
@@ -300,7 +358,7 @@ func transferImages(ctx context.Context, target sshTarget, images []string, plat
 	return nil
 }
 
-func downloadCompose(ctx context.Context, arch string) (string, string, error) {
+func downloadCompose(ctx context.Context, arch string, p *progress) (string, string, error) {
 	assetArch := "x86_64"
 	if arch == "arm64" {
 		assetArch = "aarch64"
@@ -314,7 +372,10 @@ func downloadCompose(ctx context.Context, arch string) (string, string, error) {
 	checksumPath := filepath.Join(dir, asset+".sha256")
 	checksum, err := os.ReadFile(checksumPath)
 	if errors.Is(err, os.ErrNotExist) {
-		checksum, err = fetch(ctx, base+asset+".sha256", 4096)
+		if p != nil {
+			p.note("Download official Compose SHA-256 checksum.")
+		}
+		checksum, err = fetch(ctx, base+asset+".sha256", 4096, nil)
 		if err == nil {
 			err = os.WriteFile(checksumPath, checksum, 0o600)
 		}
@@ -333,7 +394,10 @@ func downloadCompose(ctx context.Context, arch string) (string, string, error) {
 	path := filepath.Join(dir, asset)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		b, err = fetch(ctx, base+asset, 150<<20)
+		if p != nil {
+			p.note("Download Compose " + composeVersion + " for linux/" + arch + ".")
+		}
+		b, err = fetch(ctx, base+asset, 150<<20, p)
 		if err == nil {
 			h := sha256.Sum256(b)
 			if hex.EncodeToString(h[:]) != fields[0] {
@@ -341,6 +405,8 @@ func downloadCompose(ctx context.Context, arch string) (string, string, error) {
 			}
 			err = os.WriteFile(path, b, 0o600)
 		}
+	} else if err == nil && p != nil {
+		p.note("Reuse cached Compose " + composeVersion + "; verify SHA-256 checksum.")
 	}
 	if err != nil {
 		return "", "", err
@@ -352,7 +418,7 @@ func downloadCompose(ctx context.Context, arch string) (string, string, error) {
 	return path, fields[0], nil
 }
 
-func fetch(ctx context.Context, address string, limit int64) ([]byte, error) {
+func fetch(ctx context.Context, address string, limit int64, p *progress) (b []byte, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
@@ -367,7 +433,13 @@ func fetch(ctx context.Context, address string, limit int64) ([]byte, error) {
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("download returned HTTP %d", res.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	var body io.Reader = res.Body
+	if p != nil {
+		transfer := p.transfer("Download Compose", res.ContentLength)
+		defer func() { transfer.finish(err) }()
+		body = transfer.reader(body)
+	}
+	b, err = io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}

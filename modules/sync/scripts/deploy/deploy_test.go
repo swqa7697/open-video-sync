@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestDeploymentSettings(t *testing.T) {
@@ -150,22 +150,24 @@ func TestPublicVerification(t *testing.T) {
 func TestRemoteLockAndState(t *testing.T) {
 	dir := t.TempDir()
 	in, writer := io.Pipe()
-	out := &strings.Builder{}
+	reader, out := io.Pipe()
 	done := make(chan error, 1)
-	go func() { done <- serve(context.Background(), dir, in, out) }()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".deploy.lock")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("lock not created")
-		}
-		time.Sleep(time.Millisecond)
+	go func() {
+		defer out.Close()
+		defer in.Close()
+		done <- serve(context.Background(), dir, in, out)
+	}()
+	t.Cleanup(func() { _ = writer.Close(); _ = reader.Close() })
+	var events []string
+	s := &session{encoder: json.NewEncoder(writer), decoder: json.NewDecoder(reader), progress: func(message string) { events = append(events, message) }}
+	// Invalid settings need no Docker. They still send a progress event before
+	// the final error, and the next call must receive its own response.
+	if _, err := s.call(request{Action: "prepare"}); err == nil || len(events) == 0 {
+		t.Fatalf("progress or final validation error missing: %v, %v", events, err)
 	}
-	// The first server may be between creating and acquiring the lock. Wait until
-	// a real request confirms it owns the session, without Docker dependencies.
-	_, _ = writer.Write([]byte("{\"Action\":\"invalid\"}\n"))
+	if _, err := s.call(request{Action: "invalid"}); err == nil || err.Error() != "unknown remote operation" {
+		t.Fatalf("progress displaced the next operation response: %v", err)
+	}
 	if err := serve(context.Background(), dir, strings.NewReader(""), io.Discard); err == nil {
 		t.Fatal("concurrent deployment accepted")
 	}
@@ -189,6 +191,111 @@ func TestRemoteLockAndState(t *testing.T) {
 		t.Fatal("unsafe saved release accepted")
 	}
 }
+
+func TestDeploymentProgress(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		terminal bool
+		total    int64
+		failed   bool
+	}{
+		{"terminal upload", true, 4096, false},
+		{"failed upload log", false, 4096, true},
+		{"stream log", false, 0, false},
+		{"failed terminal stream", true, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out strings.Builder
+			p := &progress{out: &out, terminal: tc.terminal, total: 2}
+			p.begin("Prepare")
+			p.begin("Transfer")
+			transfer := p.transfer("Archive", tc.total)
+			payload := strings.Repeat("data", 1024)
+			var copied strings.Builder
+			if _, err := io.Copy(&copied, transfer.reader(strings.NewReader(payload))); err != nil || copied.String() != payload {
+				t.Fatalf("progress changed transferred bytes: %v", err)
+			}
+			var err error
+			if tc.failed {
+				err = errors.New("connection lost after reading local bytes")
+			}
+			transfer.finish(err)
+			p.finish(err)
+			got := out.String()
+			if !strings.Contains(got, "[ 1/2] OK Prepare") || !strings.Contains(got, "4.0 KiB") || !strings.Contains(got, "/s") {
+				t.Fatalf("step or transfer details missing: %s", got)
+			}
+			if !tc.terminal && strings.ContainsAny(got, "\r\x1b") {
+				t.Fatalf("terminal control codes in redirected output: %q", got)
+			}
+			if tc.total == 0 && strings.Contains(got, "%") {
+				t.Fatalf("unknown stream size has a fabricated percentage: %s", got)
+			}
+			if tc.failed {
+				if !strings.Contains(got, "FAIL Transfer") || !strings.Contains(got, "failed") || strings.Contains(got, "100%") {
+					t.Fatalf("failed transfer reported success: %s", got)
+				}
+			} else if !strings.Contains(got, "OK Transfer") || tc.total > 0 && !strings.Contains(got, "100%") {
+				t.Fatalf("completed transfer missing: %s", got)
+			}
+		})
+	}
+}
+
+func TestComposeDownloadProgress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "4096")
+		if r.URL.Path == "/cancel" {
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		if r.URL.Path == "/short" {
+			_, _ = io.WriteString(w, "partial")
+			return
+		}
+		_, _ = io.WriteString(w, strings.Repeat("data", 1024))
+	}))
+	defer server.Close()
+	for _, tc := range []struct {
+		path  string
+		limit int64
+		fail  bool
+	}{{"/complete", 4096, false}, {"/short", 4096, true}, {"/oversize", 1024, true}, {"/cancel", 4096, true}} {
+		t.Run(tc.path, func(t *testing.T) {
+			var out strings.Builder
+			p := &progress{out: &out}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.path == "/cancel" {
+				// Cancel after the response headers arrive and progress starts.
+				p.out = progressOutput(func(b []byte) (int, error) {
+					cancel()
+					return out.Write(b)
+				})
+			}
+			b, err := fetch(ctx, server.URL+tc.path, tc.limit, p)
+			if (err != nil) != tc.fail {
+				t.Fatalf("unexpected download result: %v", err)
+			}
+			if tc.path == "/cancel" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("download did not stop on cancellation: %v", err)
+			}
+			got := out.String()
+			if tc.fail {
+				if !strings.Contains(got, "failed") || strings.Contains(got, "100%") {
+					t.Fatalf("failed download reported success: %s", got)
+				}
+			} else if len(b) != 4096 || !strings.Contains(got, "100%") {
+				t.Fatalf("download data or completion missing: %d, %s", len(b), got)
+			}
+		})
+	}
+}
+
+type progressOutput func([]byte) (int, error)
+
+func (write progressOutput) Write(b []byte) (int, error) { return write(b) }
 
 func TestTCPListenerProbe(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

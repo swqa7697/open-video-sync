@@ -59,6 +59,12 @@ func TestDeploymentSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("Evidence: %s", dir)
+	progressLog, err := os.Create(filepath.Join(dir, "deployment-progress.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer progressLog.Close()
+	p := &progress{out: progressLog}
 	run := func(program string, args ...string) string {
 		t.Helper()
 		result, err := output(ctx, program, args...)
@@ -122,10 +128,10 @@ func TestDeploymentSmoke(t *testing.T) {
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build test helper: %v %s", err, b)
 	}
-	if err := target.upload(ctx, helper, remoteDir+"/bin/helper", true); err != nil {
+	if err := target.upload(ctx, helper, remoteDir+"/bin/helper", true, p); err != nil {
 		t.Fatal(err)
 	}
-	if err := target.upload(ctx, testHelper, remoteDir+"/bin/test-helper", true); err != nil {
+	if err := target.upload(ctx, testHelper, remoteDir+"/bin/test-helper", true, p); err != nil {
 		t.Fatal(err)
 	}
 	open := func(mode string) *session {
@@ -147,7 +153,7 @@ func TestDeploymentSmoke(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		return &session{cmd: cmd, in: in, encoder: json.NewEncoder(in), decoder: json.NewDecoder(out)}
+		return &session{cmd: cmd, in: in, encoder: json.NewEncoder(in), decoder: json.NewDecoder(out), progress: p.note}
 	}
 	s := open("")
 	call := func(req request) response {
@@ -170,7 +176,7 @@ func TestDeploymentSmoke(t *testing.T) {
 	if err := os.Chdir(root); err != nil {
 		t.Fatal(err)
 	}
-	artifact, digest, downloadErr := downloadCompose(ctx, runtime.GOARCH)
+	artifact, digest, downloadErr := downloadCompose(ctx, runtime.GOARCH, p)
 	artifact, _ = filepath.Abs(artifact)
 	if err := os.Chdir(oldDir); err != nil {
 		t.Fatal(err)
@@ -178,7 +184,7 @@ func TestDeploymentSmoke(t *testing.T) {
 	if downloadErr != nil {
 		t.Fatal(downloadErr)
 	}
-	if err := target.upload(ctx, artifact, remoteDir+"/bin/compose-upload-test", false); err != nil {
+	if err := target.upload(ctx, artifact, remoteDir+"/bin/compose-upload-test", false, p); err != nil {
 		t.Fatal(err)
 	}
 	call(request{Action: "install-compose", Artifact: "compose-upload-test", SHA256: digest})
@@ -193,7 +199,7 @@ func TestDeploymentSmoke(t *testing.T) {
 		defer stop()
 		_, _ = output(cleanup, "docker", "image", "rm", image)
 	})
-	if err := transferImages(ctx, target, []string{image, caddyImage}, "linux/"+runtime.GOARCH); err != nil {
+	if err := transferImages(ctx, target, []string{image, caddyImage}, "linux/"+runtime.GOARCH, p); err != nil {
 		t.Fatal(err)
 	}
 	// Validate the actual production ACME configuration without starting Caddy

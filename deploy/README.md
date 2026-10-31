@@ -34,6 +34,19 @@ transfers the pinned Caddy image. The remote machine does not need a registry
 account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
 needs access to build dependencies, images, and Compose release downloads.
 
+Deployment shows numbered steps, completion or failure, elapsed time, and remote
+substeps through configuration validation, container replacement, and health checks.
+Compose downloads and helper/Compose uploads show percentage bars when their size
+is known. The streamed image archive has no known total: its activity bar shows
+local bytes read, average throughput, and elapsed time. Transfer completion also
+waits for the remote image load to succeed; it does not replace image verification.
+No image archive is stored locally for progress reporting.
+
+Progress uses stderr. Interactive terminals show live bars and colored status;
+`NO_COLOR=1 make deploy HOST=ovs-prod` disables color. Redirected output and
+`TERM=dumb` use plain text, with transfer updates every ten seconds and on completion.
+Status, restart, stop, and logs commands also show their preparation steps.
+
 Compatible Compose installations (2.24 or later, including newer major versions)
 are reused. If Compose is missing, the tool downloads version 5.6.1 locally,
 checks its official SHA-256 checksum, and installs the remote user CLI plugin.
