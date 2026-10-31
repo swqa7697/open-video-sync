@@ -381,10 +381,6 @@ export class RoomSocket {
         payload,
       });
   }
-  resetClock(): void {
-    this.clock.reset();
-    this.calibrate();
-  }
   dispose(): void {
     this.stopped = true;
     this.probing?.abort();

@@ -867,10 +867,12 @@ function seek(event: Event): void {
 function keyboard(event: KeyboardEvent): void {
   if (
     event.defaultPrevented ||
+    document.visibilityState !== 'visible' ||
     event.isComposing ||
+    event.keyCode === 229 ||
     (event.target instanceof Element &&
       event.target.closest(
-        'input, select, textarea, [contenteditable], [role="menu"], dialog'
+        'input, select, textarea, [contenteditable], [role="menu"], [role="tablist"], dialog, [role="dialog"]'
       )) ||
     event.altKey ||
     event.ctrlKey ||
@@ -905,14 +907,16 @@ function keyboard(event: KeyboardEvent): void {
       )
     );
     muted.value = false;
-  } else if (key === 'm') muted.value = !muted.value;
-  else if (key === 'd' && current.value.media?.kind === 'bilibili') {
+  } else if (key === 'm') {
+    event.preventDefault();
+    muted.value = !muted.value;
+  } else if (key === 'd' && current.value.media?.kind === 'bilibili') {
     event.preventDefault();
     toggleDanmaku();
   } else if (key === 'f') {
     event.preventDefault();
     void fullscreen();
-  }
+  } else return;
   wake();
 }
 async function sample(): Promise<void> {
@@ -970,10 +974,7 @@ async function sample(): Promise<void> {
         snapshot,
         estimate,
         now,
-        active.value &&
-          transport.connected &&
-          matched &&
-          document.visibilityState === 'visible'
+        active.value && transport.connected && matched
       );
       const barrier = snapshot.barrier;
       if (
@@ -1094,10 +1095,10 @@ function reload(): void {
   location.reload();
 }
 function visibility(): void {
-  transport.resetClock();
-  sync.invalidate();
-  if (document.visibilityState !== 'visible') void adapter?.pause();
-  else void sample();
+  if (document.visibilityState !== 'visible') return;
+  // Refresh calibration without discarding a usable estimate or interrupting playback.
+  transport.calibrate();
+  void sample();
 }
 onMounted(() => {
   transport.start();
@@ -1105,6 +1106,7 @@ onMounted(() => {
     void sample();
   }, 250);
   document.addEventListener('visibilitychange', visibility);
+  document.addEventListener('keydown', keyboard);
   document.addEventListener('pointerdown', outsideQuality);
 });
 onUnmounted(() => {
@@ -1113,6 +1115,7 @@ onUnmounted(() => {
   clearTimeout(idleTimer);
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
+  document.removeEventListener('keydown', keyboard);
   document.removeEventListener('pointerdown', outsideQuality);
   transport.dispose();
   clearMedia();
@@ -1132,7 +1135,6 @@ onUnmounted(() => {
       }"
       tabindex="0"
       :aria-label="t('player.shortcuts')"
-      @keydown="keyboard"
       @click="clickSurface"
       @pointermove="wake"
       @pointerdown="wake"

@@ -103,8 +103,9 @@ Cookies are scoped to the browser profile and OVS origin. Private profiles recei
 Play/pause, replay, seeking, volume, mute, and fullscreen are inside the video surface.
 Shared controls follow server permissions. Volume, mute, fullscreen, quality, and danmaku affect only your browser.
 The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
-Click the video surface or focus the player and use Space/K for playback. Left/Right seeks five seconds; Up/Down changes volume by 10%.
+Click the video surface or use Space/K anywhere on the foreground OVS page for playback; player focus is not required. Left/Right seeks five seconds; Up/Down changes volume by 10%.
 M toggles mute, D toggles Bilibili danmaku, and F toggles fullscreen. Text inputs and sliders keep their native keyboard behavior.
+Menus and dialogs keep their keyboard controls; Space still activates a focused button. Switching tabs or putting the browser in the background does not pause playback. Shared controls and synchronization continue while connected.
 Controls remain available while keyboard focus is inside them. Dialogs support Escape and restore focus.
 Change video supports Enter to confirm. Playback starts unmuted at 50% volume; volume and mute choices survive reloads in this browser. When autoplay is blocked, select **Enable playback** inside the video.
 

@@ -95,17 +95,73 @@ test('independent identities manage a private room over direct HTTP', async ({
       'data-state',
       'paused'
     );
-    await page.locator('.video-stage').press('ArrowUp');
-    await page.locator('.video-stage').press('ArrowUp');
-    await page.locator('.video-stage').press('ArrowDown');
-    await page.locator('.video-stage').press('m');
+    // Player shortcuts belong to the foreground page, including focus outside the player.
+    await page.getByRole('heading', { name: 'Friday watch party' }).click();
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await page.keyboard.press('k');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('m');
+    await expect(page.locator('#local-volume')).toHaveValue('0.6');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(true);
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    // Inputs and dialog buttons retain their native keys and cannot control the room.
+    await page.locator('.profile-button').click();
+    const nameInput = page.getByLabel('Display name (optional)');
+    await nameInput.fill('');
+    await nameInput.pressSequentially('m d f k ');
+    await nameInput.press('ArrowDown');
+    await nameInput.press('ArrowUp');
+    await expect(nameInput).toHaveValue('m d f k ');
+    await expect(page.locator('#local-volume')).toHaveValue('0.6');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(true);
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await page
+      .getByRole('button', { name: 'Close dialog', exact: true })
+      .focus();
+    await page.keyboard.press('m');
+    await page.keyboard.press('f');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(true);
+    expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+    await page.keyboard.press('Space');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
     await page.reload();
     await dismissHelper(page);
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
     ).toBe(true);
-    await page.locator('.video-stage').press('m');
+    await page.getByRole('heading', { name: 'Friday watch party' }).click();
+    await page.keyboard.press('m');
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',

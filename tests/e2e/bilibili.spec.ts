@@ -159,7 +159,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(preferences).toHaveCount(0);
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   const enabledIcon = await danmaku.locator('path').getAttribute('d');
-  await page.locator('.video-stage').press('d');
+  await page
+    .getByRole('heading', { name: 'Bilibili helper boundaries', exact: true })
+    .click();
+  await page.keyboard.press('d');
   await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
   expect(await danmaku.locator('path').getAttribute('d')).not.toBe(enabledIcon);
   await danmaku.click();

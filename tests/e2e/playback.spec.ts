@@ -146,6 +146,41 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             )
         )
         .toBe(true);
+    // Headless windows stay visible. Exercise visibility events on actual playing media;
+    // both the event and later sampling must preserve playback, including on return.
+    const background = await page.evaluateHandle(() => {
+      const video = document.querySelector('video')!;
+      const state = { pauses: 0, position: video.currentTime };
+      video.addEventListener('pause', () => state.pauses++);
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: 'hidden',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return state;
+    });
+    await page.keyboard.press('m');
+    expect(
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+    ).toBe(false);
+    const backgroundPosition = await background.evaluate(
+      (state) => state.position
+    );
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeGreaterThan(backgroundPosition + 0.5);
+    expect(await background.evaluate((state) => state.pauses)).toBe(0);
+    await page.evaluate(() => {
+      Reflect.deleteProperty(document, 'visibilityState');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Clock calibrated' })
+    ).toBeVisible();
+    expect(await background.evaluate((state) => state.pauses)).toBe(0);
+    await background.dispose();
     await seekTo(page, Number('10'));
     for (const player of [page, other])
       await expect

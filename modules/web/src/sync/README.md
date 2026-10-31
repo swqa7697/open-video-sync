@@ -1,7 +1,7 @@
 # Synchronization boundary
 
 `clock.ts` owns bounded four-timestamp estimation and uncertainty. `controller.ts` projects the server timeline and applies drift correction.
-`PlayerPanel` owns its sampling timer and cancels the controller when media, adapter, visibility, or connection ownership changes.
+`PlayerPanel` owns its sampling timer and cancels the controller when media, adapter, or connection ownership changes. Page visibility does not pause playback or disable synchronization. Returning to the foreground requests clock calibration while retaining any usable estimate.
 OVS controls express intent directly; programmatic media events only trigger reconciliation and readiness, so they cannot create command feedback.
 Native shared controls are hidden. Local mute and volume do not enter room messages.
 Engine tests use controlled timestamps and adapters. Browser tests independently read synthetic source-frame pixels.
