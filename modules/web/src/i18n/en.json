@@ -1,4 +1,21 @@
 {
+  "commands": {
+    "title": "Quick actions",
+    "open": "Open quick actions",
+    "search": "Search actions or paste a video link",
+    "placeholder": "Search actions, or paste a Bilibili link…",
+    "hint": "/ for commands · $ for a video link · Search in English or Chinese",
+    "videoHint": "$ BV… or a Bilibili link · Review before applying",
+    "noResults": "No matching actions. Try /video, /language, or a Bilibili link.",
+    "keyboard": "↑ ↓ Navigate · Enter Run",
+    "watch": "Video & playback",
+    "room": "Room",
+    "app": "Your preferences",
+    "selectVideo": "Select a Bilibili video",
+    "roomSettings": "Room preferences",
+    "seek": "Jump to the seek control",
+    "hideDanmaku": "Hide danmaku locally"
+  },
   "common": {
     "guest": "Guest",
     "you": "You",
@@ -162,7 +179,7 @@
     "neutral": "Graphite",
     "saved": "Your preferences are saved on this device.",
     "unsaved": "Browser storage is unavailable. Changes last until you reload this page.",
-    "modeHint": "Dark by default. Change the color mode only here."
+    "modeHint": "Dark by default. Choose a mode here or in Quick actions."
   },
   "language": {
     "label": "Interface language",

@@ -71,6 +71,11 @@ function select(value: typeof panel.value): void {
   trigger.value?.focus();
   panel.value = value;
 }
+function openPanel(value: NonNullable<typeof panel.value>): void {
+  closeMenu();
+  panel.value = value;
+}
+defineExpose({ openPanel });
 onMounted(() => window.addEventListener('resize', closeMenu));
 onUnmounted(() => window.removeEventListener('resize', closeMenu));
 </script>

@@ -15,6 +15,20 @@ export async function dismissHelper(page: Page): Promise<void> {
   const later = page.getByRole('button', { name: 'Later', exact: true });
   if (await later.isVisible()) await later.click();
 }
+export async function openQuickActions(page: Page, query = ''): Promise<void> {
+  // Native actions require the foreground page, as with real keyboard input.
+  await page.bringToFront();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.keyboard.press('Control+k');
+  const input = page.getByRole('combobox');
+  await expect(input).toBeFocused();
+  if (query) await input.fill(query);
+}
+export async function runQuickAction(page: Page, query: string): Promise<void> {
+  await openQuickActions(page, query);
+  await page.getByRole('combobox').press('Enter');
+  await expect(page.locator('.command-palette')).toHaveCount(0);
+}
 export async function createLocalRoom(
   page: Page,
   file: VideoFile,

@@ -1,4 +1,21 @@
 {
+  "commands": {
+    "title": "快捷操作",
+    "open": "打开快捷操作",
+    "search": "搜索操作或粘贴视频链接",
+    "placeholder": "搜索操作，或粘贴 Bilibili 链接…",
+    "hint": "/ 查找命令 · $ 输入视频链接 · 支持中英文搜索",
+    "videoHint": "$ BV号或 Bilibili 链接 · 确认后再应用",
+    "noResults": "没有匹配的操作。试试 /video、/language 或 Bilibili 链接。",
+    "keyboard": "↑ ↓ 选择 · Enter 执行",
+    "watch": "视频与播放",
+    "room": "房间",
+    "app": "个人偏好",
+    "selectVideo": "选择 Bilibili 视频",
+    "roomSettings": "房间偏好设置",
+    "seek": "跳转到进度控制",
+    "hideDanmaku": "在本机隐藏弹幕"
+  },
   "common": {
     "guest": "访客",
     "you": "你",
@@ -162,7 +179,7 @@
     "neutral": "石墨灰",
     "saved": "偏好设置已保存在此设备上。",
     "unsaved": "浏览器存储不可用。更改仅在重新加载前有效。",
-    "modeHint": "默认使用深色模式，仅通过此设置切换。"
+    "modeHint": "默认使用深色模式，可在此处或快捷操作中切换。"
   },
   "language": {
     "label": "界面语言",

@@ -2,6 +2,9 @@
 import { t, message as msg, translate, type Message } from './i18n';
 import { useLanguageStore } from './stores/language';
 import AppSettings from './features/AppSettings.vue';
+import CommandPalette from './features/commands/CommandPalette.vue';
+import { usePreferenceCommands } from './features/commands/preferences';
+import type { QuickCommand, VideoSelection } from './features/commands/search';
 
 import {
   computed,
@@ -59,6 +62,14 @@ const room = ref<Snapshot>(),
   invitation = ref<Invitation>();
 const creationKey = ref(requestKey());
 const picker = ref<InstanceType<typeof MediaPicker>>();
+const player = ref<InstanceType<typeof PlayerPanel>>();
+const roomPanel = ref<InstanceType<typeof RoomPanel>>();
+const appSettings = ref<InstanceType<typeof AppSettings>>();
+const paletteOpen = ref(false);
+const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K';
+const preferenceCommands = usePreferenceCommands((panel) =>
+  appSettings.value?.openPanel(panel)
+);
 const draftSettings = ref(defaultSettings()),
   settingsOpen = ref(false),
   profileOpen = ref(false);
@@ -79,6 +90,79 @@ const attempt = ref<{
   sent: boolean;
 }>();
 const pendingLink = ref(props.initialInvitation);
+const commands = computed<QuickCommand[]>(() => [
+  ...(room.value
+    ? [...(player.value?.commands ?? []), ...(roomPanel.value?.commands ?? [])]
+    : identity.session
+      ? [
+          {
+            id: 'video',
+            label: t('commands.selectVideo'),
+            group: 'watch' as const,
+            icon: 'screen',
+            shortcut: '/video',
+            aliases: 'bilibili video link 视频 链接',
+            disabled: busy.value || !!attempt.value,
+            detail: t('commands.videoHint'),
+            run: (selection?: VideoSelection) => {
+              void picker.value?.selectBilibili(selection);
+            },
+          },
+          {
+            id: 'local',
+            label: t('media.chooseFile'),
+            group: 'watch' as const,
+            icon: 'file',
+            shortcut: '/local',
+            aliases: 'local file 本地 文件',
+            disabled: busy.value || !!attempt.value,
+            run: () => {
+              void picker.value?.selectLocal();
+            },
+          },
+          {
+            id: 'create',
+            label: t('app.startParty'),
+            group: 'room' as const,
+            icon: 'plus',
+            shortcut: '/create',
+            aliases: 'create room 创建 新建 房间',
+            disabled: busy.value || !!attempt.value,
+            run: () => {
+              void focus('room-name');
+            },
+          },
+          {
+            id: 'join',
+            label: t('app.titleJoin'),
+            group: 'room' as const,
+            icon: 'link',
+            shortcut: '/join',
+            aliases: 'join invitation code 加入 邀请码',
+            disabled: busy.value || !!attempt.value,
+            run: () => {
+              void focus('join-code');
+            },
+          },
+        ]
+      : []),
+  ...(identity.session
+    ? [
+        {
+          id: 'profile',
+          label: t('app.profile'),
+          group: 'app' as const,
+          icon: 'users',
+          shortcut: '/profile',
+          aliases: 'identity name rename 身份 昵称 名字',
+          run: () => {
+            profileOpen.value = true;
+          },
+        },
+      ]
+    : []),
+  ...preferenceCommands.value,
+]);
 const serverText = computed(
   () =>
     ({
@@ -455,8 +539,30 @@ function keyboardInput(): void {
 function pointerInput(): void {
   document.documentElement.dataset.input = 'pointer';
 }
+function togglePalette(): void {
+  if (!paletteOpen.value && document.querySelector('dialog[open]')) return;
+  document.querySelector<HTMLElement>(':popover-open')?.hidePopover();
+  paletteOpen.value = !paletteOpen.value;
+}
+function commandShortcut(event: KeyboardEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.altKey ||
+    event.shiftKey ||
+    !(event.ctrlKey || event.metaKey) ||
+    event.key.toLowerCase() !== 'k'
+  )
+    return;
+  if (!paletteOpen.value && document.querySelector('dialog[open]')) return;
+  event.preventDefault();
+  if (event.repeat) return;
+  togglePalette();
+}
 onMounted(() => {
   document.addEventListener('keydown', keyboardInput, true);
+  document.addEventListener('keydown', commandShortcut);
   document.addEventListener('pointerdown', pointerInput, true);
   recheck();
   window.addEventListener('popstate', navigate);
@@ -474,6 +580,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopLanguage();
   document.removeEventListener('keydown', keyboardInput, true);
+  document.removeEventListener('keydown', commandShortcut);
   document.removeEventListener('pointerdown', pointerInput, true);
   controller.abort();
   initialFile = undefined;
@@ -490,20 +597,33 @@ onUnmounted(() => {
       t('app.skip')
     }}</a>
     <header class="app-header">
-      <button
-        class="brand quiet"
-        :aria-label="t('app.home')"
-        :disabled="busy"
-        @click="room && perform(() => manage('leave'))"
-      >
-        <span class="brand-mark"><Icon name="play" :size="18" /></span
-        ><span>OVS</span><span class="brand-name">Open Video Sync</span>
-      </button>
+      <div class="header-start">
+        <button
+          class="brand quiet"
+          :aria-label="t('app.home')"
+          :disabled="busy"
+          @click="room && perform(() => manage('leave'))"
+        >
+          <span class="brand-mark"><Icon name="play" :size="18" /></span
+          ><span>OVS</span><span class="brand-name">Open Video Sync</span>
+        </button>
+        <button
+          class="quiet command-trigger"
+          :aria-label="t('commands.open')"
+          :title="`${t('commands.open')} (${shortcut})`"
+          aria-keyshortcuts="Control+K Meta+K"
+          aria-haspopup="dialog"
+          @click="togglePalette"
+        >
+          <Icon name="search" :size="18" /><span>{{ t('commands.title') }}</span
+          ><kbd>{{ shortcut }}</kbd>
+        </button>
+      </div>
       <div class="header-end">
         <p class="server-status" role="status" :data-state="connection.status">
           <span class="status-dot" />{{ serverText }}
         </p>
-        <AppSettings />
+        <AppSettings ref="appSettings" />
         <button
           v-if="identity.session"
           :title="safeName"
@@ -563,6 +683,7 @@ onUnmounted(() => {
         </div>
         <RoomPanel
           v-if="room"
+          ref="roomPanel"
           :room="room"
           :host="host"
           :invitation="invitation"
@@ -581,6 +702,7 @@ onUnmounted(() => {
           @close="perform(() => manage('close'))"
         >
           <PlayerPanel
+            ref="player"
             :key="room.roomId"
             :room="room"
             :initial-file="initialFile"
@@ -701,6 +823,11 @@ onUnmounted(() => {
         >OVS<span class="separator">/</span>{{ t('app.footerTogether') }}</span
       ><span>{{ t('app.footerPrivate') }}</span>
     </footer>
+    <CommandPalette
+      v-if="paletteOpen"
+      :commands="commands"
+      @close="paletteOpen = false"
+    />
     <Modal
       v-if="settingsOpen"
       :title="t('common.settings')"

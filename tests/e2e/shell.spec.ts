@@ -7,6 +7,8 @@ import {
   dismissHelper,
   invitationLink,
   openAppPanel,
+  openQuickActions,
+  runQuickAction,
   settings,
 } from './flows';
 
@@ -80,6 +82,30 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(await page.locator('video').getAttribute('src')).toMatch(/^blob:/);
     const roomURL = page.url(),
       inviteURL = await invitationLink(page);
+    // The quick video path only prefills the existing confirmation; it cannot publish early.
+    const selectedMedia = await (
+      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+    ).json();
+    await openQuickActions(page);
+    await page.screenshot({
+      path: testInfo.outputPath('commands-room-desktop.png'),
+    });
+    await page
+      .getByRole('combobox')
+      .fill('$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
+    await page.getByRole('combobox').press('Enter');
+    await expect(
+      page.getByRole('dialog', { name: 'Change the video', exact: true })
+    ).toBeVisible();
+    await expect(page.locator('#bilibili-url')).toBeFocused();
+    await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+    await expect(page.locator('#bilibili-part')).toHaveValue('2');
+    await page.keyboard.press('Escape');
+    const unchangedMedia = await (
+      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+    ).json();
+    expect(unchangedMedia.mediaGeneration).toBe(selectedMedia.mediaGeneration);
+    expect(unchangedMedia.media).toEqual(selectedMedia.media);
     await expect(page.locator('.roster')).toContainText('<b>Alice 😀</b>');
     expect(await page.locator('.roster b').count()).toBe(0);
     await other.goto(inviteURL);
@@ -94,6 +120,70 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(other.locator('#control-note')).toContainText('Only the host');
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready'
+    );
+    await openQuickActions(other, '/play');
+    await expect(other.getByRole('option', { selected: true })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    await expect(other.getByRole('option', { selected: true })).toContainText(
+      'Only the host'
+    );
+    await other.getByRole('combobox').press('Enter');
+    await expect(other.locator('.command-palette')).toBeVisible();
+    await other.getByRole('combobox').fill('/video');
+    await expect(
+      other.getByRole('option').filter({ hasText: '/video' })
+    ).toHaveCount(0);
+    await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
+    await expect(other.getByRole('option')).toHaveCount(0);
+    await other.keyboard.press('Escape');
+    await runQuickAction(page, '/play');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await expect
+      .poll(() =>
+        page
+          .locator('video')
+          .evaluate((video: HTMLVideoElement) => video.paused)
+      )
+      .toBe(false);
+    await runQuickAction(page, '/pause');
+    await expect(other.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await runQuickAction(other, '/mute');
+    expect(
+      await other
+        .locator('video')
+        .evaluate((video: HTMLVideoElement) => video.muted)
+    ).toBe(false);
+    expect(
+      await page
+        .locator('video')
+        .evaluate((video: HTMLVideoElement) => video.muted)
+    ).toBe(true);
+    await runQuickAction(page, '/seek');
+    await expect(
+      page.getByRole('slider', { name: 'Seek', exact: true })
+    ).toBeFocused();
+    await runQuickAction(page, '/fullscreen');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await runQuickAction(page, '/fullscreen');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    const fileChooser = page.waitForEvent('filechooser');
+    await runQuickAction(page, '/local');
+    await (await fileChooser).setFiles(file);
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
       'ready'
     );

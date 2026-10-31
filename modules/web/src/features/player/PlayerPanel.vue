@@ -8,7 +8,16 @@ import {
   type Message,
 } from '../../i18n';
 
-import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
+import type { QuickCommand, VideoSelection } from '../commands/search';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
 import type {
@@ -159,6 +168,14 @@ const canPlay = computed(
     controls.value && !!current.value.media && matched.value && !loading.value
 );
 const canControl = computed(() => controls.value && !!current.value.media);
+const canReplace = computed(
+  () =>
+    host.value &&
+    !loading.value &&
+    connected.value &&
+    active.value &&
+    !uncertain.value
+);
 const shownStatus = computed<ReadinessStatus>(() =>
   loading.value ? 'loading' : mediaStatus.value
 );
@@ -538,6 +555,7 @@ async function retryMedia(): Promise<void> {
   await autoLoad();
 }
 async function replaceMedia(): Promise<void> {
+  if (!canReplace.value) return;
   const selected = await mediaPicker.value?.prepare();
   if (!selected) return;
   replaceOpen.value = false;
@@ -546,6 +564,131 @@ async function replaceMedia(): Promise<void> {
   else if (selected.media.kind === 'bilibili')
     await chooseBilibili(selected.media, true);
 }
+async function openMedia(selection?: VideoSelection): Promise<void> {
+  if (!canReplace.value) return;
+  replaceOpen.value = true;
+  await nextTick();
+  await mediaPicker.value?.selectBilibili(selection);
+}
+const commands = computed<QuickCommand[]>(() => [
+  ...(host.value
+    ? [
+        {
+          id: 'video',
+          label: t('player.changeVideo'),
+          group: 'watch' as const,
+          icon: 'screen',
+          shortcut: '/video',
+          aliases: 'replace change video bilibili link 更换 替换 视频 链接',
+          disabled: !canReplace.value,
+          detail: !canReplace.value
+            ? controlNote.value || t('common.preparingVideo')
+            : t('commands.videoHint'),
+          run: (selection?: VideoSelection) => {
+            void openMedia(selection);
+          },
+        },
+      ]
+    : []),
+  ...(current.value.media?.kind === 'local'
+    ? [
+        {
+          id: 'local',
+          label: t('media.chooseFile'),
+          group: 'watch' as const,
+          icon: 'file',
+          shortcut: '/local',
+          aliases: 'local file 本地 文件 选择',
+          disabled: loading.value,
+          run: chooseFile,
+        },
+      ]
+    : []),
+  ...(['play', 'pause', 'replay'] as const).map((action) => ({
+    id: action,
+    label: t(
+      action === 'play'
+        ? 'player.playTogether'
+        : action === 'pause'
+          ? 'player.pauseTogether'
+          : 'player.replay'
+    ),
+    group: 'watch' as const,
+    icon: action,
+    shortcut: `/${action}`,
+    aliases:
+      action === 'play'
+        ? '播放 开始'
+        : action === 'pause'
+          ? '暂停 停止'
+          : '重播 重新播放',
+    disabled: action === 'play' ? !canPlay.value : !canControl.value,
+    detail:
+      controlNote.value ||
+      (action === 'play' && !canPlay.value
+        ? t(readinessText[shownStatus.value])
+        : undefined),
+    run: () => command(action),
+  })),
+  {
+    id: 'seek',
+    label: t('commands.seek'),
+    group: 'watch',
+    icon: 'replay',
+    shortcut: '/seek',
+    aliases: 'position jump seek 跳转 进度 定位',
+    disabled: !canControl.value,
+    detail: controlNote.value || undefined,
+    run: () => {
+      wake();
+      stage.value
+        ?.querySelector<HTMLInputElement>('input[type="range"]')
+        ?.focus();
+    },
+  },
+  {
+    id: 'fullscreen',
+    label: t('player.fullscreen'),
+    group: 'watch',
+    icon: 'fullscreen',
+    shortcut: '/fullscreen',
+    aliases: 'fullscreen screen full 全屏 屏幕',
+    run: () => {
+      void fullscreen();
+    },
+  },
+  {
+    id: 'mute',
+    label: t(muted.value ? 'player.unmute' : 'player.mute'),
+    group: 'watch',
+    icon: muted.value ? 'volume' : 'mute',
+    shortcut: '/mute',
+    aliases: 'volume sound mute unmute 声音 静音 取消静音',
+    run: () => {
+      muted.value = !muted.value;
+      wake();
+    },
+  },
+  ...(current.value.media?.kind === 'bilibili'
+    ? [
+        {
+          id: 'danmaku',
+          label: t(
+            showDanmaku.value ? 'commands.hideDanmaku' : 'player.showDanmaku'
+          ),
+          group: 'watch' as const,
+          icon: 'chat',
+          shortcut: '/danmaku',
+          aliases: 'comments danmaku 弹幕 显示 隐藏',
+          run: () => {
+            showDanmaku.value = !showDanmaku.value;
+            danmakuPreferences();
+          },
+        },
+      ]
+    : []),
+]);
+defineExpose({ commands });
 async function changeQuality(event: Event): Promise<void> {
   const selected = current.value.media;
   const quality = Number((event.target as HTMLSelectElement).value);
@@ -1185,8 +1328,8 @@ onUnmounted(() => {
       <button
         v-if="host"
         class="quiet change-media"
-        :disabled="loading || !connected || !active || !!uncertain"
-        @click="replaceOpen = true"
+        :disabled="!canReplace"
+        @click="openMedia()"
       >
         <Icon name="plus" :size="16" />{{ t('player.changeVideo') }}
       </button>

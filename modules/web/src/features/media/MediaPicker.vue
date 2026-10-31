@@ -8,7 +8,7 @@ import {
   type Message,
 } from '../../i18n';
 
-import { onUnmounted, ref, watch } from 'vue';
+import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { HelperBridge } from '../../player/bilibili/bridge';
 import { decodeInfo, parseSelection } from '../../player/bilibili/media';
 import { LocalAdapter } from '../../player/adapters/local';
@@ -137,7 +137,26 @@ onUnmounted(() => {
   bridge?.close(2);
   file = undefined;
 });
-defineExpose({ prepare });
+async function selectBilibili(
+  selection?: ReturnType<typeof parseSelection>
+): Promise<void> {
+  if (props.disabled || working.value) return;
+  switchSource('bilibili');
+  if (selection) {
+    url.value = selection.bvid;
+    part.value = selection.part;
+    parts.value = 0;
+  }
+  await nextTick();
+  document.getElementById('bilibili-url')?.focus();
+}
+async function selectLocal(): Promise<void> {
+  if (props.disabled || working.value) return;
+  switchSource('local');
+  await nextTick();
+  document.getElementById('create-local-video')?.focus();
+}
+defineExpose({ prepare, selectBilibili, selectLocal });
 </script>
 <template>
   <div class="media-picker">
@@ -178,17 +197,19 @@ defineExpose({ prepare });
           {{ working ? t('media.checking') : t('media.preview') }}
         </button>
       </div>
-      <div v-if="parts > 1" class="part-row">
+      <div v-if="parts > 1 || part > 1" class="part-row">
         <label for="bilibili-part">{{ t('media.part') }}</label
         ><input
           id="bilibili-part"
           v-model.number="part"
           type="number"
           min="1"
-          :max="parts"
+          :max="parts || 10000"
           :readonly="disabled || working"
           @input="invalidate"
-        /><span class="hint">{{ t('media.partTotal', { count: parts }) }}</span>
+        /><span v-if="parts" class="hint">{{
+          t('media.partTotal', { count: parts })
+        }}</span>
       </div>
     </template>
     <div v-else class="file-drop" @dragover.prevent @drop="drop">

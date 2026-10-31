@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { t, message, translate, type Message } from '../../i18n';
 
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Invitation, Snapshot } from '../../transport/api';
 import type { RoomSettings } from '../../transport/contracts';
 import { settingsSummary } from '../status-text';
@@ -9,6 +9,7 @@ import SettingsForm from './SettingsForm.vue';
 import MembersPanel from './MembersPanel.vue';
 import Modal from '../../components/Modal.vue';
 import Icon from '../../components/Icon.vue';
+import type { QuickCommand } from '../commands/search';
 const props = defineProps<{
   room: Snapshot;
   invitation?: Invitation | undefined;
@@ -83,6 +84,55 @@ async function copy(value: string, field: string): Promise<void> {
     copied.value = message('room.selected');
   }
 }
+function invite(): void {
+  if (!props.host || props.busy) return;
+  inviteOpen.value = true;
+  emit('share');
+}
+const commands = computed<QuickCommand[]>(() => [
+  ...(props.host
+    ? [
+        {
+          id: 'invite',
+          label: t('room.invite'),
+          group: 'room' as const,
+          icon: 'link',
+          shortcut: '/invite',
+          aliases: 'share invitation code 邀请 分享 邀请码',
+          disabled: props.busy,
+          run: invite,
+        },
+        {
+          id: 'room-settings',
+          label: t('commands.roomSettings'),
+          group: 'room' as const,
+          icon: 'settings',
+          shortcut: '/room',
+          aliases: 'room settings preferences 房间 设置 等待 控制权限',
+          disabled: props.busy,
+          run: () => {
+            if (props.host && !props.busy) openSettings();
+          },
+        },
+      ]
+    : []),
+  {
+    id: 'members',
+    label: t('room.membersTitle'),
+    group: 'room',
+    icon: 'users',
+    shortcut: '/members',
+    aliases: 'participants people 成员 参与者',
+    run: () => {
+      membersOpen.value = true;
+      if (!narrow.value)
+        void nextTick(() =>
+          document.getElementById('participants-title')?.focus()
+        );
+    },
+  },
+]);
+defineExpose({ commands });
 </script>
 <template>
   <section class="room" aria-labelledby="room-title">
@@ -98,10 +148,7 @@ async function copy(value: string, field: string): Promise<void> {
           v-if="host"
           class="invite-button"
           :disabled="busy"
-          @click="
-            inviteOpen = true;
-            emit('share');
-          "
+          @click="invite"
         >
           <Icon name="link" /><span>{{ t('room.invite') }}</span>
         </button>
