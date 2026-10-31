@@ -132,7 +132,7 @@ Use **Install OVS helper**, **Update helper**, or **Install matching helper**, t
 Return to OVS and select **Reload page** to activate the installed script. Updating uses the same script name and namespace within an instance.
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
 The bundled `modules/helper/dist/release.json` supplies the helper release version from root `versions.toml` and a fingerprint of the built script. OVS also detects outdated helpers when a development update keeps the same release version. An outdated open application asks for a refresh before recommending a mismatched helper.
-For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
+For development with frontend hot reload, install the helper from the Vite page. Vite supplies a helper scoped to that exact development origin.
 After updating an existing development checkout, reinstall the instance helper and reload to use the new episode-list metadata.
 
 The helper runs only on the configured OVS origin, never on Bilibili pages or frames. Each profile uses its own platform access.
@@ -196,8 +196,9 @@ make dev
 ```
 
 Open `http://127.0.0.1:8080` to use the embedded application. The development command stores local data in ignored `data/`.
-For frontend hot reload, run `make dev-web` in another terminal and open `http://127.0.0.1:5173`.
-Vite+ proxies health, API, and WebSocket requests to `127.0.0.1:8080`. The API and WebSocket proxies map the exact development Origin to the backend Origin.
+For frontend hot reload, run `make dev-web` in another terminal and open `http://127.0.0.1:5173` or `http://localhost:5173`.
+Vite+ proxies health, API, and WebSocket requests to `127.0.0.1:8080`. The API and WebSocket proxies map only these two development origins to the backend origin.
+The development server builds and serves the local helper and release metadata. Install the helper from the same development page, then reload. A helper installed from port `8080` or another hostname does not activate on that page.
 Keep the default backend public origin when using this development proxy.
 
 Go embedding requires generated frontend files. Run `make web-build` before direct Go commands. Run Go commands from `modules/sync`, or use `go -C modules/sync`.

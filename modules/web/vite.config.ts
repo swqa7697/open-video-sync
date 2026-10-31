@@ -1,10 +1,12 @@
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite-plus';
 import { readVersions } from '../../scripts/versions.mjs';
+import { developmentHelper, developmentProxy } from './dev-server';
 
 export default defineConfig({
   plugins: [
     vue(),
+    developmentHelper(),
     {
       name: 'ovs-web-version',
       generateBundle() {
@@ -30,29 +32,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (outgoing, incoming) => {
-            if (incoming.headers.origin === 'http://127.0.0.1:5173')
-              outgoing.setHeader('Origin', 'http://127.0.0.1:8080');
-          });
-        },
-      },
-      '/ws': {
-        target: 'ws://127.0.0.1:8080',
-        ws: true,
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReqWs', (outgoing, incoming) => {
-            if (incoming.headers.origin === 'http://127.0.0.1:5173')
-              outgoing.setHeader('Origin', 'http://127.0.0.1:8080');
-          });
-        },
-      },
+      '/api': developmentProxy(),
+      '/ws': developmentProxy(true),
       '/health': 'http://127.0.0.1:8080',
-      '/userscripts': 'http://127.0.0.1:8080',
     },
   },
   build: {
@@ -71,7 +53,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'dev-server.test.ts'],
     restoreMocks: true,
     clearMocks: true,
   },

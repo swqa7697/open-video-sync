@@ -17,3 +17,4 @@ Generated metadata is not a second version source. The bridge protocol version r
 `make helper-build` also copies the distribution into `modules/sync/internal/helper/dist/` for Go embedding.
 The server serves the script and release metadata under the existing `/userscripts/` routes.
 Install the helper from the running OVS instance so its deployment origin is correct.
+For frontend hot reload, `make dev-web` serves the generated files with the exact `localhost:5173` or `127.0.0.1:5173` origin. Install from that development page and reload.

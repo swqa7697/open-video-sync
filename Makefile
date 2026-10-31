@@ -123,7 +123,7 @@ dev: web-build ## Run the Go server on loopback with local data
 	@$(INFO) "Starting the Go development server..."
 	OVS_LISTEN_ADDR="$${OVS_LISTEN_ADDR:-127.0.0.1:8080}" OVS_PUBLIC_ORIGIN="$${OVS_PUBLIC_ORIGIN:-http://127.0.0.1:8080}" OVS_DATA_DIR="$${OVS_DATA_DIR:-$(CURDIR)/data}" go -C $(SYNC) run ./cmd/ovs
 
-dev-web: ## Run Vite+ with API and health proxying to Go
+dev-web: helper-build ## Run Vite+ with API and health proxying to Go
 	@$(INFO) "Starting the frontend development server..."
 	pnpm --dir $(WEB) run dev
 
