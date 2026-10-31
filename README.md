@@ -273,9 +273,11 @@ Use the matching Make targets as the common entry point.
 
 Use `$release-pr` in Codex or `/release-pr` in Claude Code to prepare a release from `dev` into `main`.
 The repository instructions are in [release-pr](.agents/skills/release-pr/SKILL.md).
-The workflow reviews the complete branch diff, selects a version increase, prepares `versions.toml`, and presents validation and PR text for approval.
-After explicit approval, the workflow runs `make release-commit YES=1` and opens the release PR.
-Invoking the workflow does not authorize Git writes before that approval.
+The workflow reviews the complete branch diff and opens or reuses the release PR before any version bump.
+It waits for hosted PR CI. If CI fails, it diagnoses the cause, applies and validates a focused fix, then commits and pushes when explicitly authorized and waits again until CI passes.
+Only after CI succeeds does it select a version increase, prepare `versions.toml`, and present validation and final PR text for approval.
+After explicit approval, it runs `make release-commit YES=1`, updates the same PR, and verifies CI for the final commit through the same repair loop.
+Invoking the workflow does not authorize Git writes. Existing explicit authorization for the named CI repair loop is reused.
 
 For manual preparation, run one `make bump-major`, `make bump-minor`, or `make bump-patch` on `dev` or a release topic branch.
 These targets change only root `versions.toml`, using `MAJOR.MINOR.PATCH` without a prefix or leading zeroes.
