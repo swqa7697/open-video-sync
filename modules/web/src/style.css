@@ -465,28 +465,21 @@ main {
 }
 .home-heading {
   text-align: center;
-  margin-bottom: 30px;
-}
-.home-heading .eyebrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .home h1 {
-  font-size: clamp(2.5rem, 4vw, 3.35rem);
-  line-height: 1.12;
+  font-size: clamp(1.65rem, 3vw, 2rem);
+  line-height: 1.35;
   font-weight: 550;
-  letter-spacing: -0.055em;
-}
-.home h1 > span {
-  color: var(--primary);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 .home-heading > p:last-child {
-  margin-top: 16px;
+  margin-top: 10px;
   font-size: 0.86rem;
   color: var(--muted);
+  text-wrap: pretty;
 }
 .create-card {
   background: var(--surface);
@@ -1367,12 +1360,6 @@ fieldset select {
   .home-heading {
     margin-bottom: 24px;
   }
-  .home h1 {
-    font-size: 2.7rem;
-  }
-  .home-heading .eyebrow {
-    margin-bottom: 12px;
-  }
   .app-header {
     height: 66px;
   }
@@ -1466,14 +1453,8 @@ fieldset select {
     max-width: 580px;
     padding: 36px 20px 28px;
   }
-  .home h1 {
-    font-size: 2.8rem;
-  }
   .home-heading {
-    margin-bottom: 28px;
-  }
-  .home-heading .eyebrow {
-    font-size: 0.59rem;
+    margin-bottom: 24px;
   }
   .home-heading > p:last-child {
     font-size: 0.78rem;
@@ -1700,14 +1681,8 @@ fieldset select {
     padding-top: 30px;
     padding-bottom: 20px;
   }
-  .home h1 {
-    font-size: 2.8rem;
-  }
   .home-heading {
     margin-bottom: 24px;
-  }
-  .home-heading .eyebrow {
-    margin-bottom: 12px;
   }
   .home-heading > p:last-child {
     margin-top: 12px;

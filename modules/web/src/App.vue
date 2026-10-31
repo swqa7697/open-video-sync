@@ -2,6 +2,7 @@
 import { t, message as msg, translate, type Message } from './i18n';
 import { useLanguageStore } from './stores/language';
 import AppSettings from './features/AppSettings.vue';
+import HomeIntro from './features/HomeIntro.vue';
 import CommandPalette from './features/commands/CommandPalette.vue';
 import { usePreferenceCommands } from './features/commands/preferences';
 import type { QuickCommand, VideoSelection } from './features/commands/search';
@@ -718,17 +719,7 @@ onUnmounted(() => {
           />
         </RoomPanel>
         <div v-else class="home">
-          <div class="home-heading">
-            <p class="eyebrow">
-              <span class="status-dot" />{{ t('app.eyebrow') }}
-            </p>
-            <h1>
-              {{ t('app.heroFirst') }}<br /><span>{{
-                t('app.heroSecond')
-              }}</span>
-            </h1>
-            <p>{{ t('app.heroHint') }}</p>
-          </div>
+          <HomeIntro />
           <section class="create-card" aria-labelledby="create-title">
             <div class="card-heading">
               <h2 id="create-title" tabindex="-1">{{ t('app.startParty') }}</h2>

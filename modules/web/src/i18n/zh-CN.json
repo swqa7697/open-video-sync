@@ -55,10 +55,14 @@
     "retryConnection": "重试连接",
     "uncertain": "请求结果尚不确定。请检查原请求以恢复结果。",
     "retryOriginal": "重试原请求",
-    "eyebrow": "与亲友相聚，私享观影时光",
-    "heroFirst": "好友相伴。",
-    "heroSecond": "每一刻，都同步。",
-    "heroHint": "选好视频，邀请好友，一起观看。",
+    "headlines": {
+      "welcome": "欢迎使用 OVS",
+      "rooms": "选择视频或加入房间",
+      "local": "本地视频，无需上传",
+      "sources": "支持 B 站链接和本地视频",
+      "invitation": "使用邀请链接加入房间"
+    },
+    "heroHint": "选择视频创建房间，或通过邀请加入。",
     "startParty": "发起一起看",
     "privateRoom": "私密房间",
     "roomName": "房间名称",

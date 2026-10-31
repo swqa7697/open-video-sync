@@ -55,10 +55,14 @@
     "retryConnection": "Retry connection",
     "uncertain": "The request outcome is uncertain. Check the original request to recover its result.",
     "retryOriginal": "Retry original request",
-    "eyebrow": "A private place to press play",
-    "heroFirst": "Good company.",
-    "heroSecond": "Perfectly in sync.",
-    "heroHint": "Pick a video. Invite your people. Watch together.",
+    "headlines": {
+      "welcome": "Welcome to OVS",
+      "rooms": "Choose a video or join a room",
+      "local": "Local videos, no uploads",
+      "sources": "Bilibili links and local videos",
+      "invitation": "Join a room with an invitation"
+    },
+    "heroHint": "Create a room with a video, or join with an invitation.",
     "startParty": "Start a watch party",
     "privateRoom": "Private room",
     "roomName": "Room name",
