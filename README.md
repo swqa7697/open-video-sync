@@ -130,7 +130,7 @@ A missing or outdated helper produces a bottom toast and an entry dialog. **Late
 Use **Install OVS helper**, **Update helper**, or **Install matching helper**, then confirm installation/replacement in Tampermonkey.
 Return to OVS and select **Reload page** to activate the installed script. Updating uses the same script name and namespace within an instance.
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
-The bundled `modules/helper/dist/release.json`, generated from root `versions.toml`, supplies the helper release version. An outdated open application asks for a refresh before recommending a mismatched helper.
+The bundled `modules/helper/dist/release.json` supplies the helper release version from root `versions.toml` and a fingerprint of the built script. OVS also detects outdated helpers when a development update keeps the same release version. An outdated open application asks for a refresh before recommending a mismatched helper.
 For development, open the embedded Go application at its configured public origin; Vite's hot-reload origin is outside helper scope.
 After updating an existing development checkout, reinstall the instance helper and reload to use the new episode-list metadata.
 

@@ -237,6 +237,10 @@ test('exact activation and source checks reject origins, frames, and forged wind
   for (const firefox of [false, true]) {
     const f = fixture({ firefox });
     assert.equal(
+      (await f.call('probe', { version: 1 })).value.build,
+      release.build
+    );
+    assert.equal(
       await f.call('hello', { version: 1 }, { origin: 'https://evil.invalid' }),
       undefined
     );

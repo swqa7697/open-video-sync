@@ -5,7 +5,9 @@ import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import App from './App.vue';
 import { decodeSnapshot } from './transport/api';
 import { consumeInvitation } from './transport/invitation';
-import { roomFixture } from './test-support/room';
+import { FakeSocket, roomFixture } from './test-support/room';
+import { BilibiliAdapter } from './player/bilibili/adapter';
+import type { MediaInfo } from './player/bilibili/media';
 import { i18n } from './i18n';
 const identity = {
   identity: { identityId: 'a'.repeat(32), displayName: '' },
@@ -115,6 +117,64 @@ test('aborts pending requests and releases readiness listeners when disposed', a
   expect(signals.every((s) => s.aborted)).toBe(true);
   window.dispatchEvent(new Event('online'));
   expect(signals).toHaveLength(2);
+});
+test('loaded episode metadata reaches the room sidebar through the player slot', async () => {
+  const room = decodeSnapshot({
+    ...snapshot,
+    media,
+    mediaGeneration: 1,
+    playback: { ...snapshot.playback, phase: 'paused' },
+  });
+  const playlist = {
+    title: 'Collection',
+    episodes: [
+      { bvid: media.bvid, part: 1, title: 'Opening' },
+      { bvid: media.bvid, part: 2, title: 'Finale' },
+    ],
+  };
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('fetch', async (url: string) =>
+    url.startsWith('/health')
+      ? new Response(null, { status: 204 })
+      : json(url.endsWith('/session') ? identity : room)
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockResolvedValue(room.media!);
+  vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockReturnValue({
+    ...media,
+    duration: 10,
+    title: 'Opening',
+    parts: 2,
+    playlist,
+    quality: 80,
+    qualities: [80],
+    handle: 'h1-1234',
+    tracks: [],
+  } satisfies MediaInfo);
+  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
+    positionMs: 0,
+    durationMs: 10000,
+    paused: true,
+    seeking: false,
+    status: 'ready',
+  });
+  history.replaceState(null, '', `/rooms/${room.roomId}`);
+  const wrapper = app();
+  try {
+    await flushPromises();
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.readyState = 1;
+    socket.frame('session.welcome', {
+      connectionId: 'e'.repeat(32),
+      snapshot: room,
+    });
+    await flushPromises();
+    await wrapper.get('#episodes-tab').trigger('click');
+    expect(wrapper.get('#episodes-pane').isVisible()).toBe(true);
+    expect(wrapper.get('[aria-current="true"]').text()).toContain('Opening');
+    expect(wrapper.findAll('.episode-button')).toHaveLength(2);
+  } finally {
+    wrapper.unmount();
+  }
 });
 test.each([true, false])(
   'recovers uncertain initial-media creation without a duplicate (retained=%s)',

@@ -40,6 +40,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
                         ? expected.newer
                         : expected.version,
                   maxChunk: 262144,
+                  ...(mode === 'same-version-old-build'
+                    ? {}
+                    : { build: expected.build }),
                 },
               }
             : { ok: false, error: 'login-required' };
@@ -54,10 +57,22 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
         );
       });
     },
-    { version: release.version, older, firstNewer, newer }
+    { version: release.version, build: release.build, older, firstNewer, newer }
   );
   await page.goto('/');
   await expect(page.getByRole('dialog')).toContainText('not detected');
+  await page.getByRole('button', { name: 'Later', exact: true }).click();
+  await page.evaluate(() =>
+    sessionStorage.setItem('synthetic-helper', 'same-version-old-build')
+  );
+  await page.getByRole('button', { name: 'Reload page', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('needs an update');
+  await expect(page.getByRole('dialog')).toContainText(
+    `Installed ${release.version} · Required ${release.version}`
+  );
+  await expect(page.getByRole('dialog').getByRole('link')).toHaveText(
+    'Update helper'
+  );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));

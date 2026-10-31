@@ -66,7 +66,9 @@ async function check(): Promise<void> {
       throw new Error('unavailable');
     if (
       deployed.version !== helperRelease.version ||
-      deployed.protocol !== helperRelease.protocol
+      deployed.protocol !== helperRelease.protocol ||
+      !('build' in deployed) ||
+      deployed.build !== helperRelease.build
     ) {
       state.value = 'stale';
       return;
@@ -83,7 +85,8 @@ async function check(): Promise<void> {
     installed.value = reply.helper;
     if (reply.version !== helperRelease.protocol || reply.maxChunk !== 262144)
       state.value = 'mismatch';
-    else if (reply.helper === helperRelease.version) state.value = 'ready';
+    else if (reply.helper === helperRelease.version)
+      state.value = reply.build === helperRelease.build ? 'ready' : 'outdated';
     else {
       const a = reply.helper.split('.').map(Number),
         b = helperRelease.version.split('.').map(Number);

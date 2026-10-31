@@ -418,7 +418,12 @@
         generation = 0;
         client = q.client;
       }
-      return { version: 1, helper: '{{HELPER_VERSION}}', maxChunk: MAX };
+      return {
+        version: 1,
+        helper: '{{HELPER_VERSION}}',
+        maxChunk: MAX,
+        build: '{{HELPER_BUILD}}',
+      };
     }
     if (q.client !== client) throw Error('stale-generation');
     if (q.op === 'metrics') return metrics;

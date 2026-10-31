@@ -86,6 +86,7 @@ test('a player accepts only its exact channel and disposal rejects pending repli
 test('startup waits for late manager registration without opening media first', async () => {
   vi.useFakeTimers();
   let requests = 0;
+  let build: string | undefined = helperRelease.build;
   vi.spyOn(window, 'postMessage').mockImplementation((raw) => {
     const q = JSON.parse(raw as string) as Record<string, unknown>;
     if (q.op !== 'hello') return;
@@ -103,6 +104,7 @@ test('startup waits for late manager registration without opening media first', 
             version: 1,
             helper: helperRelease.version,
             maxChunk: 262144,
+            ...(build !== undefined ? { build } : {}),
           },
         }),
       })
@@ -113,5 +115,16 @@ test('startup waits for late manager registration without opening media first', 
   await vi.advanceTimersByTimeAsync(1000);
   await expect(hello).resolves.toBeUndefined();
   expect(requests).toBe(3);
+  // A legacy helper can share the same release number but lack episode metadata.
+  build = undefined;
+  await expect(bridge.hello()).rejects.toMatchObject({
+    code: 'helper-incompatible',
+  });
+  build = '0'.repeat(64);
+  await expect(bridge.hello()).rejects.toMatchObject({
+    code: 'helper-incompatible',
+  });
+  build = 'invalid';
+  await expect(bridge.hello()).rejects.toMatchObject({ code: 'invalid-reply' });
   bridge.close(2);
 });

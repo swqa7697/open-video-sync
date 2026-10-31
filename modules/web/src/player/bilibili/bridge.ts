@@ -185,13 +185,17 @@ export class HelperBridge {
     if (
       value.version !== release.protocol ||
       value.helper !== release.version ||
-      value.maxChunk !== 256 * 1024
+      value.maxChunk !== 256 * 1024 ||
+      value.build !== release.build
     )
       throw new HelperError('helper-incompatible');
   }
-  async handshake(
-    probe = false
-  ): Promise<{ version: number; helper: string; maxChunk: number }> {
+  async handshake(probe = false): Promise<{
+    version: number;
+    helper: string;
+    maxChunk: number;
+    build?: string;
+  }> {
     let reply: unknown;
     // A manager can register its document listener after the application mounts.
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -212,11 +216,23 @@ export class HelperBridge {
       }
     }
     const value = object(reply);
-    exact(value, ['version', 'helper', 'maxChunk']);
+    exact(value, [
+      'version',
+      'helper',
+      'maxChunk',
+      ...(Object.hasOwn(value, 'build') ? ['build'] : []),
+    ]);
+    // Accept legacy handshakes for onboarding, then require the deployed build in hello().
+    const build = Object.hasOwn(value, 'build')
+      ? boundedText(value.build, 64)
+      : undefined;
+    if (build !== undefined && !/^[a-f0-9]{64}$/.test(build))
+      throw new HelperError('invalid-reply');
     return {
       version: integer(value.version, 1, 100),
       helper: boundedText(value.helper, 32),
       maxChunk: integer(value.maxChunk, 1, 1024 * 1024),
+      ...(build !== undefined ? { build } : {}),
     };
   }
   call(
