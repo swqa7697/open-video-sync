@@ -1,4 +1,4 @@
-# Dependencies, generated files, local state, and agent/developer artifacts.
+# Dependencies, generated files, and local state.
 node_modules/
 pnpm-lock.yaml
 build/
@@ -6,8 +6,6 @@ dist/
 data/
 coverage/
 vendor/
-.misc/
-.tmp/
 
 # The shell plugin also recognizes these files; keep their existing syntax.
 Dockerfile

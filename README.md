@@ -215,7 +215,8 @@ The `prettier-plugin-sh` plugin formats Bash scripts, including `tidy.sh`. Both 
 The script runs [mbake](https://github.com/EbodShojaei/bake) through `uvx` to format `Makefile`, using repository-owned `.bake.toml` settings.
 `./tidy.sh --check` checks all the same files without changing them; `make format-check` uses this mode.
 Root `.prettierrc.cjs` supplies shared options and resolves the shell plugin from `modules/web/node_modules`, including for editor integrations.
-`.gitignore` and `.prettierignore` exclude dependencies, generated files, local state, artifacts, and lockfiles.
+The script explicitly reads `.gitignore` and `.prettierignore` to exclude dependencies, generated files, local state, artifacts, and lockfiles.
+`.misc/` and `.tmp/` are excluded through `.gitignore`, so batch formatting skips both directories while VS Code Prettier can still format their files on save.
 Frontend package format scripts also use `tidy.sh` to keep formatter commands in one place.
 `make lint` checks backend and frontend code without applying fixes. `make check` includes lint and adds formatting and Vue type checks.
 CI continues to use `make check`, so these checks run once through the shared targets.
