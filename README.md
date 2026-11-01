@@ -215,8 +215,8 @@ Run `make help` to list the available targets.
 | `upgrade`                                | Upgrade frontend dependencies, then Go modules                                                                         |
 | `upgrade-frontend`                       | Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain                               |
 | `upgrade-backend`                        | Upgrade Go modules within current module paths, including test dependencies                                            |
-| `uninstall`                              | Remove frontend dependencies and build output; preserve data and lockfiles                                             |
-| `clean`                                  | Remove generated assets and binaries; preserve dependencies and data                                                   |
+| `uninstall`                              | Remove frontend dependencies, build output, and local `data/`; preserve dependency lockfiles                           |
+| `clean`                                  | Remove generated assets, binaries, and local `data/`; preserve dependencies                                            |
 | `format`, `tidy`                         | Format Go, frontend, scripts, documentation, and configuration                                                         |
 | `format-check`                           | Check the same formatting without changing source files                                                                |
 | `lint`                                   | Run Go vet, Bash syntax checks, Oxlint, and ESLint Vue template checks                                                 |
@@ -237,8 +237,9 @@ Run `make help` to list the available targets.
 | `release-commit`                         | Preview, stage, commit, and push release files after confirmation                                                      |
 | `release-tag`                            | Confirm and push an annotated `vX.Y.Z` tag from clean, current `main`                                                  |
 
-`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `versions.toml` supplies all module release versions; `versions.sync` selects the Go binary version.
-Container targets default to `ovs:s<sync>-w<web>-h<helper>`, using all three module versions, and accept an `IMAGE` override. The prefixes `s`, `w`, and `h` identify sync, web, and helper. `node scripts/versions.mjs image-tag` prints the combined tag without the `ovs:` prefix. `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`. Cleanup commands preserve `.misc/` evidence, databases, dependency lockfiles, and system tools.
+`make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `CLEAN=1` runs `make clean` first, including deletion of local `data/`. `versions.toml` supplies all module release versions; `versions.sync` selects the Go binary version.
+Stop the development server before running `make clean`, `make uninstall`, or `make build CLEAN=1`. These commands reset the repository's `data/` directory, including its database and ownership lock. They preserve custom `OVS_DATA_DIR` locations, `.misc/`, `.tmp/`, dependency lockfiles, global caches, Docker resources, and system tools. Frontend tool caches inside `node_modules/` remain with `make clean` and are removed with `make uninstall`.
+Container targets default to `ovs:s<sync>-w<web>-h<helper>`, using all three module versions, and accept an `IMAGE` override. The prefixes `s`, `w`, and `h` identify sync, web, and helper. `node scripts/versions.mjs image-tag` prints the combined tag without the `ovs:` prefix. `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`.
 
 Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
 Use `VERBOSE=1` to show recipe commands and enable tracing in installation and build scripts.

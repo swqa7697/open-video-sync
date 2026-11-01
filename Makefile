@@ -35,10 +35,10 @@ install: ## Install project dependencies and build the template
 
 setup: install ## Alias for install
 
-uninstall: ## Remove local dependencies and build output; preserve data and lockfiles
+uninstall: ## Remove local dependencies, build output, and data/; preserve lockfiles
 	@./scripts/uninstall.sh
 
-clean: ## Remove generated assets and binaries; preserve dependencies and data
+clean: ## Remove generated assets, binaries, and data/; preserve dependencies
 	@./scripts/clean.sh
 
 deps: ## Check tool versions and install locked project dependencies
