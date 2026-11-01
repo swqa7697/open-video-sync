@@ -316,7 +316,6 @@ const errors: Record<string, Message> = {
   forbidden: message('api.forbidden'),
   not_found: message('api.not_found'),
   invalid_invitation: message('api.invalid_invitation'),
-  invitation_reset_required: message('api.invitation_reset_required'),
   upgrade_required: message('api.upgrade_required'),
   stale_state: message('api.stale_state'),
   idempotency_conflict: message('api.idempotency_conflict'),

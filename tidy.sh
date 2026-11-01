@@ -17,7 +17,7 @@ fi
 
 for tool in go pnpm uvx; do
   if ! command -v "$tool" > /dev/null 2>&1; then
-    printf 'Missing tool: %s. See README.md for prerequisites.\n' "$tool" >&2
+    printf 'Missing tool: %s. See CONTRIBUTING.md for prerequisites.\n' "$tool" >&2
     exit 1
   fi
 done

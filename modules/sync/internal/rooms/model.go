@@ -40,11 +40,10 @@ type Room struct {
 }
 
 // InvitationRecord keeps private sharing values and indexed verifiers.
-// ExpiresAtMs is legacy metadata; invitations never expire by time.
 type InvitationRecord struct {
-	Generation, ExpiresAtMs int64
-	LinkHash, CodeHash      string
-	LinkSecret, Code        string
+	Generation         int64
+	LinkHash, CodeHash string
+	LinkSecret, Code   string
 }
 
 // Invitation contains newly generated secrets; never put it in snapshots or logs.

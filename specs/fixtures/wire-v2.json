@@ -344,7 +344,7 @@
     }
   },
   {
-    "name": "reject legacy settings",
+    "name": "reject unsupported settings",
     "contract": "settings",
     "valid": false,
     "input": {

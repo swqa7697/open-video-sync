@@ -73,11 +73,7 @@ func (s *Store) LoadRooms(ctx context.Context) ([]rooms.Room, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = s.db.QueryRowContext(ctx, `SELECT generation,link_hash,code_hash,expires_at_ms,coalesce(link_secret,''),coalesce(code,'') FROM room_invitations WHERE room_id=?`, r.ID).Scan(&r.Invite.Generation, &r.Invite.LinkHash, &r.Invite.CodeHash, &r.Invite.ExpiresAtMs, &r.Invite.LinkSecret, &r.Invite.Code)
-		if err == sql.ErrNoRows {
-			r.Invite = rooms.InvitationRecord{Generation: 1}
-			err = nil
-		}
+		err = s.db.QueryRowContext(ctx, `SELECT generation,link_hash,code_hash,link_secret,code FROM room_invitations WHERE room_id=?`, r.ID).Scan(&r.Invite.Generation, &r.Invite.LinkHash, &r.Invite.CodeHash, &r.Invite.LinkSecret, &r.Invite.Code)
 		if err != nil {
 			return nil, err
 		}
@@ -125,12 +121,10 @@ func validRoom(r rooms.Room) error {
 	if !host {
 		return fmt.Errorf("missing host membership")
 	}
-	if r.Invite.LinkSecret != "" {
-		hash, ok := contracts.SecretHash(r.Invite.LinkSecret, 16)
-		code, valid := contracts.NormalizeCode(r.Invite.Code)
-		if !ok || !valid || code != r.Invite.Code || hash != r.Invite.LinkHash || contracts.Hash([]byte(code)) != r.Invite.CodeHash || r.Invite.ExpiresAtMs != 0 {
-			return fmt.Errorf("invalid stored invitation")
-		}
+	hash, ok := contracts.SecretHash(r.Invite.LinkSecret, 16)
+	code, valid := contracts.NormalizeCode(r.Invite.Code)
+	if !ok || !valid || code != r.Invite.Code || hash != r.Invite.LinkHash || contracts.Hash([]byte(code)) != r.Invite.CodeHash {
+		return fmt.Errorf("invalid stored invitation")
 	}
 	return nil
 }
@@ -164,7 +158,7 @@ func (t roomTx) AddMember(id string, m rooms.Member) error {
 	return err
 }
 func (t roomTx) ResetInvitation(id string, i rooms.InvitationRecord) error {
-	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO room_invitations(room_id,generation,link_hash,code_hash,expires_at_ms,link_secret,code) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET generation=excluded.generation,link_hash=excluded.link_hash,code_hash=excluded.code_hash,expires_at_ms=excluded.expires_at_ms,link_secret=excluded.link_secret,code=excluded.code`, id, i.Generation, i.LinkHash, i.CodeHash, i.ExpiresAtMs, i.LinkSecret, i.Code)
+	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO room_invitations(room_id,generation,link_hash,code_hash,link_secret,code) VALUES(?,?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET generation=excluded.generation,link_hash=excluded.link_hash,code_hash=excluded.code_hash,link_secret=excluded.link_secret,code=excluded.code`, id, i.Generation, i.LinkHash, i.CodeHash, i.LinkSecret, i.Code)
 	return err
 }
 func (t roomTx) RemoveMember(id, mid string) error {

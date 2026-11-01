@@ -374,7 +374,6 @@
     "forbidden": "你没有执行此操作的权限。",
     "not_found": "你已无法访问此房间。",
     "invalid_invitation": "此邀请不可用，或房间已关闭。",
-    "invitation_reset_required": "旧邀请需要更换，请选择“更换邀请”以生成新的分享信息。",
     "upgrade_required": "此页面版本过旧，请重新加载以使用更新后的应用。",
     "stale_state": "保存前房间状态已更改，请检查房间后重试。",
     "idempotency_conflict": "此请求已使用其他内容发送，请重新加载后重试。",

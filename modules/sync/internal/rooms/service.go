@@ -295,9 +295,6 @@ func (s *Service) Invitation(ctx context.Context, p identity.Session, id string)
 		if err := authorize(r, p, true); err != nil {
 			return err
 		}
-		if r.Invite.LinkSecret == "" {
-			return contracts.Failure("invitation_reset_required")
-		}
 		result = Invitation{r.Invite.LinkSecret, r.Invite.Code}
 		return nil
 	})

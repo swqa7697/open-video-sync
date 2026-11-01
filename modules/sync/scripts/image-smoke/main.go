@@ -66,7 +66,7 @@ func run(image string) error {
 	if err != nil || user != "10001:10001" {
 		return fmt.Errorf("image user %q, want 10001:10001: %w", user, err)
 	}
-	var previousLedger string
+	var previousSchema string
 	var application applicationState
 	for phase := 1; phase <= 2; phase++ {
 		if _, err := docker(ctx, "run", "-d", "--name", name, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1::8080", "--mount", "type=volume,src="+volume+",dst=/data", "-e", "OVS_PUBLIC_ORIGIN=http://ovs.example", image); err != nil {
@@ -101,14 +101,14 @@ func run(image string) error {
 		if _, err := docker(ctx, "cp", name+":/data/.", copyTo); err != nil {
 			return err
 		}
-		ledger, err := inspectDatabase(ctx, filepath.Join(copyTo, "ovs.sqlite"))
+		schema, err := inspectDatabase(ctx, filepath.Join(copyTo, "ovs.sqlite"))
 		if err != nil {
 			return err
 		}
-		if phase == 2 && previousLedger != ledger {
-			return errors.New("container replacement changed the applied migration record")
+		if phase == 2 && previousSchema != schema {
+			return errors.New("container replacement changed the database schema version")
 		}
-		previousLedger = ledger
+		previousSchema = schema
 		if _, err := docker(ctx, "rm", name); err != nil {
 			return err
 		}
@@ -204,11 +204,14 @@ func inspectDatabase(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	defer db.Close()
-	var checksum, applied string
-	if err := db.QueryRowContext(ctx, "SELECT checksum, applied_at FROM schema_migrations WHERE version=1").Scan(&checksum, &applied); err != nil {
+	var version int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return "", err
 	}
-	return checksum + ":" + applied, nil
+	if version != 1 {
+		return "", fmt.Errorf("unexpected schema version: %d", version)
+	}
+	return fmt.Sprint(version), nil
 }
 
 // State uses only isolated test credentials. Do not print bearer or invitation values.

@@ -1,7 +1,9 @@
 # Sync module
 
 The Go module owns the OVS server, SQLite persistence, and HTTP and WebSocket transports.
-`sql/migrations/` contains the immutable numbered schema migrations. Root `deploy/` contains application deployment examples.
+`sql/schema.sql` always defines the complete, current database schema; `sql/embed.go` embeds that definition.
+`sql/migrations/` records changes between versions for historical reference only and is not executed at startup.
+Root `deploy/` contains application deployment examples.
 Root [Dockerfile](../../Dockerfile) and `.dockerignore` build and bundle all three modules using the repository root as their context.
 
 Run these commands from the repository root:

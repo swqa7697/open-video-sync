@@ -139,7 +139,7 @@ The tool verifies execution configuration and layer digests after transfer, then
 records the remote image IDs. This supports both
 classic and containerd Docker image stores, whose image IDs can differ. Once
 images and configurations are valid, OVS stops before the replacement starts.
-Startup or migration failures preserve the data and report an error. There is no
+Startup or schema initialization failures preserve the data and report an error. There is no
 automatic image downgrade, database rollback, or backup command. Rebuilding the
 same tag replaces its image reference. Release configurations and recorded image
 IDs remain available for diagnosis; remove obsolete images manually only after
@@ -266,9 +266,9 @@ If every connection in a room closed, the room pauses. Any allowed controller ca
 ## Operations and validation
 
 The container health check invokes `/ovs healthcheck`. Allow more than ten seconds for graceful termination; Compose allows fifteen seconds.
-Before you copy `/data`, stop OVS and follow the stopped-directory copy note in the [root README](../README.md#deploy-and-operate).
+Before you copy `/data`, stop OVS and follow the stopped-directory copy note in the [root README](../README.md#configuration-and-data).
 Preserve `/data` across upgrades and use a binary compatible with its schema. Playback restarts paused at zero.
-Development installations upgrading from application protocol v1 need the [legacy invitation transition](../specs/development-upgrade.md). OVS has no backup/restore command or automated downgrade workflow.
+OVS has no backup/restore command or automated downgrade workflow.
 
 `make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
 `make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:2` and a local certificate authority.

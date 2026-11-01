@@ -374,7 +374,6 @@
     "forbidden": "You do not have permission for this action.",
     "not_found": "This room is no longer available to you.",
     "invalid_invitation": "This invitation is unavailable or the room has closed.",
-    "invitation_reset_required": "This older invitation needs replacement. Select Replace invitation to create new sharing details.",
     "upgrade_required": "This page is out of date. Reload to use the updated application.",
     "stale_state": "The room changed before your change was saved. Review the room and try again.",
     "idempotency_conflict": "This request was already sent with different details. Reload and retry.",

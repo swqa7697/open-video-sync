@@ -107,10 +107,6 @@ func fail(w http.ResponseWriter, err error) {
 		status = 409
 		message = "Request recovery expired. Check the original room link before starting a new request."
 		retry = false
-	case "invitation_reset_required":
-		status = 409
-		message = "Replace the legacy invitation before sharing."
-		retry = false
 	case "stale_state":
 		status = 409
 		message = "Room changed. Refresh before trying again."

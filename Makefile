@@ -54,7 +54,7 @@ upgrade: ## Upgrade backend and frontend dependencies
 	@$(WARN) "Review dependency changes, then run: make check && make test test-race && make build"
 
 upgrade-backend: web-build ## Upgrade Go modules within their current module paths, including test dependencies
-	@command -v go >/dev/null 2>&1 || { $(FAIL) "Go is required. See README.md."; exit 1; }
+	@command -v go >/dev/null 2>&1 || { $(FAIL) "Go is required. See CONTRIBUTING.md."; exit 1; }
 	@$(INFO) "Upgrading Go modules and test dependencies..."
 	go -C $(SYNC) get -u -t ./...
 	go -C $(SYNC) mod tidy
@@ -62,7 +62,7 @@ upgrade-backend: web-build ## Upgrade Go modules within their current module pat
 	@$(SUCCESS) "Updated modules/sync/go.mod and go.sum. Review any change to the minimum Go version."
 
 upgrade-frontend: ## Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain
-	@command -v pnpm >/dev/null 2>&1 || { $(FAIL) "pnpm is required. See README.md."; exit 1; }
+	@command -v pnpm >/dev/null 2>&1 || { $(FAIL) "pnpm is required. See CONTRIBUTING.md."; exit 1; }
 	@$(INFO) "Updating the Vite+ toolchain with the official migrator..."
 	cd $(WEB) && pnpm dlx --package=vite-plus@latest vp migrate --no-interactive --no-agent --no-editor --no-hooks
 	@$(INFO) "Updating frontend dependency ranges within current major versions..."

@@ -2,9 +2,9 @@
 
 ## Scope and sources of truth
 
-- OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository implements identity, rooms, local synchronization, waiting policies, and Bilibili/danmaku on the simplified design and memory-owned runtime. Stage 5 deployment and release acceptance passed locally; hosted CI has not run. Do not describe target contracts as implemented or earlier evidence as verification of the revised design.
-- Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
+- OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for technical contracts.
+- The initial release is in development. Keep requirements and design independent of development history. Retain implementation status and validation evidence under `.misc/`; report only checks actually run.
+- Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with one complete, current schema definition; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.
 - Keep retained development artifacts and validation evidence under ignored `.misc/`. Do not create or modify developer-managed `.tmp/` content.
@@ -30,7 +30,8 @@
 | `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds           |
 | `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                     |
 | `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                   |
-| `modules/sync/sql/migrations`                                      | Ordered, immutable SQL migrations                                       |
+| `modules/sync/sql`                                                 | Complete, current database definition and Go embedding                  |
+| `modules/sync/sql/migrations`                                      | Version-to-version schema changes for historical reference only         |
 | `modules/sync/scripts`                                             | Go automation, container and proxy checks                               |
 | `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling      |
 | `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests              |
@@ -84,8 +85,8 @@
 - Trust proxy headers only from configured proxies. Derive public URLs and cookie policy from validated deployment configuration, not arbitrary request headers.
 - Render untrusted names, titles, danmaku, and errors as text. Validate platform messages by exact origin and source window as well as payload shape.
 - Never serialize arbitrary player SDK objects or log raw requests/provider errors. Use synthetic secrets in boundary tests and sanitize retained traces.
-- Record every SQLite DDL change as a new migration. Never edit an applied migration, silently reset a database, or remove data to hide migration failures.
-- Keep related persistent changes in one short transaction and update only affected records. Do not persist playback or HTTP retry receipts, storage probes, or runtime counters. Use real SQLite tests for constraints, rollback, upgrades, and persistent metadata across restart.
+- Keep `modules/sync/sql/schema.sql` as the complete, current SQLite schema and update it whenever the schema changes. Numbered files in `modules/sync/sql/migrations/` record changes between versions for historical reference only; application startup must not execute them. Never silently reset a database or remove data to hide schema failures.
+- Keep related persistent changes in one short transaction and update only affected records. Do not persist playback or HTTP retry receipts, storage probes, or runtime counters. Use real SQLite tests for initialization, constraints, rollback, and persistent metadata across restart.
 - A failed durable write must not mutate memory or stop unrelated existing playback. Report persistence unavailable; fix storage and restart instead of running automatic probes or recovery transitions.
 - Run one OVS process per data directory and preserve `/data` across container replacement. A manual copy requires stopped OVS and the whole directory, including SQLite sidecars. Do not build backup/restore commands.
 - Build frontend assets before the Go embedding step. Verify the final image serves UI, API, and WebSocket without Node or a separate database service.
@@ -93,7 +94,7 @@
 
 ## Development commands and validation
 
-Use `make help` for the command list. Run `make install` to install locked dependencies and build the template. Run `make dev` for Go and `make dev-web` for frontend hot reload. See README for tool prerequisites.
+Use `make help` for the command list. Run `make install` to install locked dependencies and build the template. Run `make dev` for Go and `make dev-web` for frontend hot reload. See [CONTRIBUTING.md](CONTRIBUTING.md) for tool prerequisites.
 
 Run `make check`, `make test test-race`, and `make build` in that order. Run `make browser-install` before `make test-e2e`. Use `make image image-smoke` for container checks. Direct Go commands require `make web-build` first because frontend assets are embedded at compile time. CI is configured; hosted success requires an actual successful run.
 

@@ -1,5 +1,5 @@
 // Version-2 value boundaries. These do not authorize actions or implement routes.
-// Server wire rules and later response/envelope shapes: specs/wire-v2.md.
+// Server wire rules and response/envelope shapes: specs/WIRE.md.
 export interface ProfilePatch {
   displayName: string;
 }

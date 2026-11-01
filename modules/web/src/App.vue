@@ -267,18 +267,7 @@ async function open(id: string, moveFocus = false): Promise<void> {
   }
   show(snapshot);
   if (moveFocus) void focus('room-title');
-  if (host.value) {
-    try {
-      await share();
-    } catch (reason) {
-      if (
-        reason instanceof APIError &&
-        reason.code === 'invitation_reset_required'
-      )
-        message.value = reason.text;
-      else throw reason;
-    }
-  }
+  if (host.value) await share();
 }
 async function submitAttempt(): Promise<void> {
   const pending = attempt.value;

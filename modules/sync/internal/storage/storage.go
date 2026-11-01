@@ -13,7 +13,7 @@ import (
 	"github.com/gofrs/flock"
 	_ "modernc.org/sqlite" // Register the database/sql driver.
 
-	"github.com/swqa7697/open-video-sync/modules/sync/sql/migrations"
+	"github.com/swqa7697/open-video-sync/modules/sync/sql"
 )
 
 // Store owns one database and its data-directory lock. Close it before reuse.
@@ -23,7 +23,7 @@ type Store struct {
 	writer *writer
 }
 
-// Open acquires exclusive ownership, configures SQLite, and applies migrations.
+// Open acquires exclusive ownership, configures SQLite, and initializes the schema.
 func Open(ctx context.Context, directory string) (_ *Store, err error) {
 	directory, err = filepath.Abs(directory)
 	if err != nil {
@@ -67,7 +67,7 @@ func Open(ctx context.Context, directory string) (_ *Store, err error) {
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("connect SQLite: %w", err)
 	}
-	if err := migrate(ctx, db, migrations.Files); err != nil {
+	if err := initializeSchema(ctx, db, schema.Definition); err != nil {
 		return nil, err
 	}
 	return &Store{db: db, lock: lock, writer: newWriter(db)}, nil
