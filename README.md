@@ -154,8 +154,13 @@ The player limits prefetch and reclaims played buffers under memory pressure. Br
 Expired locations refresh with the same video and audio representations; a changed encoding requires a player reload instead of mixing fragments.
 AV1, HEVC, and quality switching need new live-platform validation; the earlier B0 evidence covers fixed-quality AVC/AAC. Playback requires browser and device decoding support. Local files use the browser's decoder and contain no alternate platform stream to select. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
 
-Danmaku follows observed playback through pause and seek. Visibility, density, and text size remain local.
-Click the danmaku icon to toggle comments; hover over it for density, text size, status, and reload controls.
+Danmaku follows observed playback through pause and seek. Visibility, density, text size, scrolling speed, and display area remain local.
+Click the danmaku icon to toggle comments; hover over it for density, text size, speed, display area, status, and reload controls.
+Adjust scrolling speed from 0.5× to 1.5×. At 1×, every scrolling comment takes ten seconds from entry until its tail leaves.
+Longer text moves faster to cover its longer path in the same time.
+Choose **Full screen**, **Half screen** (default), or **Quarter screen** for scrolling comments. Half and quarter areas use the top of the player. Fixed top and bottom comments retain their full display area and positions when this setting changes.
+Comments keep their lanes and leave space between texts. Crowded comments are skipped instead of overlapping or appearing late.
+Speed changes preserve each visible comment's position. The browser remembers the display area across reloads and rooms. Visibility, density, text size, and speed last while the room page stays open.
 With keyboard focus on the icon, press Down to open settings and Escape to close. On touchscreens, long press the icon.
 The player has no separate settings button; local videos show no danmaku controls.
 Hidden comments and loading failures have separate status. **Reload danmaku** retries loading.

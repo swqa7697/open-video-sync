@@ -142,6 +142,7 @@ const reported = (socket: FakeSocket) =>
     .map((frame) => frame.payload.status);
 beforeEach(() => {
   localStorage.clear();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
   const nativeURL = URL;
@@ -156,12 +157,16 @@ beforeEach(() => {
   );
 });
 
-// A component scenario owns the quality menu and browser preference lifecycle. The
+// A component scenario owns player menus and the browser preference lifecycle. The
 // helper regressions separately verify highest/fallback selection from synthetic metadata.
-test('quality choices use a small menu and survive player recreation', async () => {
+test('quality and danmaku area choices survive player recreation', async () => {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('hover: hover'),
   }));
+  localStorage.setItem(
+    'ovs.player',
+    JSON.stringify({ volume: 0.4, muted: false, danmakuArea: 0.75 })
+  );
   const media = {
     kind: 'bilibili' as const,
     bvid: 'BV1hf4y1N75G',
@@ -261,6 +266,11 @@ test('quality choices use a small menu and survive player recreation', async () 
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
     await wrapper.get('input[id$="-density"]').setValue(12);
     await wrapper.get('input[id$="-size"]').setValue(24);
+    await wrapper.get('input[id$="-speed"]').setValue(0.7);
+    const area = wrapper.get<HTMLSelectElement>('select[id$="-area"]');
+    expect(area.element.value).toBe('0.5');
+    await area.setValue('0.25');
+    expect(wrapper.get('output[for$="-speed"]').text()).toBe('0.7×');
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
     ).toBe('12');
@@ -270,6 +280,10 @@ test('quality choices use a small menu and survive player recreation', async () 
     await trigger.trigger('click');
     expect(trigger.attributes('aria-pressed')).toBe('false');
     expect(wrapper.get('.danmaku-menu').text()).toContain('Hidden by you');
+    expect(area.element.value).toBe('0.25');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value
+    ).toBe('0.7');
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
     ).toBe('12');
@@ -284,12 +298,32 @@ test('quality choices use a small menu and survive player recreation', async () 
     );
     await trigger.trigger('keydown', { key: 'ArrowDown' });
     await flushPromises();
+    expect(
+      wrapper.get<HTMLSelectElement>('select[id$="-area"]').element.value
+    ).toBe('0.25');
     expect(document.activeElement).toBe(
       wrapper.get('input[id$="-density"]').element
     );
     await wrapper.get('.danmaku-menu').trigger('keydown', { key: 'Escape' });
     expect(wrapper.find('.danmaku-menu').exists()).toBe(false);
     expect(document.activeElement).toBe(trigger.element);
+    wrapper.unmount();
+    wrapper = await open();
+    expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.get<HTMLInputElement>('.volume-slider').element.value).toBe(
+      '0.4'
+    );
+    await wrapper
+      .get('.danmaku-toggle')
+      .trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
+    const restored = wrapper.get<HTMLSelectElement>('select[id$="-area"]');
+    expect(restored.element.value).toBe('0.25');
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage blocked', 'SecurityError');
+    });
+    await restored.setValue('1');
+    expect(restored.element.value).toBe('1');
   } finally {
     wrapper.unmount();
   }

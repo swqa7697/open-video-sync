@@ -8,6 +8,8 @@ const props = defineProps<{
   visible: boolean;
   density: number;
   fontSize: number;
+  speed: number;
+  area: number;
   status: string;
   stage: HTMLElement | undefined;
 }>();
@@ -15,6 +17,8 @@ const emit = defineEmits<{
   'update:open': [value: boolean];
   'update:density': [value: number];
   'update:fontSize': [value: number];
+  'update:speed': [value: number];
+  'update:area': [value: number];
   toggle: [];
   reload: [];
 }>();
@@ -121,6 +125,14 @@ function changeDensity(event: Event): void {
 function changeSize(event: Event): void {
   emit('update:fontSize', Number((event.target as HTMLInputElement).value));
 }
+function changeSpeed(event: Event): void {
+  emit('update:speed', Number((event.target as HTMLInputElement).value));
+}
+function changeArea(event: Event): void {
+  const value = Number((event.target as HTMLSelectElement).value);
+  if (value === 1 || value === 0.5 || value === 0.25)
+    emit('update:area', value);
+}
 watch(
   () => props.open,
   async (value) => {
@@ -199,9 +211,12 @@ onUnmounted(() => {
           <Icon name="close" :size="16" />
         </button>
       </div>
-      <label :for="`${panelId}-density`">{{
-        t('player.danmakuDensity')
-      }}</label>
+      <label :for="`${panelId}-density`">
+        {{ t('player.danmakuDensity') }}
+        <output :for="`${panelId}-density`" aria-hidden="true">{{
+          density
+        }}</output>
+      </label>
       <input
         :id="`${panelId}-density`"
         :value="density"
@@ -211,7 +226,12 @@ onUnmounted(() => {
         :aria-valuetext="t('player.commentCount', { count: density })"
         @input="changeDensity"
       />
-      <label :for="`${panelId}-size`">{{ t('player.danmakuSize') }}</label>
+      <label :for="`${panelId}-size`">
+        {{ t('player.danmakuSize') }}
+        <output :for="`${panelId}-size`" aria-hidden="true"
+          >{{ fontSize }} px</output
+        >
+      </label>
       <input
         :id="`${panelId}-size`"
         :value="fontSize"
@@ -221,6 +241,30 @@ onUnmounted(() => {
         :aria-valuetext="t('player.pixelCount', { count: fontSize })"
         @input="changeSize"
       />
+      <label :for="`${panelId}-speed`">
+        {{ t('player.danmakuSpeed') }}
+        <output :for="`${panelId}-speed`" aria-hidden="true"
+          >{{ speed.toFixed(1) }}×</output
+        >
+      </label>
+      <input
+        :id="`${panelId}-speed`"
+        :value="speed"
+        type="range"
+        min="0.5"
+        max="1.5"
+        step="0.1"
+        :aria-valuetext="
+          t('player.danmakuSpeedValue', { speed: speed.toFixed(1) })
+        "
+        @input="changeSpeed"
+      />
+      <label :for="`${panelId}-area`">{{ t('player.danmakuArea') }}</label>
+      <select :id="`${panelId}-area`" :value="area" @change="changeArea">
+        <option :value="1">{{ t('player.danmakuAreaFull') }}</option>
+        <option :value="0.5">{{ t('player.danmakuAreaHalf') }}</option>
+        <option :value="0.25">{{ t('player.danmakuAreaQuarter') }}</option>
+      </select>
       <p class="hint" role="status">
         {{ visible ? status : t('player.hiddenDanmaku', { status }) }}
       </p>

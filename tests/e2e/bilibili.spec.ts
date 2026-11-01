@@ -330,6 +330,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   });
   await danmaku.hover();
   await expect(preferences).toBeVisible();
+  expect(
+    await preferences.evaluate((panel) => panel.scrollWidth - panel.clientWidth)
+  ).toBe(0);
   await page
     .getByRole('slider', { name: 'Danmaku density', exact: true })
     .hover();
@@ -340,9 +343,81 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('slider', { name: 'Danmaku density', exact: true })
   ).toBeFocused();
+  const speed = page.getByRole('slider', {
+    name: 'Danmaku speed',
+    exact: true,
+  });
+  await expect(speed).toHaveValue('1');
+  await speed.focus();
+  await speed.press('Home');
+  await expect(speed).toHaveValue('0.5');
+  await speed.press('ArrowRight');
+  await expect(speed).toHaveValue('0.6');
+  await expect(speed).toHaveAttribute('aria-valuetext', '0.6 times speed');
+  const area = preferences.getByRole('combobox', {
+    name: 'Scrolling area',
+    exact: true,
+  });
+  await expect(area).toHaveValue('0.5');
+  await area.selectOption('1');
+  const fullHeight = await page
+    .locator('.danmaku-overlay')
+    .evaluate((overlay) => overlay.clientHeight);
+  for (const fraction of [0.5, 0.25, 1]) {
+    await area.selectOption(String(fraction));
+    await expect(area).toHaveValue(String(fraction));
+    // Fixed comments retain the full overlay while scrolling lanes are bounded separately.
+    expect(
+      await page
+        .locator('.danmaku-overlay')
+        .evaluate((overlay) => overlay.clientHeight)
+    ).toBe(fullHeight);
+  }
+  await area.selectOption('0.25');
   await page.keyboard.press('Escape');
   await expect(danmaku).toBeFocused();
   await expect(preferences).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'access_denied'
+  );
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1024, height: 600 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    // Resize closes player menus; reopen after the browser delivers that event.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    );
+    await danmaku.focus();
+    await danmaku.press('ArrowDown');
+    await expect(preferences).toBeVisible();
+    await expect(area).toHaveValue('0.25');
+    expect(
+      await preferences.evaluate(
+        (panel) => panel.scrollWidth - panel.clientWidth
+      )
+    ).toBe(0);
+    if (viewport.width === 1440)
+      expect(
+        await preferences.evaluate(
+          (panel) => panel.scrollHeight - panel.clientHeight
+        )
+      ).toBe(0);
+    const reload = preferences.getByRole('button', {
+      name: 'Reload danmaku',
+      exact: true,
+    });
+    await reload.scrollIntoViewIfNeeded();
+    await expect(reload).toBeInViewport();
+    await page.keyboard.press('Escape');
+    await expect(danmaku).toBeFocused();
+    await expect(preferences).toHaveCount(0);
+  }
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   const enabledIcon = await danmaku.locator('path').getAttribute('d');
   await page

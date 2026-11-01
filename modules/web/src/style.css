@@ -1228,13 +1228,14 @@ fieldset select {
 }
 .danmaku-overlay {
   position: absolute;
-  inset: 0;
+  inset: 0 0 96px;
   overflow: hidden;
   pointer-events: none;
   z-index: 2;
 }
 .danmaku-overlay span {
   position: absolute;
+  left: 0;
   white-space: nowrap;
   font-weight: 600;
   text-shadow:
@@ -1457,6 +1458,7 @@ fieldset select {
   display: block;
   width: 100%;
   height: 20px;
+  margin: 0;
 }
 .player-menu .hint {
   margin: 12px 0 8px;
@@ -1481,6 +1483,21 @@ fieldset select {
 }
 .danmaku-menu {
   right: auto;
+}
+.danmaku-menu label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.danmaku-menu output {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.danmaku-menu select {
+  margin-top: 6px;
+  min-height: 36px;
+  padding: 0.4rem 0.6rem;
+  font-size: inherit;
 }
 .danmaku-toggle[aria-pressed='false'] {
   color: var(--muted);
@@ -1829,6 +1846,9 @@ fieldset select {
   }
   .player-controls {
     padding: 25px 8px 8px;
+  }
+  .danmaku-overlay {
+    bottom: 144px;
   }
   .player-controls button.icon-button {
     width: 44px;

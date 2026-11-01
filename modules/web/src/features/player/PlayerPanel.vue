@@ -61,10 +61,13 @@ const emit = defineEmits<{
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
+const preferences = readPlayerPreferences();
 const danmakuStatus = ref<Message | ''>(''),
   showDanmaku = ref(true),
   density = ref(20),
-  danmakuSize = ref(20);
+  danmakuSize = ref(20),
+  danmakuSpeed = ref(1),
+  danmakuArea = ref(preferences.danmakuArea);
 let publishing = false;
 const video = ref<HTMLVideoElement>(),
   heading = ref<HTMLElement>(),
@@ -85,7 +88,6 @@ const qualityText = {
   calibrated: message('player.calibrated'),
   degraded: message('player.degraded'),
 };
-const preferences = readPlayerPreferences();
 const active = ref(false),
   connected = ref(false),
   loading = ref(false),
@@ -95,10 +97,11 @@ const active = ref(false),
   muted = ref(preferences.muted),
   volume = ref(preferences.volume);
 const preferredQuality = ref(preferences.quality);
-watch([volume, muted, preferredQuality], () =>
+watch([volume, muted, preferredQuality, danmakuArea], () =>
   savePlayerPreferences({
     volume: volume.value,
     muted: muted.value,
+    danmakuArea: danmakuArea.value,
     ...(preferredQuality.value ? { quality: preferredQuality.value } : {}),
   })
 );
@@ -426,6 +429,8 @@ function danmakuPreferences(): void {
     adapter.danmaku.visible = showDanmaku.value;
     adapter.danmaku.density = density.value;
     adapter.danmaku.fontSize = danmakuSize.value;
+    adapter.danmaku.speed = danmakuSpeed.value;
+    adapter.danmaku.area = danmakuArea.value;
   }
 }
 function toggleDanmaku(): void {
@@ -1427,6 +1432,8 @@ onUnmounted(() => {
               :visible="showDanmaku"
               :density="density"
               :font-size="danmakuSize"
+              :speed="danmakuSpeed"
+              :area="danmakuArea"
               :status="translate(danmakuStatus)"
               :stage="stage"
               @update:open="
@@ -1437,6 +1444,12 @@ onUnmounted(() => {
               "
               @toggle="toggleDanmaku"
               @reload="reloadDanmaku"
+              @update:area="
+                (value) => {
+                  danmakuArea = value;
+                  danmakuPreferences();
+                }
+              "
               @update:density="
                 (value) => {
                   density = value;
@@ -1446,6 +1459,12 @@ onUnmounted(() => {
               @update:font-size="
                 (value) => {
                   danmakuSize = value;
+                  danmakuPreferences();
+                }
+              "
+              @update:speed="
+                (value) => {
+                  danmakuSpeed = value;
                   danmakuPreferences();
                 }
               "

@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vite-plus/test';
+import { afterEach, expect, onTestFinished, test, vi } from 'vite-plus/test';
 import {
   decodeInfo,
   decodePlaylist,
@@ -6,8 +6,213 @@ import {
   parseIndex,
   parseSelection,
 } from './media';
-import { DanmakuRenderer, decodeComments } from './danmaku';
+import { DanmakuRenderer, decodeComments, type Comment } from './danmaku';
 afterEach(() => vi.unstubAllGlobals());
+
+function commentRenderer(reduced = false) {
+  let frame: FrameRequestCallback | undefined;
+  vi.stubGlobal('matchMedia', () => ({ matches: reduced }));
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frame = callback;
+    return 1;
+  });
+  const cancel = vi.fn();
+  vi.stubGlobal('cancelAnimationFrame', cancel);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    measureText: (text: string) => ({ width: Array.from(text).length * 10 }),
+  } as CanvasRenderingContext2D);
+  const video = document.createElement('video'),
+    overlay = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.append(overlay);
+  Object.defineProperty(stage, 'clientHeight', { value: 400 });
+  Object.defineProperties(overlay, {
+    clientWidth: { value: 800, configurable: true },
+    // The overlay viewport excludes the player's controls.
+    clientHeight: { value: 304, configurable: true },
+  });
+  const renderer = new DanmakuRenderer(video, overlay);
+  onTestFinished(() => renderer.dispose());
+  return {
+    renderer,
+    overlay,
+    cancel,
+    tick: (time: number) => {
+      video.currentTime = time;
+      frame?.(time * 1000);
+    },
+  };
+}
+const xPosition = (node: HTMLElement) =>
+  Number(node.style.transform.match(/translate3d\(([-\d.]+)px/)?.[1]);
+
+test('dense comments keep their lanes and never overlap or backfill crowded timestamps', () => {
+  const { renderer, overlay, tick } = commentRenderer();
+  renderer.density = 40;
+  const comments: Comment[] = [
+    { time: 0, mode: 5, color: 0xffffff, text: 'First pinned' },
+    { time: 0.5, mode: 1, color: 0xffffff, text: 'Short' },
+    { time: 0.5, mode: 1, color: 0xffffff, text: '长'.repeat(80) },
+    { time: 0.6, mode: 4, color: 0xffffff, text: 'Bottom pinned' },
+    ...Array.from({ length: 100 }, (_, i) => ({
+      time: 0.7 + i * 0.005,
+      mode: 1,
+      color: 0xffffff,
+      text: `Crowded ${i}`,
+    })),
+  ];
+  renderer.comments = comments;
+  tick(0);
+  tick(0.5);
+  const short = [...overlay.children].find(
+    (node) => node.textContent === 'Short'
+  ) as HTMLSpanElement;
+  const lane = short.style.top;
+  let previous = new Set<Element>();
+  for (let time = 0.6; time <= 8; time += 0.1) {
+    tick(time);
+    const nodes = [...overlay.children] as HTMLSpanElement[];
+    expect(nodes.length).toBeLessThanOrEqual(40);
+    for (const [i, node] of nodes.entries()) {
+      const sameLane = nodes
+        .slice(i + 1)
+        .filter((other) => other.style.top === node.style.top);
+      for (const other of sameLane) {
+        const left = xPosition(node),
+          right = xPosition(other);
+        const first = left < right ? node : other;
+        expect(Math.abs(left - right)).toBeGreaterThanOrEqual(
+          Array.from(first.textContent!).length * 10 + 2 + 24 - 0.001
+        );
+      }
+    }
+    // There are no new timestamps after 1.2 s. A dropped comment stays dropped.
+    if (time > 1.4)
+      for (const node of nodes) expect(previous.has(node)).toBe(true);
+    previous = new Set(nodes);
+    expect(short.parentElement).toBe(overlay);
+    expect(short.style.top).toBe(lane);
+  }
+  expect(overlay.textContent).not.toContain('First pinned');
+  expect(overlay.textContent).not.toContain('Bottom pinned');
+  renderer.area = 0.25;
+  renderer.comments = comments.slice(0, 4).map((comment) => ({
+    ...comment,
+    time: 8,
+  }));
+  tick(8);
+  const top = overlay.children[0] as HTMLSpanElement,
+    bottom = [...overlay.children].find(
+      (node) => node.textContent === 'Bottom pinned'
+    ) as HTMLSpanElement,
+    topPosition = top.style.top,
+    bottomPosition = bottom.style.top;
+  for (const area of [0.5, 0.25, 1]) {
+    renderer.area = area;
+    tick(8);
+    expect(top.parentElement).toBe(overlay);
+    expect(bottom.parentElement).toBe(overlay);
+    expect(top.style.top).toBe(topPosition);
+    expect(bottom.style.top).toBe(bottomPosition);
+    for (const node of [...overlay.children] as HTMLSpanElement[]) {
+      if (node === top || node === bottom) continue;
+      expect(Number.parseFloat(node.style.top) + 30).toBeLessThanOrEqual(
+        Math.min(304, 400 * area)
+      );
+    }
+  }
+  renderer.fontSize = 32;
+  Object.defineProperty(overlay, 'clientHeight', { value: 154 });
+  tick(8);
+  const tops = [...overlay.children].map((node) =>
+    Number.parseFloat((node as HTMLElement).style.top)
+  );
+  expect(tops.every((top) => top >= 12 && top + 48 <= 154)).toBe(true);
+});
+
+test('long and short comments share a lifetime while speed changes preserve position and clock ownership', () => {
+  const { renderer, overlay, tick, cancel } = commentRenderer();
+  renderer.comments = [
+    { time: 0, mode: 1, color: 0xffffff, text: 'Short' },
+    { time: 0, mode: 1, color: 0xffffff, text: '长'.repeat(80) },
+  ];
+  tick(0);
+  const short = overlay.children[0] as HTMLSpanElement,
+    long = overlay.children[1] as HTMLSpanElement;
+  tick(0.5);
+  expect(xPosition(long)).toBeLessThan(xPosition(short));
+  const before = xPosition(short);
+  tick(1);
+  const normalStep = before - xPosition(short),
+    original = short.style.transform;
+  renderer.speed = 0.5;
+  tick(1);
+  expect(short.style.transform).toBe(original);
+  tick(1.5);
+  expect(Number.parseFloat(short.style.top)).toBe(12);
+  expect(before - normalStep - xPosition(short)).toBeCloseTo(normalStep / 2);
+  const paused = short.style.transform;
+  tick(1.5);
+  expect(short.style.transform).toBe(paused);
+  renderer.speed = 1.5;
+  const slower = xPosition(short);
+  tick(2);
+  expect(slower - xPosition(short)).toBeCloseTo(normalStep * 1.5);
+  renderer.speed = 1;
+  // A delayed animation frame must not rebuild visible comments on tab return.
+  tick(4);
+  expect(short.parentElement).toBe(overlay);
+  expect(long.parentElement).toBe(overlay);
+  for (let time = 4.5; time <= 9.5; time += 0.5) tick(time);
+  expect(short.parentElement).toBe(overlay);
+  expect(long.parentElement).toBe(overlay);
+  expect(xPosition(long) + 802).toBeGreaterThan(0);
+  tick(10.01);
+  expect(short.parentElement).toBeNull();
+  expect(long.parentElement).toBeNull();
+  tick(2);
+  expect(overlay.children).toHaveLength(2);
+  tick(500);
+  expect(overlay.children).toHaveLength(0);
+  renderer.comments = [
+    { time: 500, mode: 5, color: 0xffffff, text: 'New media' },
+  ];
+  tick(500);
+  expect(overlay.textContent).toBe('New media');
+  renderer.visible = false;
+  tick(500);
+  expect(overlay.children).toHaveLength(0);
+  renderer.dispose();
+  expect(cancel).toHaveBeenCalled();
+  expect(renderer.comments).toHaveLength(0);
+});
+
+test('reduced motion keeps comments stationary and expires them without overlapping pinned text', () => {
+  const { renderer, overlay, tick } = commentRenderer(true);
+  renderer.fontSize = 32;
+  renderer.comments = [1, 4, 5].map((mode) => ({
+    time: 0,
+    mode,
+    color: 0xffffff,
+    text: `Mode ${mode}`,
+  }));
+  tick(1);
+  const nodes = [...overlay.children] as HTMLSpanElement[],
+    transforms = nodes.map((node) => node.style.transform);
+  expect(new Set(nodes.map((node) => node.style.top)).size).toBe(3);
+  tick(2);
+  expect(nodes.map((node) => node.style.transform)).toEqual(transforms);
+  const tops = nodes.map((node) => node.style.top);
+  for (const area of [0.5, 0.25, 1]) {
+    renderer.area = area;
+    tick(2);
+    expect([...overlay.children]).toEqual(nodes);
+    expect(nodes.map((node) => node.style.top)).toEqual(tops);
+    expect(nodes.map((node) => node.style.transform)).toEqual(transforms);
+  }
+  tick(7);
+  expect(overlay.children).toHaveLength(0);
+});
 test('selection resolves only canonical IDs and exact parts without forwarding pasted credentials', () => {
   expect(
     parseSelection(
@@ -153,23 +358,12 @@ test('helper metadata and display comments reject foreign payload fields and scr
     text: '<script>synthetic</script>',
   };
   expect(decodeComments({ comments: [comment] }, 10)).toEqual([comment]);
-  let frame: FrameRequestCallback | undefined;
-  vi.stubGlobal('matchMedia', () => ({ matches: false }));
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-    frame = callback;
-    return 1;
-  });
-  vi.stubGlobal('cancelAnimationFrame', () => {});
-  const video = document.createElement('video'),
-    overlay = document.createElement('div');
-  video.currentTime = 1.5;
-  const renderer = new DanmakuRenderer(video, overlay);
+  const { renderer, overlay, tick } = commentRenderer();
   renderer.comments = decodeComments({ comments: [comment] }, 10);
-  frame?.(0);
+  tick(1.5);
   expect(overlay.textContent).toBe(comment.text);
   expect(overlay.querySelector('script')).toBeNull();
-  video.currentTime = 9;
-  frame?.(100);
+  tick(30);
   expect(overlay.textContent).toBe('');
   renderer.dispose();
 
