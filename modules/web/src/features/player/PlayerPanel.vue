@@ -1354,6 +1354,7 @@ onUnmounted(() => {
             :aria-disabled="!canControl"
             @keydown="seekKeyboard"
             @pointerdown="(event) => !canControl && event.preventDefault()"
+            @click="stage?.focus({ preventScroll: true })"
             @input="dragSeek"
             @change="seek"
           />

@@ -568,13 +568,25 @@ test('independent identities manage a private room over direct HTTP', async ({
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
+    const tabToSeek = async () => {
+      await page.keyboard.press('Tab');
+      // Firefox includes the video itself in the native Tab order.
+      if (
+        await page
+          .locator('video')
+          .evaluate((v) => v === document.activeElement)
+      )
+        await page.keyboard.press('Tab');
+      await expect(seek).toBeFocused();
+    };
     holdResults = true;
     await seek.click({ position: { x: box.width / 3, y: box.height / 2 } });
-    await expect(seek).toBeFocused();
+    await expect(page.locator('.video-stage')).toBeFocused();
     await expect.poll(() => heldResults.length).toBeGreaterThan(0);
     await expect(seek).toBeDisabled();
     await page.keyboard.press('ArrowRight');
-    await expect(seek).toBeFocused();
+    await expect(page.locator('.video-stage')).toBeFocused();
+    await tabToSeek();
     await page.keyboard.press('Tab');
     await expect(
       page.getByRole('button', { name: 'Play together', exact: true })
@@ -587,6 +599,66 @@ test('independent identities manage a private room over direct HTTP', async ({
       )
       .toBeGreaterThan(3);
     await seek.focus();
+    await page.keyboard.press('Home');
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeLessThan(0.2);
+    await expect(seek).toBeFocused();
+    // Pointer seeking must leave page shortcuts usable without another click.
+    await seek.click({ position: { x: box.width / 3, y: box.height / 2 } });
+    await expect(seek).toBeEnabled();
+    await expect(page.locator('.video-stage')).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await page.screenshot({
+      path: testInfo.outputPath('seek-keyboard.png'),
+    });
+    await expect(page.locator('#local-volume')).toHaveValue('0.7');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.6);
+    await page.keyboard.press('m');
+    await expect(page.locator('video')).toHaveJSProperty('muted', true);
+    await page.keyboard.press('m');
+    await expect(page.locator('video')).toHaveJSProperty('muted', false);
+    await page.keyboard.press('ArrowRight');
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeGreaterThan(8);
+    await expect(seek).toBeEnabled();
+    await page.keyboard.press('ArrowLeft');
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeLessThan(5);
+    await expect(seek).toBeEnabled();
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await page.keyboard.press('k');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    // Dragging out of the track also returns focus; Tab still enters the native slider.
+    await seek.hover({ position: { x: box.width / 3, y: box.height / 2 } });
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width / 2, box.y - 20);
+    await page.mouse.up();
+    await expect(page.locator('.video-stage')).toBeFocused();
+    await expect(seek).toBeEnabled();
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.6);
+    await tabToSeek();
     await page.keyboard.press('Home');
     await expect
       .poll(() =>
@@ -629,8 +701,17 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       page.getByRole('heading', { name: 'Participants', exact: true })
     ).toBeFocused();
+    // A disconnected guest may learn removal from an HTTP denial after reconnect.
+    // Check revoked access and room exit independently of the notification wording.
+    await expect(other).toHaveURL(`${baseURL}/`);
     await expect(
-      other.getByRole('status').filter({ hasText: 'You were removed' })
+      other.getByRole('heading', { name: 'Start a watch party', exact: true })
+    ).toBeVisible();
+    expect(
+      (await other.request.get(`/api/v2${new URL(roomURL).pathname}`)).status()
+    ).toBe(404);
+    await expect(
+      other.getByRole('status').filter({ hasText: 'Friday watch party' })
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Leave', exact: true })

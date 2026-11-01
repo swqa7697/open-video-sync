@@ -105,6 +105,7 @@ Shared controls follow server permissions. Volume, mute, fullscreen, quality, an
 The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
 Click the video surface or use Space/K anywhere on the foreground OVS page for playback; player focus is not required. Left/Right seeks five seconds; Up/Down changes volume by 10%.
 M toggles mute, D toggles Bilibili danmaku, and F toggles fullscreen. Text inputs and sliders keep their native keyboard behavior.
+After pointer seeking, focus returns to the player so shortcuts remain available. Use Tab or `/seek` to focus the seek slider for native keyboard control.
 Menus and dialogs keep their keyboard controls, including Space activation on buttons. Outside these surfaces and inputs, Space controls playback even when a button retains focus after a click or dialog dismissal. Enter still activates focused buttons. Focus uses subtle color feedback without outlines and stays on the current control. Switching tabs or putting the browser in the background does not pause playback. Shared controls and synchronization continue while connected.
 Controls remain available while keyboard focus is inside them. Dialogs support Escape and restore focus.
 Change video supports Enter to confirm. Playback starts unmuted at 50% volume; volume and mute choices survive reloads in this browser. When autoplay is blocked, select **Enable playback** inside the video.
@@ -450,6 +451,7 @@ This method does not measure physical display presentation or establish cross-re
 Shared Go/TypeScript fixtures check profile, settings, and media metadata validation. See [version-2 contracts](specs/wire-v2.md) for exact shapes, bounds, and implementation ownership.
 OVS transports no video, danmaku payloads, signed media URLs, or platform credentials.
 Offline helper fault tests cover origin/channel ownership, request bounds, cancellation, expiry refresh, unsafe destinations, and sanitized failures.
+The preview-isolation browser journey controls codec capability responses for its synthetic MP4 metadata. It checks preview cancellation, access and codec failures, and active-handle preservation. Local WebM decoding remains native; live Bilibili decoding is validated separately.
 Live production Bilibili/helper validation is separate from the ordinary offline suite.
 `make proxy-smoke` runs the shipped Compose file and `deploy/compose.caddy.yaml` behind the `caddy:2` image with a local certificate authority.
 It checks HTTPS pages, the `Secure` session cookie, the helper scope, trusted-proxy client addresses against spoofed headers, and a same-epoch room socket reconnect after `caddy reload`.

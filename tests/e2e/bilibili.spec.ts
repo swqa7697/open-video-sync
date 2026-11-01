@@ -10,15 +10,25 @@ test('previewing another Bilibili link preserves the active helper and room unti
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   expect(response.ok()).toBe(true);
   const script = await response.text();
-  // Run the distributed helper against synthetic metadata and delayed media reads.
-  // Playback remains a real local video; the opaque helper handle represents an active stream.
+  // Synthetic MP4 metadata drives preview/handle isolation.
+  // Control capabilities for the synthetic MP4 metadata; local WebM stays native.
+  // Codec selection is also covered by helper tests, and decoded playback by playback.spec.ts.
   await page.addInitScript({
     content: `(() => {
     const unsafeWindow = window;
+    const nativeSupport = MediaSource.isTypeSupported.bind(MediaSource);
+    MediaSource.isTypeSupported = (mime) => {
+      if (mime === 'video/mp4; codecs="avc1.64001E"') return false;
+      if (mime === 'video/mp4; codecs="av01.0.08M.08"') return true;
+      if (mime === 'audio/mp4; codecs="mp4a.40.2"')
+        return sessionStorage.getItem('preview-failure') !== 'no-audio';
+      return nativeSupport(mime);
+    };
+    let holdNextRead = true;
     const GM_xmlhttpRequest = (details) => {
       let cancelled = false;
       const media = new URL(details.url).pathname.startsWith('/upgcxcode/');
-      const timer = setTimeout(() => {
+      const respond = () => {
         if (cancelled) return;
         if (media) {
           const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
@@ -42,9 +52,18 @@ test('previewing another Bilibili link preserves the active helper and room unti
           ] } };
         } else throw Error('Unexpected platform request');
         details.onload({ status: 200, finalUrl: details.url,
-          responseText: JSON.stringify({ code: sessionStorage.getItem('deny-preview') ? -404 : 0, data }) });
-      }, media ? 1000 : 0);
-      return { abort() { cancelled = true; clearTimeout(timer); details.onabort?.(); } };
+          responseText: JSON.stringify({ code: sessionStorage.getItem('preview-failure') === 'access' ? -404 : 0, data }) });
+      };
+      if (media && holdNextRead) {
+        holdNextRead = false;
+        document.addEventListener('release-media-read', respond, { once: true });
+        document.dispatchEvent(new Event('media-read-held'));
+      } else queueMicrotask(respond);
+      return { abort() {
+        cancelled = true;
+        document.removeEventListener('release-media-read', respond);
+        details.onabort?.();
+      } };
     };
     ${script}
   })();`,
@@ -54,7 +73,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
       ({ op, args }) =>
         new Promise<{
           ok: boolean;
-          value?: { handle?: string };
+          value?: { handle?: string; tracks?: Array<{ codec: string }> };
           error?: string;
         }>((resolve, reject) => {
           const id = Math.floor(Math.random() * 1000000) + 1;
@@ -118,6 +137,10 @@ test('previewing another Bilibili link preserves the active helper and room unti
     generation: 1,
   });
   expect(opened.ok).toBe(true);
+  expect(opened.value?.tracks?.map((track) => track.codec)).toEqual([
+    'av01.0.08M.08',
+    'mp4a.40.2',
+  ]);
   const read = {
     handle: opened.value!.handle,
     track: 0,
@@ -127,38 +150,77 @@ test('previewing another Bilibili link preserves the active helper and room unti
   };
   const roomPath = `/api/v2${new URL(page.url()).pathname}`;
   const before = await (await page.request.get(roomPath)).json();
+  const originalSource = await page
+    .locator('video')
+    .evaluate((video: HTMLVideoElement) => video.currentSrc);
+  const expectOriginalMedia = async () => {
+    const snapshot = await (await page.request.get(roomPath)).json();
+    expect(snapshot.media).toEqual(before.media);
+    expect(snapshot.mediaGeneration).toBe(before.mediaGeneration);
+    await expect(page.locator('video')).toHaveJSProperty(
+      'currentSrc',
+      originalSource
+    );
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready'
+    );
+  };
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page
     .getByLabel('Video URL or BV identifier')
     .fill('https://www.bilibili.com/video/BV17Jx76CEje');
-  const reading = helper('bytes', read);
-  await page
-    .getByRole('button', { name: 'Preview video', exact: true })
-    .click();
-  await expect(page.locator('.media-preview')).toHaveText(
-    'Replacement preview'
+  const held = page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        document.addEventListener('media-read-held', () => resolve(), {
+          once: true,
+        });
+      })
   );
+  const reading = helper('bytes', read);
+  await held;
+  try {
+    await page
+      .getByRole('button', { name: 'Preview video', exact: true })
+      .click();
+    await expect(page.locator('.media-preview')).toHaveText(
+      'Replacement preview'
+    );
+    await expectOriginalMedia();
+  } finally {
+    await page.evaluate(() =>
+      document.dispatchEvent(new Event('release-media-read'))
+    );
+  }
   expect((await reading).ok).toBe(true);
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-  const after = await (await page.request.get(roomPath)).json();
-  expect(after.media).toEqual(before.media);
-  expect(after.mediaGeneration).toBe(before.mediaGeneration);
+  await expectOriginalMedia();
   expect((await helper('bytes', read)).ok).toBe(true);
-  await expect(page.getByTestId('media-status')).toHaveAttribute(
-    'data-state',
-    'ready'
-  );
-  await page.getByRole('button', { name: 'Change video', exact: true }).click();
-  await page.evaluate(() => sessionStorage.setItem('deny-preview', '1'));
-  await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
-  await page
-    .getByRole('button', { name: 'Preview video', exact: true })
-    .click();
-  await expect(page.locator('.media-picker [role="alert"]')).toContainText(
-    'unavailable'
-  );
-  expect((await helper('bytes', read)).ok).toBe(true);
-  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  for (const [failure, text] of [
+    ['access', 'unavailable'],
+    ['no-audio', 'cannot decode'],
+  ] as const) {
+    await page
+      .getByRole('button', { name: 'Change video', exact: true })
+      .click();
+    await page.evaluate(
+      (mode) => sessionStorage.setItem('preview-failure', mode),
+      failure
+    );
+    await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+    await page
+      .getByRole('button', { name: 'Preview video', exact: true })
+      .click();
+    await expect(page.locator('.media-picker [role="alert"]')).toContainText(
+      text
+    );
+    expect((await helper('bytes', read)).ok).toBe(true);
+    await page
+      .getByRole('button', { name: 'Close dialog', exact: true })
+      .click();
+    await expectOriginalMedia();
+  }
   expect(await page.locator('body').innerText()).not.toContain(
     'SYNTHETIC_REPLACEMENT_CANARY'
   );
