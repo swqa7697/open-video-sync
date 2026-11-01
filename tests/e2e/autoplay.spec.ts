@@ -1,6 +1,10 @@
 import { clickPlayerControl, createLocalRoom, dismissHelper } from './flows';
 import { writeFile } from 'node:fs/promises';
-import { expect, test } from '../../modules/web/playwright-fixtures';
+import {
+  appContext,
+  expect,
+  test,
+} from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 test.use({ trace: 'off' });
 test.describe('autoplay permission', () => {
@@ -22,8 +26,8 @@ test.describe('autoplay permission', () => {
             }
           : { args: ['--autoplay-policy=user-gesture-required'] }
       );
-    const host = await browser.newContext(),
-      guest = await restricted.newContext();
+    const host = await appContext(browser),
+      guest = await appContext(restricted);
     try {
       const h = await host.newPage();
       await h.goto(baseURL!);

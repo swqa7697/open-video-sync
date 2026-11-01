@@ -8,7 +8,12 @@ import {
 } from './flows';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type Page } from '../../modules/web/playwright-fixtures';
+import {
+  mockRepository,
+  expect,
+  test,
+  type Page,
+} from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 interface Observation {
   at: number;
@@ -144,6 +149,8 @@ test('three independent nearby trials observe decoded frames separately from con
     try {
       const host = await hostBrowser.newPage(),
         guest = await guestBrowser.newPage();
+      await mockRepository(host.context());
+      await mockRepository(guest.context());
       await host.goto(baseURL!);
       await createLocalRoom(
         host,

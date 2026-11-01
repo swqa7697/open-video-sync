@@ -39,6 +39,7 @@ function app(props: { initialInvitation?: string } = {}) {
     global: {
       plugins: [createPinia()],
       stubs: {
+        RepositoryLink: true,
         HelperNotice: true,
         MediaPicker: prepared,
         Modal: { template: '<div role="dialog"><slot /></div>' },

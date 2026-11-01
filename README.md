@@ -10,7 +10,7 @@ The initial release is in development. OVS supports:
 - Host controls for room settings, media selection, invitations, and participants.
 - English and Simplified Chinese, light and dark modes, and browser-local preferences.
 
-Use desktop Chromium or Firefox. Video formats depend on browser and device decoding support.
+Use desktop Chromium or Firefox. Video formats depend on browser and device decoding support. Player shortcuts keep hidden controls hidden; volume keys still show the numeric volume overlay. The header GitHub button shows the repository Star count when GitHub is reachable.
 
 ## Start OVS
 

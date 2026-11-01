@@ -49,6 +49,7 @@ import HelperNotice from './features/media/HelperNotice.vue';
 import SettingsForm from './features/rooms/SettingsForm.vue';
 import Modal from './components/Modal.vue';
 import Icon from './components/Icon.vue';
+import RepositoryLink from './components/RepositoryLink.vue';
 import ToastNotice from './components/ToastNotice.vue';
 import { useNotificationStore } from './stores/notifications';
 
@@ -642,17 +643,7 @@ onUnmounted(() => {
         </button>
       </div>
       <div class="header-end">
-        <a
-          class="button quiet repo-stars"
-          href="https://github.com/swqa7697/open-video-sync"
-          target="_blank"
-          rel="noopener noreferrer"
-          :aria-label="t('app.githubStar')"
-          :title="t('app.githubStar')"
-        >
-          <Icon name="github" :size="18" /><Icon name="star" :size="16" />
-          <span>Star</span>
-        </a>
+        <RepositoryLink />
         <p
           class="server-status"
           role="status"

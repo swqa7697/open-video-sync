@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { expect, test } from '../../modules/web/playwright-fixtures';
+import {
+  appContext,
+  expect,
+  test,
+} from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
   closeRoom,
@@ -46,8 +50,8 @@ test('independent identities manage a private room over direct HTTP', async ({
       else socket.send(data);
     });
   });
-  const guest = await browser.newContext(),
-    outsider = await browser.newContext();
+  const guest = await appContext(browser),
+    outsider = await appContext(browser);
   const file = {
     name: 'synthetic-private-name.webm',
     mimeType: 'video/webm',
@@ -96,9 +100,31 @@ test('independent identities manage a private room over direct HTTP', async ({
       [320, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
+      await expect(page.locator('.repo-star-count')).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth)
       ).toBeLessThanOrEqual(width!);
+      const headerActions = await page
+        .getByRole('banner')
+        .locator('a, button')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => {
+              const bounds = node.getBoundingClientRect();
+              return {
+                left: bounds.left,
+                right: bounds.right,
+                width: bounds.width,
+              };
+            })
+            .filter((bounds) => bounds.width > 0)
+        );
+      for (const [index, bounds] of headerActions.entries()) {
+        expect(bounds.left).toBeGreaterThanOrEqual(
+          headerActions[index - 1]?.right ?? 0
+        );
+        expect(bounds.right).toBeLessThanOrEqual(width!);
+      }
       for (const colorScheme of ['light', 'dark'] as const) {
         await openAppPanel(page, 'Appearance');
         await page
@@ -767,6 +793,33 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.screenshot({
       path: testInfo.outputPath('controls-playing-idle.png'),
     });
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
+    await expect(page.locator('.volume-feedback')).toHaveText('70');
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    await page.screenshot({
+      path: testInfo.outputPath('controls-shortcut-hidden.png'),
+    });
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('video')).toHaveJSProperty('volume', 0.6);
+    for (const muted of [true, false]) {
+      await page.keyboard.press('m');
+      await expect(page.locator('video')).toHaveJSProperty('muted', muted);
+      await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    }
+    // Applying a keyboard playback command must preserve the hidden state too.
+    await page.keyboard.press('k');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await player.hover({ position: { x: 101, y: 100 } });
     await playerControls.hover({ position: { x: 100, y: 55 } });
     await expect(playerControls).toHaveCSS('opacity', '1');
@@ -930,6 +983,7 @@ test('settings groups local preferences and shows packaged versions and source r
   await expect(
     page.getByRole('link', { name: 'Star Open Video Sync on GitHub' })
   ).toBeVisible();
+  await expect(page.locator('.repo-star-count')).toHaveText('1,234');
   await trigger.focus();
   await trigger.press('ArrowDown');
   await expect(

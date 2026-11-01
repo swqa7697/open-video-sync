@@ -254,6 +254,13 @@ test('quality and danmaku area choices survive player recreation', async () => {
     );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(wrapper.get('.video-stage').classes()).toContain('controls-idle');
+    for (const pressed of ['false', 'true']) {
+      await wrapper.get('.video-stage').trigger('keydown', { key: 'd' });
+      expect(wrapper.get('.danmaku-toggle').attributes('aria-pressed')).toBe(
+        pressed
+      );
+      expect(wrapper.get('.video-stage').classes()).toContain('controls-idle');
+    }
     await wrapper
       .get('.video-stage')
       .trigger('pointerenter', { pointerType: 'mouse' });
@@ -385,6 +392,21 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await advance(1);
     expect(hidden()).toBe(true);
     expect(document.activeElement).toBe(stage.element);
+    for (const key of ['ArrowUp', 'ArrowDown', 'm', 'm', 'z']) {
+      await stage.trigger('keydown', { key });
+      expect(hidden()).toBe(true);
+    }
+    // A playback acknowledgement must not reveal controls hidden before the command.
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      revision: 3,
+      playback: room('paused', 3).playback,
+    });
+    await flushPromises();
+    expect(hidden()).toBe(true);
+    socket.frame('room.snapshot', { ...snapshot, revision: 4 });
+    await flushPromises();
+    expect(hidden()).toBe(true);
     await stage.trigger('pointermove', pointer);
     await advance(2999);
     await stage.trigger('pointermove', pointer);
@@ -396,8 +418,8 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await stage.trigger('pointerenter', pointer);
     socket.frame('room.snapshot', {
       ...snapshot,
-      revision: 3,
-      playback: room('paused', 3).playback,
+      revision: 5,
+      playback: room('paused', 5).playback,
     });
     await advance(4000);
     expect(hidden()).toBe(false);
@@ -407,7 +429,7 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await advance(4000);
     expect(hidden()).toBe(false);
 
-    socket.frame('room.snapshot', { ...snapshot, revision: 4 });
+    socket.frame('room.snapshot', { ...snapshot, revision: 6 });
     await toolbar.trigger('pointerenter', pointer);
     await advance(4000);
     expect(hidden()).toBe(false);

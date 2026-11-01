@@ -6,7 +6,11 @@ import {
   settings,
   seekTo,
 } from './flows';
-import { expect, test } from '../../modules/web/playwright-fixtures';
+import {
+  appContext,
+  expect,
+  test,
+} from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 
 test('waiting timeout, buffering, ready late joining, and host absence preserve controller permissions', async ({
@@ -15,7 +19,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
 }, testInfo) => {
   test.setTimeout(110000);
   const fixture = await generatedVideo(browser, 60),
-    guest = await browser.newContext();
+    guest = await appContext(browser);
   const file = {
     name: 'policy-fixture.webm',
     mimeType: 'video/webm',

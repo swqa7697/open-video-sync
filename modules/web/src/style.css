@@ -364,6 +364,9 @@ small {
   font-size: 0.75rem;
   white-space: nowrap;
 }
+.repo-star-count {
+  font-variant-numeric: tabular-nums;
+}
 .app-menu {
   inset: auto;
   margin: 0;
@@ -1715,17 +1718,12 @@ fieldset select {
     gap: 0.6rem;
   }
   .repo-stars {
-    width: 44px;
+    min-width: 44px;
     padding: 0.5rem;
     flex-shrink: 0;
   }
-  .repo-stars > span,
   .repo-stars > svg:first-child {
     display: none;
-  }
-  .repo-stars > svg {
-    width: 20px;
-    height: 20px;
   }
   .server-status {
     font-size: 0;
@@ -1994,6 +1992,14 @@ fieldset select {
 @media (max-width: 360px) {
   .app-header {
     gap: 0.5rem;
+    padding-inline: 12px;
+  }
+  .brand {
+    min-width: 44px;
+    justify-content: center;
+  }
+  .brand > span:nth-child(2) {
+    display: none;
   }
   .header-end {
     gap: 0.35rem;

@@ -1,4 +1,8 @@
-import { expect, test } from '../../modules/web/playwright-fixtures';
+import {
+  appContext,
+  expect,
+  test,
+} from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
   clickPlayerControl,
@@ -521,12 +525,20 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   }
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   const enabledIcon = await danmaku.locator('path').getAttribute('d');
+  await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page
     .getByRole('heading', { name: 'Bilibili helper boundaries', exact: true })
     .click();
+  await expect(page.locator('.player-controls')).toHaveCSS('opacity', '0', {
+    timeout: 500,
+  });
   await page.keyboard.press('d');
   await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.player-controls')).toHaveCSS('opacity', '0', {
+    timeout: 500,
+  });
   expect(await danmaku.locator('path').getAttribute('d')).not.toBe(enabledIcon);
+  await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await danmaku.click();
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('playback-phase')).toHaveAttribute(
@@ -549,7 +561,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'ready'
   );
   const invitation = await invitationLink(page);
-  const guest = await browser.newContext();
+  const guest = await appContext(browser);
   try {
     const other = await guest.newPage();
     await other.goto(invitation);

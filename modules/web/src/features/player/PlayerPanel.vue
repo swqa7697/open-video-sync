@@ -248,7 +248,7 @@ const waitTimedOut = ref(false),
 const current = ref(props.room);
 watch([isPlaying, controlsPinned], () => {
   if (pointerOutside) hideControls();
-  else wake();
+  else if (!idle.value || controlsPinned.value) wake();
 });
 watch(
   () => current.value.media,
@@ -971,7 +971,6 @@ const commands = computed<QuickCommand[]>(() => [
     aliases: 'volume sound mute unmute 声音 静音 取消静音',
     run: () => {
       muted.value = !muted.value;
-      wake();
     },
   },
   ...(current.value.media?.kind === 'bilibili'
@@ -1100,7 +1099,6 @@ function keyboard(event: KeyboardEvent): void {
     event.preventDefault();
     void fullscreen();
   } else return;
-  wake();
 }
 async function sample(): Promise<void> {
   if (disposed) return;
@@ -1349,7 +1347,7 @@ onUnmounted(() => {
       @pointermove="pointerActivity"
       @pointerdown="pointerActivity"
       @focusin="wake"
-      @keydown="wake"
+      @keydown.tab="wake"
       @pointerleave="leaveStage"
     >
       <video

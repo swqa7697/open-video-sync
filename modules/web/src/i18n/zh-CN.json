@@ -53,6 +53,7 @@
     "skip": "跳转到主要内容",
     "home": "OVS 首页",
     "githubStar": "在 GitHub 上为 Open Video Sync 点 Star",
+    "githubStarCount": "在 GitHub 上为 Open Video Sync 点 Star（{count} 个 Star）",
     "gettingReady": "正在准备…",
     "identityUnavailable": "无法恢复你的身份。",
     "retryConnection": "重试连接",

@@ -53,6 +53,7 @@
     "skip": "Skip to main content",
     "home": "OVS home",
     "githubStar": "Star Open Video Sync on GitHub",
+    "githubStarCount": "Star Open Video Sync on GitHub ({count} stars)",
     "gettingReady": "Getting things ready…",
     "identityUnavailable": "Your identity could not be restored.",
     "retryConnection": "Retry connection",
