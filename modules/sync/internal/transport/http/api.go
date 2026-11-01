@@ -39,14 +39,19 @@ func NewAPI(origin string, service *identity.Service) *API {
 	return a
 }
 
-// WithVersions exposes the running service and its embedded component versions.
+// Versions identifies the deployed components and their build-time source checkout.
+type Versions struct {
+	Sync   string `json:"sync"`
+	Web    string `json:"web"`
+	Helper string `json:"helper"`
+	Commit string `json:"commit"`
+	Dirty  bool   `json:"dirty"`
+	Tag    string `json:"tag"`
+}
+
+// WithVersions exposes the running service and its embedded release metadata.
 // Install this route before serving. Release metadata needs no identity or storage access.
-func (a *API) WithVersions(syncVersion, webVersion, helperVersion string) {
-	versions := struct {
-		Sync   string `json:"sync"`
-		Web    string `json:"web"`
-		Helper string `json:"helper"`
-	}{syncVersion, webVersion, helperVersion}
+func (a *API) WithVersions(versions Versions) {
 	a.mux.HandleFunc("GET /api/v2/version", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, versions)
 	})

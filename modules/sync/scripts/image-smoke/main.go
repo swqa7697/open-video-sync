@@ -141,7 +141,7 @@ func checkHTTP(ctx context.Context, name string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	for path, code := range map[string]int{"/": 200, "/join": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v2/session": 404, "/api/v2/rooms/test/ws": 404, "/api/v1/rooms": 409, "/ws/v1/rooms/test": 409} {
+	for path, code := range map[string]int{"/": 200, "/join": 200, "/api/v2/version": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v2/session": 404, "/api/v2/rooms/test/ws": 404, "/api/v1/rooms": 409, "/ws/v1/rooms/test": 409} {
 		if err := request(ctx, client, base, path, code); err != nil {
 			return err
 		}
@@ -167,6 +167,25 @@ func request(ctx context.Context, client *http.Client, base, path string, code i
 	validBody := code != 200 || strings.Contains(string(body), `<div id="app">`)
 	if path == "/userscripts/ovs-bilibili.user.js" {
 		validBody = strings.Contains(string(body), "@name OVS Bilibili http://ovs.example") && strings.Contains(string(body), `const ORIGIN = "http://ovs.example"`) && strings.HasPrefix(response.Header.Get("Content-Type"), "application/javascript") && !strings.Contains(string(body), "{{")
+	}
+	if path == "/api/v2/version" {
+		// The scratch image has no Git checkout. Its metadata must survive embedding and replacement.
+		snapshot, err := smoke.Run(ctx, nil, "node", "scripts/versions.mjs", "build-info")
+		if err != nil {
+			return fmt.Errorf("read source build metadata: %w", err)
+		}
+		var got, want struct {
+			Commit string
+			Dirty  bool
+			Tag    string
+		}
+		if err := json.Unmarshal([]byte(snapshot), &want); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			return err
+		}
+		validBody = got == want && response.Header.Get("Cache-Control") == "no-store"
 	}
 	if response.StatusCode != code || !validBody {
 		return fmt.Errorf("%s returned %d; want %d with expected content", path, response.StatusCode, code)

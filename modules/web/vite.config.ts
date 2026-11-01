@@ -1,6 +1,6 @@
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite-plus';
-import { readVersions } from '../../scripts/versions.mjs';
+import { readBuildInfo, readVersions } from '../../scripts/versions.mjs';
 import { developmentHelper, developmentProxy } from './dev-server';
 
 export default defineConfig({
@@ -13,7 +13,10 @@ export default defineConfig({
         this.emitFile({
           type: 'asset',
           fileName: 'release.json',
-          source: JSON.stringify({ version: readVersions().web }),
+          source: JSON.stringify({
+            version: readVersions().web,
+            ...readBuildInfo(),
+          }),
         });
       },
       transformIndexHtml() {
@@ -53,7 +56,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'dev-server.test.ts'],
+    include: ['src/**/*.test.ts', 'dev-server.test.ts', 'build-info.test.ts'],
     restoreMocks: true,
     clearMocks: true,
   },

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
@@ -774,7 +775,7 @@ test('independent identities manage a private room over direct HTTP', async ({
 });
 
 // This distinct shell contract covers menu navigation and deployed release metadata.
-test('settings groups local preferences and shows packaged component versions', async ({
+test('settings groups local preferences and shows packaged versions and source revision', async ({
   page,
 }, testInfo) => {
   await page.goto('/');
@@ -822,14 +823,32 @@ test('settings groups local preferences and shows packaged component versions', 
     if (!version) throw new Error(`Missing ${name} release version.`);
     return version;
   });
-  await expect(about.locator('dd')).toHaveText(componentVersions);
+  const componentValues = about.locator(
+    '.about-versions > div:nth-child(-n+3) dd'
+  );
+  await expect(componentValues).toHaveText(componentVersions);
   await about.evaluate((node) =>
     Promise.all(node.getAnimations().map((animation) => animation.finished))
   );
   // The response is public, uncached metadata from the running artifact, not browser helper state.
   const response = await page.request.get('/api/v2/version');
   expect(response.headers()['cache-control']).toBe('no-store');
-  expect(await response.json()).toEqual(release);
+  const buildInfo = JSON.parse(
+    execFileSync('node', ['../../scripts/versions.mjs', 'build-info'], {
+      encoding: 'utf8',
+    })
+  ) as { commit: string; dirty: boolean; tag: string };
+  const deployed = { ...release, ...buildInfo };
+  expect(await response.json()).toEqual(deployed);
+  const commit = about.locator('.about-commit code');
+  const dirty = about.locator('.about-dirty');
+  const tag = about.locator('dt').filter({ hasText: /^Git tag$/ });
+  if (buildInfo.commit) {
+    await expect(commit).toHaveText(buildInfo.commit.slice(0, 12));
+    await expect(commit).toHaveAttribute('title', buildInfo.commit);
+  } else await expect(commit).toHaveCount(0);
+  await expect(dirty).toHaveCount(buildInfo.dirty ? 1 : 0);
+  await expect(tag).toHaveCount(buildInfo.tag ? 1 : 0);
   for (const [width, height] of [
     [1440, 900],
     [390, 844],
@@ -842,6 +861,9 @@ test('settings groups local preferences and shows packaged component versions', 
     const bounds = await about.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
+    expect(
+      await about.evaluate((node) => node.scrollWidth <= node.clientWidth)
+    ).toBe(true);
   }
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
@@ -849,10 +871,47 @@ test('settings groups local preferences and shows packaged component versions', 
   await page.screenshot({ path: testInfo.outputPath('settings-mobile.png') });
   await page.keyboard.press('Escape');
 
+  // Build-state visibility is separate from component versions and local helper state.
+  for (const info of [
+    {
+      commit: 'a'.repeat(40),
+      dirty: true,
+      tag: `v1.2.3-${'long-tag-'.repeat(24)}`,
+    },
+    { commit: 'b'.repeat(40), dirty: false, tag: '' },
+    { commit: '', dirty: false, tag: '' },
+  ]) {
+    await page.route('**/api/v2/version', (route) =>
+      route.fulfill({ json: { ...release, ...info } })
+    );
+    await openAppPanel(page, 'About');
+    await expect(componentValues).toHaveText(componentVersions);
+    if (info.commit) {
+      await expect(commit).toHaveText(info.commit.slice(0, 12));
+      await expect(commit).toHaveAttribute('title', info.commit);
+    } else await expect(commit).toHaveCount(0);
+    await expect(dirty).toHaveCount(info.dirty ? 1 : 0);
+    await expect(tag).toHaveCount(info.tag ? 1 : 0);
+    if (info.tag) {
+      await expect(tag.locator('..').locator('dd')).toHaveText(info.tag);
+      await page.screenshot({
+        path: testInfo.outputPath('about-long-tag-390.png'),
+        animations: 'disabled',
+      });
+    }
+    expect(
+      await about.evaluate((node) => node.scrollWidth <= node.clientWidth)
+    ).toBe(true);
+    await page.keyboard.press('Escape');
+    await page.unroute('**/api/v2/version');
+  }
+
   // A failed or malformed metadata response offers recovery without showing raw errors.
   for (const body of [
     'unavailable',
-    JSON.stringify({ ...release, helper: 'invalid' }),
+    JSON.stringify({ ...deployed, helper: 'invalid' }),
+    JSON.stringify({ ...deployed, commit: 'invalid' }),
+    JSON.stringify({ ...deployed, dirty: 'false' }),
   ]) {
     await page.route('**/api/v2/version', (route) =>
       route.fulfill({
@@ -868,7 +927,7 @@ test('settings groups local preferences and shows packaged component versions', 
     await expect(about.locator('dd')).toHaveCount(0);
     await page.unroute('**/api/v2/version');
     await about.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(about.locator('dd')).toHaveText(componentVersions);
+    await expect(componentValues).toHaveText(componentVersions);
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
   }

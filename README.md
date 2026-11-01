@@ -39,6 +39,9 @@ These choices stay in this browser across reloads; they are not room settings. I
 Dialogs use short transitions and buttons give subtle pointer feedback. Keyboard actions stay immediate; reduced motion uses a brief dialog fade.
 Notifications appear as dismissible bottom toasts without moving the page. **Settings → Notifications** selects Left, Center, or Right (default).
 **Settings → About** shows the running Sync service and the Web frontend and Helper script bundled in the deployed image.
+It also shows the build's Git commit (shortened to 12 characters; hover for the full hash), a `dirty` label for uncommitted source changes, and a Git tag when one points directly at that commit.
+`make build`, `make image`, and `make deploy` capture this information from the source checkout. Builds without Git metadata hide these fields.
+For a direct Docker build, pass `--build-arg OVS_BUILD_INFO="$(node scripts/versions.mjs build-info)"` to retain the checkout metadata.
 
 Press **Cmd/Ctrl + K** or select **Quick actions** beside the OVS logo to search available actions in English or Chinese.
 Use **↑/↓** to select, **Enter** to run, and **Esc** to close. The menu opens and closes immediately and returns focus to your previous control.

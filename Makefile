@@ -137,7 +137,8 @@ test-e2e: build ## Run Chromium, Firefox, and mixed rooms against the production
 
 image: ## Build the single non-root application image
 	@$(INFO) "Building the application image..."
-	docker build --pull --build-arg CHANNEL="$(CHANNEL)" -t "$(IMAGE)" .
+	build_info="$$(node scripts/versions.mjs build-info)" && \
+		docker build --pull --build-arg CHANNEL="$(CHANNEL)" --build-arg OVS_BUILD_INFO="$$build_info" -t "$(IMAGE)" .
 
 image-smoke: ## Check image startup, HTTP routing, ownership, and persisted schema
 	@$(INFO) "Checking the application image..."

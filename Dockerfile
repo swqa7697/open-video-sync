@@ -9,8 +9,9 @@ COPY versions.toml /src/versions.toml
 COPY scripts/versions.mjs scripts/versions.d.mts /src/scripts/
 COPY modules/web/ ./
 COPY modules/helper/ /src/modules/helper/
+ARG OVS_BUILD_INFO
 RUN pnpm --dir ../helper run build \
-    && pnpm run build \
+    && OVS_BUILD_INFO="${OVS_BUILD_INFO}" pnpm run build \
     && node /src/scripts/versions.mjs sync > /src/sync-version \
     && pnpm prune --prod \
     && pnpm licenses list --prod --json > /src/frontend-licenses.json

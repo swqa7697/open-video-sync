@@ -2074,6 +2074,24 @@ fieldset select {
   margin: 0;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+.about-commit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.about-commit code {
+  font-size: 0.8125rem;
+}
+.about-dirty {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
 }
 .appearance-choice {
   position: relative;

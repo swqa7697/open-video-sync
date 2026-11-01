@@ -5,7 +5,13 @@ import Icon from '../components/Icon.vue';
 import { object, request, shape } from '../transport/api';
 
 const modules = ['sync', 'web', 'helper'] as const;
-const versions = ref<Record<(typeof modules)[number], string>>();
+const versions = ref<
+  Record<(typeof modules)[number], string> & {
+    commit: string;
+    dirty: boolean;
+    tag: string;
+  }
+>();
 const loading = ref(false);
 let controller: AbortController | undefined;
 
@@ -28,11 +34,24 @@ async function load(): Promise<void> {
     const value = object(
       await request('/version', 'GET', '', undefined, current.signal)
     );
-    shape(value, [...modules]);
+    shape(value, [...modules, 'commit', 'dirty', 'tag']);
+    if (
+      typeof value.commit !== 'string' ||
+      !/^(?:[a-f0-9]{40}|[a-f0-9]{64})?$/.test(value.commit) ||
+      typeof value.dirty !== 'boolean' ||
+      typeof value.tag !== 'string' ||
+      value.tag.length > 256 ||
+      /[\p{Cc}\s]/u.test(value.tag) ||
+      (!value.commit && (value.dirty || value.tag))
+    )
+      throw new Error('Invalid build metadata.');
     const release = {
       sync: releaseVersion(value.sync),
       web: releaseVersion(value.web),
       helper: releaseVersion(value.helper),
+      commit: value.commit,
+      dirty: value.dirty,
+      tag: value.tag,
     };
     if (!current.signal.aborted) versions.value = release;
   } catch {
@@ -61,6 +80,24 @@ onUnmounted(() => {
       <div v-for="name in modules" :key="name">
         <dt>{{ t(`about.${name}`) }}</dt>
         <dd>{{ versions[name] }}</dd>
+      </div>
+      <div v-if="versions.commit">
+        <dt>{{ t('about.commit') }}</dt>
+        <dd class="about-commit">
+          <code :title="versions.commit">{{
+            versions.commit.slice(0, 12)
+          }}</code>
+          <span
+            v-if="versions.dirty"
+            class="about-dirty"
+            :title="t('about.dirtyHint')"
+            >dirty</span
+          >
+        </dd>
+      </div>
+      <div v-if="versions.tag">
+        <dt>{{ t('about.tag') }}</dt>
+        <dd>{{ versions.tag }}</dd>
       </div>
     </dl>
     <div v-else class="about-error">

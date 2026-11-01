@@ -405,10 +405,13 @@
     "controls": "Controls need an active connection and a resolved previous command."
   },
   "about": {
-    "hint": "Component versions in this deployment.",
+    "hint": "Versions and source revision in this deployment.",
     "sync": "Sync service",
     "web": "Web frontend",
     "helper": "Helper script",
+    "commit": "Git commit",
+    "tag": "Git tag",
+    "dirtyHint": "Built with uncommitted source changes.",
     "loading": "Loading versions…",
     "unavailable": "Versions are unavailable. Try again.",
     "retry": "Retry"

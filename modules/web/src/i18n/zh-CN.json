@@ -405,10 +405,13 @@
     "controls": "控制播放需要有效连接，且上一条指令的结果已确认。"
   },
   "about": {
-    "hint": "当前部署中各组件的版本。",
+    "hint": "当前部署的组件版本与源码信息。",
     "sync": "Sync 服务",
     "web": "Web 前端",
     "helper": "Helper 脚本",
+    "commit": "Git 提交",
+    "tag": "Git 标签",
+    "dirtyHint": "构建时源码包含未提交的改动。",
     "loading": "正在读取版本…",
     "unavailable": "暂时无法读取版本，请重试。",
     "retry": "重试"

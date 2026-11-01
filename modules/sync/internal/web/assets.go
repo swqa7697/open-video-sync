@@ -16,19 +16,25 @@ import (
 //go:embed dist
 var assets embed.FS
 
-// Version returns the release version of the embedded frontend.
-func Version() (string, error) {
+// ReleaseInfo identifies the embedded frontend and the source checkout used to build it.
+type ReleaseInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Dirty   bool   `json:"dirty"`
+	Tag     string `json:"tag"`
+}
+
+// Release returns the embedded release metadata captured at build time.
+func Release() (ReleaseInfo, error) {
+	var release ReleaseInfo
 	data, err := assets.ReadFile("dist/release.json")
 	if err != nil {
-		return "", fmt.Errorf("read frontend release: %w", err)
-	}
-	var release struct {
-		Version string `json:"version"`
+		return release, fmt.Errorf("read frontend release: %w", err)
 	}
 	if err := json.Unmarshal(data, &release); err != nil || release.Version == "" {
-		return "", fmt.Errorf("invalid frontend release metadata")
+		return release, fmt.Errorf("invalid frontend release metadata")
 	}
-	return release.Version, nil
+	return release, nil
 }
 
 // Handler serves hashed assets and HTML with separate cache policies.

@@ -76,7 +76,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	if err != nil {
 		return err
 	}
-	webVersion, err := web.Version()
+	webRelease, err := web.Release()
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,10 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	go func() { defer close(cleanupDone); identities.RunCleanup(cleanupCtx) }()
 	defer func() { stopCleanup(); <-cleanupDone }()
 	api := transport.NewAPI(cfg.origin.String(), identities)
-	api.WithVersions(version, webVersion, helperVersion)
+	api.WithVersions(transport.Versions{
+		Sync: version, Web: webRelease.Version, Helper: helperVersion,
+		Commit: webRelease.Commit, Dirty: webRelease.Dirty, Tag: webRelease.Tag,
+	})
 	api.TrustedProxies = cfg.trustedProxies
 	api.WithRooms(roomService)
 	sockets := ws.NewHandler(cfg.origin.String(), identities, roomService)
