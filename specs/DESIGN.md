@@ -300,6 +300,7 @@ The host supplies a canonical BV URL/ID and part. Each participant independently
 Require exact identifiers and duration within 250 ms. Access failure affects that participant only.
 Media comes directly from the platform through the browser-local helper. Never download a whole video before playback or persist media.
 Refresh expired locations locally with bounded retries and current-generation checks. Pin the existing video and audio quality IDs and exact codecs during refresh. Fail with media changed if either representation disappears; never append a different encoding using the existing byte index.
+Browsers can defer opening a new MediaSource in a background tab. Count only visible time toward the source-open deadline, and continue initialization if the source opens while hidden. Preserve immediate cancellation and media-error handling. Keep helper request and SourceBuffer update deadlines unchanged.
 
 Render bounded scrolling, top, and bottom text comments against observed video time. Follow pause, seek, rate correction, and part changes.
 Visibility, density, text size, and scrolling speed remain local to the room page. Display area is a browser-local preference that persists across reloads and rooms. Offer 0.5×–1.5× comment speed independently of shared playback speed.

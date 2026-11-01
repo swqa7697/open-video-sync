@@ -234,11 +234,19 @@ export class BilibiliAdapter implements PlayerAdapter {
     operation?: () => void
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let started: number | undefined;
+      let remaining = 5000;
+      // Browsers can defer opening a new media source until the tab is visible.
+      // Keep accepting sourceopen in the background, but count only visible time.
+      const deferWhileHidden = event === 'sourceopen';
       const cleanup = () => {
         clearTimeout(timer);
         target.removeEventListener(event, done);
         target.removeEventListener('error', fail);
         this.lifetime.signal.removeEventListener('abort', abort);
+        if (deferWhileHidden)
+          document.removeEventListener('visibilitychange', visibility);
       };
       const done = () => {
           cleanup();
@@ -252,7 +260,17 @@ export class BilibiliAdapter implements PlayerAdapter {
           cleanup();
           reject(new DOMException('Cancelled', 'AbortError'));
         };
-      const timer = setTimeout(fail, 5000);
+      const visibility = () => {
+        if (started !== undefined) {
+          remaining = Math.max(0, remaining - (performance.now() - started));
+          clearTimeout(timer);
+          started = undefined;
+        }
+        if (!deferWhileHidden || document.visibilityState === 'visible') {
+          started = performance.now();
+          timer = setTimeout(fail, remaining);
+        }
+      };
       target.addEventListener(event, done, { once: true });
       target.addEventListener('error', fail, { once: true });
       this.lifetime.signal.addEventListener('abort', abort, { once: true });
@@ -260,6 +278,9 @@ export class BilibiliAdapter implements PlayerAdapter {
         abort();
         return;
       }
+      if (deferWhileHidden)
+        document.addEventListener('visibilitychange', visibility);
+      visibility();
       try {
         operation?.();
       } catch (error) {

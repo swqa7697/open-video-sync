@@ -151,6 +151,9 @@ function fixture(
     }
   }
   vi.stubGlobal('MediaSource', FakeSource);
+  const opening: { deferred: boolean; source?: FakeSource } = {
+    deferred: false,
+  };
   const nativeURL = URL;
   vi.stubGlobal(
     'URL',
@@ -158,7 +161,9 @@ function fixture(
       static createObjectURL(source: unknown): string {
         if (!(source instanceof FakeSource))
           throw new Error('Unexpected source');
-        queueMicrotask(() => source.dispatchEvent(new Event('sourceopen')));
+        opening.source = source;
+        if (!opening.deferred)
+          queueMicrotask(() => source.dispatchEvent(new Event('sourceopen')));
         return 'blob:synthetic-dash';
       }
       static revokeObjectURL(): void {}
@@ -226,6 +231,7 @@ function fixture(
     ranges,
     segments,
     onError,
+    opening,
     load,
     until,
     read: (fn: typeof onRead) => {
@@ -237,6 +243,84 @@ function fixture(
     },
   };
 }
+
+test.each(['hidden at start', 'hidden during opening', 'opens while hidden'])(
+  '%s does not fail deferred media initialization and resumes on return',
+  async (mode) => {
+    const f = fixture([1024]);
+    f.opening.deferred = true;
+    const visibility = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue(mode === 'hidden during opening' ? 'visible' : 'hidden');
+    const loading = f.load();
+    void loading.catch(() => {});
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(f.adapter.getState().status).toBe('loading');
+      expect(f.onError).not.toHaveBeenCalled();
+      if (mode !== 'opens while hidden') {
+        visibility.mockReturnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+      }
+      await vi.advanceTimersByTimeAsync(1000);
+      f.opening.source!.dispatchEvent(new Event('sourceopen'));
+      await expect(loading).resolves.toMatchObject({ kind: 'bilibili' });
+      expect(f.adapter.getState().status).toBe('ready');
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.adapter.dispose();
+      await loading.catch(() => {});
+    }
+  }
+);
+
+test.each(['timeout', 'error', 'dispose'] as const)(
+  '%s still ends a pending media initialization',
+  async (action) => {
+    const f = fixture([1024]);
+    f.opening.deferred = true;
+    const visibility = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue('visible');
+    const failed = expect(f.load()).rejects.toMatchObject(
+      action === 'dispose'
+        ? { name: 'AbortError' }
+        : { code: 'source-buffer-failed' }
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(1000);
+      if (action === 'timeout') {
+        visibility.mockReturnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(f.onError).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+      } else if (action === 'error')
+        f.opening.source!.dispatchEvent(new Event('error'));
+      else f.adapter.dispose();
+      await failed;
+      expect(f.onError).toHaveBeenCalledTimes(action === 'dispose' ? 0 : 1);
+      const reads = f.ranges.length;
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      f.opening.source!.dispatchEvent(new Event('sourceopen'));
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(f.ranges).toHaveLength(reads);
+    } finally {
+      f.adapter.dispose();
+      await failed;
+    }
+  }
+);
 
 test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or assembling fragments', async () => {
   const f = fixture();
