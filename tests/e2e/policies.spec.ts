@@ -1,4 +1,5 @@
 import {
+  clickPlayerControl,
   createLocalRoom,
   invitationLink,
   dismissHelper,
@@ -44,9 +45,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'data-state',
       'ready'
     );
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'waiting'
@@ -72,9 +71,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'data-state',
       'ready'
     );
-    await other
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(other, 'Play together');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'playing'
@@ -94,18 +91,14 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'data-state',
       'playing'
     );
-    await page
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Pause together');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'paused'
     );
     // Reconnect while paused, then close the guest before the next play cohort is frozen.
     await other.close();
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'playing'
@@ -127,16 +120,12 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       )
       .toBe(true);
     await page.close();
-    await late
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(late, 'Pause together');
     await expect(late.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'paused'
     );
-    await late
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(late, 'Play together');
     await expect(late.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'playing'
@@ -168,9 +157,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
         hasText: 'The host left. Everyone can now control playback.',
       })
     ).toBeVisible();
-    await late
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(late, 'Pause together');
     await expect
       .poll(() =>
         late

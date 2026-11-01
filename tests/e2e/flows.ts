@@ -31,6 +31,14 @@ export async function dismissHelper(page: Page): Promise<void> {
   const later = page.getByRole('button', { name: 'Later', exact: true });
   if (await later.isVisible()) await later.click();
 }
+// Pointer actions reveal the bar first, as users do when controls are hidden.
+export async function clickPlayerControl(
+  page: Page,
+  name: string
+): Promise<void> {
+  await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
+  await page.getByRole('button', { name, exact: true }).click();
+}
 export async function openQuickActions(page: Page, query = ''): Promise<void> {
   // Native actions require the foreground page, as with real keyboard input.
   await page.bringToFront();

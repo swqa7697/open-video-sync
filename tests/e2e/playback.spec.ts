@@ -1,4 +1,5 @@
 import {
+  clickPlayerControl,
   createLocalRoom,
   invitationLink,
   dismissHelper,
@@ -131,9 +132,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       fullPage: true,
     });
     await page.setViewportSize({ width: 1280, height: 1000 });
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -190,9 +189,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             .evaluate((v) => (v as HTMLVideoElement).currentTime)
         )
         .toBeGreaterThan(10);
-    await page
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Pause together');
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -229,9 +226,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     ).toBeVisible({
       timeout: 20000,
     });
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
         other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused)
@@ -241,9 +236,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await seekTo(other, Number('15'));
     for (const player of [page, other])
       await expect.poll(() => decodedFrame(player)).toBeGreaterThanOrEqual(450);
-    await other
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(other, 'Pause together');
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -259,9 +252,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     expect(
       Math.abs(recoveredFrames[0]! - recoveredFrames[1]!)
     ).toBeLessThanOrEqual(3);
-    await other
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(other, 'Play together');
     for (const player of [page, other])
       await expect
         .poll(() => decodedFrame(player))
@@ -315,9 +306,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .evaluate((input) =>
         input.dispatchEvent(new Event('change', { bubbles: true }))
       );
-    await other
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(other, 'Pause together');
     await other.reload();
     await dismissHelper(other);
     await expect(other.getByTestId('media-status')).toHaveAttribute(

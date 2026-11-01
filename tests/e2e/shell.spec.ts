@@ -279,6 +279,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       name: 'Fullscreen locally',
       exact: true,
     });
+    await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
     await fullscreen.click();
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
@@ -651,6 +652,9 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.evaluate(() => (document.documentElement.style.fontSize = ''));
     await settings(page, 'everyone', false);
     // Real pointer seeking inside the custom player changes the observed media position.
+    const player = page.locator('.video-stage');
+    const playerControls = page.locator('.player-controls');
+    await player.hover({ position: { x: 100, y: 100 } });
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
@@ -722,20 +726,52 @@ test('independent identities manage a private room over direct HTTP', async ({
       )
       .toBeLessThan(5);
     await expect(seek).toBeEnabled();
+    // Leave enough of the short fixture for the idle interval before pausing again.
+    await seek.press('Home');
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeLessThan(0.2);
+    await expect(seek).toBeEnabled();
+    await player.focus();
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'playing'
     );
+    // Passive stage focus must not pin controls; native pointer input owns visibility.
+    await player.hover({ position: { x: 100, y: 100 } });
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 4500 });
+    await expect(player).toBeFocused();
+    await page.screenshot({
+      path: testInfo.outputPath('controls-playing-idle.png'),
+    });
+    await player.hover({ position: { x: 101, y: 100 } });
+    await playerControls.hover({ position: { x: 100, y: 55 } });
+    await expect(playerControls).toHaveCSS('opacity', '1');
+    await page.mouse.move(0, 0);
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await page.keyboard.press('k');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'paused'
     );
+    await player.hover({ position: { x: 100, y: 100 } });
+    await page.waitForTimeout(3200);
+    await expect(playerControls).toHaveCSS('opacity', '1');
+    await page.screenshot({
+      path: testInfo.outputPath('controls-paused-inside.png'),
+    });
+    await page.mouse.move(0, 0);
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    await player.hover({ position: { x: 100, y: 100 } });
     // Dragging out of the track also returns focus; Tab still enters the native slider.
     await seek.hover({ position: { x: box.width / 3, y: box.height / 2 } });
     await page.mouse.down();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(box.x - 50, box.y - 20);
+    await expect(playerControls).toHaveCSS('opacity', '1');
     await page.mouse.move(box.x + box.width / 2, box.y - 20);
     await page.mouse.up();
     await expect(page.locator('.video-stage')).toBeFocused();

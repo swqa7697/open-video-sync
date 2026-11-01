@@ -1,4 +1,5 @@
 import {
+  clickPlayerControl,
   createLocalRoom,
   invitationLink,
   dismissHelper,
@@ -213,9 +214,7 @@ test('three independent nearby trials observe decoded frames separately from con
           path: testInfo.outputPath('calibrated-frame-300.png'),
         });
       const started = performance.now();
-      await host
-        .getByRole('button', { name: 'Play together', exact: true })
-        .click();
+      await clickPlayerControl(host, 'Play together');
       await expect
         .poll(async () => (await capture(guest)).samples.at(-1)!.frame)
         .toBeGreaterThan(315);
@@ -234,9 +233,7 @@ test('three independent nearby trials observe decoded frames separately from con
               .evaluate((v) => !(v as HTMLVideoElement).paused)
           )
           .toBe(true);
-      await host
-        .getByRole('button', { name: 'Pause together', exact: true })
-        .click();
+      await clickPlayerControl(host, 'Pause together');
       for (const player of [host, guest])
         await expect
           .poll(() =>

@@ -1,6 +1,11 @@
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { decodeSnapshot } from '../../modules/web/src/transport/api';
-import { closeRoom, createLocalRoom, seekTo } from './flows';
+import {
+  clickPlayerControl,
+  closeRoom,
+  createLocalRoom,
+  seekTo,
+} from './flows';
 import { decodedFrame, generatedVideo } from './media';
 
 test('a playing MediaSource seek waits for data and resumes without a manual pause', async ({
@@ -59,9 +64,7 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
       'data-state',
       'ready'
     );
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
@@ -93,9 +96,7 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
     expect(await decodedFrame(page)).toBeGreaterThan(600);
     expect((await snapshot()).playback.phase).toBe('playing');
     // A paused seek remains usable with the same native media source.
-    await page
-      .getByRole('button', { name: 'Pause together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Pause together');
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
     await seekTo(page, 10);
     await expect
@@ -103,9 +104,7 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
       )
       .toBeCloseTo(10, 1);
-    await page
-      .getByRole('button', { name: 'Play together', exact: true })
-      .click();
+    await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)

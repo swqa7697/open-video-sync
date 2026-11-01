@@ -1,4 +1,4 @@
-import { createLocalRoom, dismissHelper } from './flows';
+import { clickPlayerControl, createLocalRoom, dismissHelper } from './flows';
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
@@ -120,9 +120,7 @@ test.describe('autoplay permission', () => {
       });
       await p.goto(h.url());
       await readyPromise;
-      await h
-        .getByRole('button', { name: 'Play together', exact: true })
-        .click();
+      await clickPlayerControl(h, 'Play together');
       await blockedPromise;
       await dismissHelper(p);
       await expect(h.getByTestId('playback-phase')).toHaveAttribute(

@@ -121,6 +121,7 @@ watch([volume, muted, preferredQuality, danmakuArea], () =>
 const position = ref(0),
   buffered = ref(0),
   dragging = ref(false),
+  seekPointerDown = ref(false),
   danmakuMenu = ref(false),
   qualityMenu = ref(false),
   replaceOpen = ref(false),
@@ -143,20 +144,74 @@ const totalSeconds = computed(
   () => (current.value.media?.durationMs ?? 0) / 1000
 );
 const isPlaying = computed(() => current.value.playback.phase === 'playing');
-let idleTimer: ReturnType<typeof setTimeout> | undefined;
+const controlsPinned = computed(
+  () =>
+    controlsHovered.value ||
+    danmakuMenu.value ||
+    qualityMenu.value ||
+    dragging.value ||
+    seekPointerDown.value
+);
+let idleTimer: ReturnType<typeof setTimeout> | undefined,
+  seekReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+let pointerOutside = false;
+function hideControls(): void {
+  clearTimeout(idleTimer);
+  idle.value = !controlsPinned.value;
+}
 function wake(): void {
   idle.value = false;
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    if (
-      !controlsHovered.value &&
-      isPlaying.value &&
-      !danmakuMenu.value &&
-      !qualityMenu.value &&
-      !stage.value?.contains(document.activeElement)
-    )
-      idle.value = true;
-  }, 2500);
+  if (isPlaying.value && !controlsPinned.value)
+    idleTimer = setTimeout(hideControls, 3000);
+}
+function pointerActivity(): void {
+  pointerOutside = false;
+  wake();
+}
+function leaveStage(event: PointerEvent): void {
+  if (event.pointerType === 'touch') return;
+  pointerOutside = true;
+  controlsHovered.value = false;
+  hideControls();
+}
+function hoverControls(event: PointerEvent, hovered: boolean): void {
+  if (event.pointerType === 'touch') return;
+  controlsHovered.value = hovered;
+}
+function startSeek(event: PointerEvent): void {
+  if (!canControl.value) {
+    event.preventDefault();
+    return;
+  }
+  if (event.button !== 0) return;
+  clearTimeout(seekReleaseTimer);
+  seekPointerDown.value = true;
+}
+function endSeek(event?: PointerEvent): void {
+  if (event && !seekPointerDown.value) return;
+  clearTimeout(seekReleaseTimer);
+  if (seekPointerDown.value && event && event.pointerType !== 'touch') {
+    const bounds = stage.value?.getBoundingClientRect();
+    // Native sliders can capture pointer events outside the stage until release.
+    if (bounds?.width && bounds.height)
+      pointerOutside =
+        event.clientX < bounds.left ||
+        event.clientX >= bounds.right ||
+        event.clientY < bounds.top ||
+        event.clientY >= bounds.bottom;
+    if (pointerOutside) controlsHovered.value = false;
+  }
+  // Let the native range commit its change before Vue restores the displayed position.
+  if (event?.type === 'pointerup')
+    seekReleaseTimer = setTimeout(() => {
+      seekPointerDown.value = false;
+      dragging.value = false;
+    }, 0);
+  else {
+    seekPointerDown.value = false;
+    dragging.value = false;
+  }
 }
 const formatTime = (seconds: number): string => {
   const n = Math.max(0, Math.floor(seconds));
@@ -182,6 +237,10 @@ const qualityName = (value: number): string =>
 const waitTimedOut = ref(false),
   replaced = ref(false);
 const current = ref(props.room);
+watch([isPlaying, controlsPinned], () => {
+  if (pointerOutside) hideControls();
+  else wake();
+});
 watch(
   () => current.value.media,
   (media) => {
@@ -394,6 +453,7 @@ const transport = new RoomSocket(
   probe
 );
 function clearMedia(): void {
+  endSeek();
   danmakuMenu.value = false;
   if (qualityOptions.value?.contains(document.activeElement))
     stage.value?.focus({ preventScroll: true });
@@ -1226,6 +1286,7 @@ function visibility(): void {
   void sample();
 }
 onMounted(() => {
+  wake();
   transport.start();
   timer = setInterval(() => {
     void sample();
@@ -1234,6 +1295,8 @@ onMounted(() => {
   document.addEventListener('keydown', keyboard);
   document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('pointerdown', outsideQuality);
+  document.addEventListener('pointerup', endSeek);
+  document.addEventListener('pointercancel', endSeek);
 });
 onUnmounted(() => {
   disposed = true;
@@ -1246,6 +1309,8 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', fullscreenChanged);
   releaseFullscreenKeyboard();
   document.removeEventListener('pointerdown', outsideQuality);
+  document.removeEventListener('pointerup', endSeek);
+  document.removeEventListener('pointercancel', endSeek);
   transport.dispose();
   clearMedia();
 });
@@ -1264,15 +1329,17 @@ onUnmounted(() => {
       ref="stage"
       class="video-stage"
       :class="{
-        'controls-idle': idle && isPlaying && !danmakuMenu && !qualityMenu,
+        'controls-idle': idle,
       }"
       tabindex="0"
       :aria-label="t('player.shortcuts')"
       @click="clickSurface"
-      @pointermove="wake"
-      @pointerdown="wake"
+      @pointerenter="pointerActivity"
+      @pointermove="pointerActivity"
+      @pointerdown="pointerActivity"
       @focusin="wake"
-      @pointerleave="wake"
+      @keydown="wake"
+      @pointerleave="leaveStage"
     >
       <video
         ref="video"
@@ -1385,15 +1452,8 @@ onUnmounted(() => {
       </div>
       <div
         class="player-controls"
-        @pointerdown="wake"
-        @pointerenter="
-          controlsHovered = true;
-          wake();
-        "
-        @pointerleave="
-          controlsHovered = false;
-          wake();
-        "
+        @pointerenter="hoverControls($event, true)"
+        @pointerleave="hoverControls($event, false)"
       >
         <div
           class="seek-track"
@@ -1429,7 +1489,7 @@ onUnmounted(() => {
             :disabled="!canControl && !pendingCommand"
             :aria-disabled="!canControl"
             @keydown="seekKeyboard"
-            @pointerdown="(event) => !canControl && event.preventDefault()"
+            @pointerdown="startSeek"
             @click="stage?.focus({ preventScroll: true })"
             @input="dragSeek"
             @change="seek"

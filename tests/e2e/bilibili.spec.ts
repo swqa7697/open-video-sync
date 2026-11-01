@@ -1,6 +1,11 @@
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
-import { closeRoom, invitationLink, observePageKeyboard } from './flows';
+import {
+  clickPlayerControl,
+  closeRoom,
+  invitationLink,
+  observePageKeyboard,
+} from './flows';
 import release from '../../modules/helper/dist/release.json';
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
@@ -459,9 +464,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   expect(await panelKeys.evaluate((state) => state.events)).toEqual([]);
   await panelKeys.evaluate((state) => state.stop());
   await panelKeys.dispose();
-  await page
-    .getByRole('button', { name: 'Fullscreen locally', exact: true })
-    .click();
+  await clickPlayerControl(page, 'Fullscreen locally');
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(true);

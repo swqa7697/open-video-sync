@@ -1298,10 +1298,6 @@ fieldset select {
   opacity: 0;
   pointer-events: none;
 }
-.video-stage:focus-within .player-controls {
-  opacity: 1;
-  pointer-events: auto;
-}
 .control-bar {
   display: flex;
   justify-content: space-between;

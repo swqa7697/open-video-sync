@@ -234,6 +234,12 @@ test('quality and danmaku area choices survive player recreation', async () => {
     expect(wrapper.get('.quality-trigger').text()).toBe('4K');
     expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AV1');
     await wrapper.get('.quality-trigger').trigger('click');
+    await wrapper
+      .get('.video-stage')
+      .trigger('pointerleave', { pointerType: 'mouse' });
+    expect(wrapper.get('.video-stage').classes()).not.toContain(
+      'controls-idle'
+    );
     expect(wrapper.find('.player-menu:not(.quality-menu)').exists()).toBe(
       false
     );
@@ -247,6 +253,10 @@ test('quality and danmaku area choices survive player recreation', async () => {
       'HEVC'
     );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.get('.video-stage').classes()).toContain('controls-idle');
+    await wrapper
+      .get('.video-stage')
+      .trigger('pointerenter', { pointerType: 'mouse' });
     wrapper.unmount();
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
@@ -267,6 +277,12 @@ test('quality and danmaku area choices survive player recreation', async () => {
       .trigger('pointerenter', { pointerType: 'mouse' });
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
+    await wrapper
+      .get('.video-stage')
+      .trigger('pointerleave', { pointerType: 'mouse' });
+    expect(wrapper.get('.video-stage').classes()).not.toContain(
+      'controls-idle'
+    );
     await wrapper.get('input[id$="-density"]').setValue(12);
     await wrapper.get('input[id$="-size"]').setValue(24);
     await wrapper.get('input[id$="-speed"]').setValue(0.7);
@@ -334,6 +350,97 @@ test('quality and danmaku area choices survive player recreation', async () => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+// Visibility owns its idle timer independently of playback commands and native focus.
+test('player controls distinguish playing idle, paused hover, leaving, and seek holds', async () => {
+  vi.useFakeTimers();
+  const { wrapper, socket } = await join('playing');
+  const snapshot = {
+    ...room('playing', 2),
+    settings: { controllers: 'everyone', waitForAll: false },
+  };
+  socket.frame('room.snapshot', snapshot);
+  const stage = wrapper.get<HTMLElement>('.video-stage');
+  const toolbar = wrapper.get('.player-controls');
+  const seek = wrapper.get('#seek-seconds');
+  const pointer = { pointerType: 'mouse' };
+  const hidden = () => stage.classes().includes('controls-idle');
+  const advance = async (ms: number) => {
+    await vi.advanceTimersByTimeAsync(ms);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        v: 2,
+        type: 'heartbeat',
+        requestId: '1'.repeat(32),
+        payload: { reply: true },
+      }),
+    });
+  };
+  try {
+    stage.element.focus();
+    await stage.trigger('pointerenter', pointer);
+    await advance(2999);
+    expect(hidden()).toBe(false);
+    await advance(1);
+    expect(hidden()).toBe(true);
+    expect(document.activeElement).toBe(stage.element);
+    await stage.trigger('pointermove', pointer);
+    await advance(2999);
+    await stage.trigger('pointermove', pointer);
+    await advance(1);
+    expect(hidden()).toBe(false);
+    await stage.trigger('pointerleave', pointer);
+    expect(hidden()).toBe(true);
+
+    await stage.trigger('pointerenter', pointer);
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      revision: 3,
+      playback: room('paused', 3).playback,
+    });
+    await advance(4000);
+    expect(hidden()).toBe(false);
+    await stage.trigger('pointerleave', pointer);
+    expect(hidden()).toBe(true);
+    await stage.trigger('pointerenter', pointer);
+    await advance(4000);
+    expect(hidden()).toBe(false);
+
+    socket.frame('room.snapshot', { ...snapshot, revision: 4 });
+    await toolbar.trigger('pointerenter', pointer);
+    await advance(4000);
+    expect(hidden()).toBe(false);
+    await toolbar.trigger('pointerleave', pointer);
+    await advance(3000);
+    expect(hidden()).toBe(true);
+
+    for (const end of ['pointerup', 'pointercancel']) {
+      await stage.trigger('pointerenter', pointer);
+      await seek.trigger('pointerdown', pointer);
+      await stage.trigger('pointerleave', pointer);
+      await advance(4000);
+      expect(hidden()).toBe(false);
+      document.dispatchEvent(new Event(end));
+      await vi.advanceTimersByTimeAsync(0);
+      await flushPromises();
+      expect(hidden()).toBe(true);
+    }
+    // Touch contact must not become a permanent hover or a synthetic mouse exit.
+    await stage.trigger('pointerdown', { pointerType: 'touch' });
+    await toolbar.trigger('pointerenter', { pointerType: 'touch' });
+    await stage.trigger('pointerleave', { pointerType: 'touch' });
+    expect(hidden()).toBe(false);
+    await advance(3000);
+    expect(hidden()).toBe(true);
+    stage.element.focus();
+    await stage.trigger('keydown', { key: 'Tab' });
+    expect(hidden()).toBe(false);
+  } finally {
+    wrapper.unmount();
+  }
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 // Media replacement is owned by the player, independently of the sidebar's presentation.

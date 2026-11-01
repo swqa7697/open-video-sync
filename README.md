@@ -107,6 +107,7 @@ Cookies are scoped to the browser profile and OVS origin. Private profiles recei
 ## Player controls
 
 Play/pause, replay, seeking, volume, mute, and fullscreen are inside the video surface.
+Moving the pointer into or within the player reveals its controls. During playback, controls hide after three seconds without activity; while paused, they remain visible until the pointer leaves. Leaving the player hides controls immediately in either state. Hovering the control bar, opening the quality or danmaku menu, or dragging the seek slider keeps controls visible until that interaction ends. Keyboard focus and player shortcuts reveal controls without preventing later automatic hiding.
 Shared controls follow server permissions. Volume, mute, fullscreen, quality, and danmaku affect only your browser.
 The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
 Click the video surface or use Space/K anywhere on the foreground OVS page for playback; player focus is not required. Left/Right seeks five seconds; Up/Down changes volume by 10%.
