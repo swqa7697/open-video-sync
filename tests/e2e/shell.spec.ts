@@ -25,6 +25,43 @@ test('independent identities manage a private room over direct HTTP', async ({
 }, testInfo) => {
   test.setTimeout(60000);
   if (!baseURL) throw new Error('Browser base URL required.');
+  const expectHeaderFits = async () => {
+    const header = page.getByRole('banner');
+    const headerBounds = (await header.boundingBox())!;
+    const actions = await header.locator('a, button').evaluateAll((nodes) =>
+      nodes
+        .map((node) => {
+          const bounds = node.getBoundingClientRect();
+          return {
+            left: bounds.left,
+            right: bounds.right,
+            top: bounds.top,
+            bottom: bounds.bottom,
+            width: bounds.width,
+          };
+        })
+        .filter((bounds) => bounds.width > 0)
+    );
+    for (const bounds of actions) {
+      expect(bounds.left).toBeGreaterThanOrEqual(headerBounds.x);
+      expect(bounds.right).toBeLessThanOrEqual(
+        headerBounds.x + headerBounds.width
+      );
+      expect(bounds.top).toBeGreaterThanOrEqual(headerBounds.y);
+      expect(bounds.bottom).toBeLessThanOrEqual(
+        headerBounds.y + headerBounds.height
+      );
+    }
+    for (const [index, bounds] of actions.entries()) {
+      for (const previous of actions.slice(0, index)) {
+        expect(
+          bounds.left >= previous.right ||
+            bounds.top >= previous.bottom ||
+            previous.top >= bounds.bottom
+        ).toBe(true);
+      }
+    }
+  };
   const failures: string[] = [];
   page.on('pageerror', (error) => failures.push(error.message));
   // Hold acknowledgements, rather than relying on a fast network to test pending focus.
@@ -104,27 +141,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth)
       ).toBeLessThanOrEqual(width!);
-      const headerActions = await page
-        .getByRole('banner')
-        .locator('a, button')
-        .evaluateAll((nodes) =>
-          nodes
-            .map((node) => {
-              const bounds = node.getBoundingClientRect();
-              return {
-                left: bounds.left,
-                right: bounds.right,
-                width: bounds.width,
-              };
-            })
-            .filter((bounds) => bounds.width > 0)
-        );
-      for (const [index, bounds] of headerActions.entries()) {
-        expect(bounds.left).toBeGreaterThanOrEqual(
-          headerActions[index - 1]?.right ?? 0
-        );
-        expect(bounds.right).toBeLessThanOrEqual(width!);
-      }
+      await expectHeaderFits();
       for (const colorScheme of ['light', 'dark'] as const) {
         await openAppPanel(page, 'Appearance');
         await page
@@ -693,6 +710,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       path: testInfo.outputPath('room-200-percent.png'),
       fullPage: true,
     });
+    await expectHeaderFits();
     await page.evaluate(() => (document.documentElement.style.fontSize = ''));
     await settings(page, 'everyone', false);
     // Real pointer seeking inside the custom player changes the observed media position.
