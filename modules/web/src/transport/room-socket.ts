@@ -45,7 +45,7 @@ export interface SocketEvents {
     message: Message | '',
     options?: { reload?: boolean; recheck?: boolean }
   ): void;
-  uncertain(command: Command | undefined): void;
+  pending(command: Command | undefined): void;
   ended(reason: EndReason): void;
 }
 export class RoomSocket {
@@ -152,7 +152,7 @@ export class RoomSocket {
     this.connected = false;
     this.active = false;
     this.pending = undefined;
-    this.events.uncertain(undefined);
+    this.events.pending(undefined);
     this.events.lease(false);
     this.socket?.close();
     this.events.status(
@@ -237,7 +237,7 @@ export class RoomSocket {
       }
       if (this.pending?.commandId === key) {
         this.pending = undefined;
-        this.events.uncertain(undefined);
+        this.events.pending(undefined);
       }
     } else if (kind === 'session.replaced') {
       shape(p, ['reason']);
@@ -317,7 +317,7 @@ export class RoomSocket {
       this.clock.reset();
       if (this.pending && this.pending.epoch !== snapshot.epoch) {
         this.pending = undefined;
-        this.events.uncertain(undefined);
+        this.events.pending(undefined);
       }
     }
     this.snapshot = snapshot;
@@ -361,7 +361,7 @@ export class RoomSocket {
       payload: safePayload,
     };
     this.pending = command;
-    this.events.uncertain(command);
+    this.events.pending(command);
     this.send(command);
   }
   resolveUncertain(): void {

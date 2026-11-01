@@ -278,7 +278,10 @@ test('quality choices use a small menu and survive player recreation', async () 
     wrapper.unmount();
   }
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 // Media replacement is owned by the player, independently of the sidebar's presentation.
 test('host episode selection publishes resolved metadata and retains the list during loading', async () => {
@@ -389,6 +392,114 @@ test('host episode selection publishes resolved metadata and retains the list du
   } finally {
     wrapper.unmount();
   }
+});
+
+// The panel owns the acknowledgement delay; loading and buffering must never start it.
+test('command recovery waits three seconds for a receipt and ignores media loading', async () => {
+  vi.useFakeTimers();
+  const snapshot = {
+    ...room('paused', 1),
+    selfMemberId: roomFixture.hostMemberId,
+    playback: { ...room('paused', 1).playback, positionMs: 0 },
+  };
+  const wrapper = mount(PlayerPanel, {
+    props: { room: decodeSnapshot(snapshot) },
+    attachTo: document.body,
+  });
+  const socket = FakeSocket.instances[0]!;
+  socket.readyState = 1;
+  socket.frame('session.welcome', {
+    connectionId: 'c'.repeat(32),
+    snapshot,
+  });
+  const video = wrapper.get('video').element;
+  fakeMedia(video);
+  const commands = () =>
+    socket.sent
+      .map((text) => JSON.parse(text) as { type: string; commandId: string })
+      .filter((frame) => frame.type === 'playback.command');
+  const receipt = () =>
+    socket.frame('command.result', {
+      commandId: commands().at(-1)!.commandId,
+      accepted: true,
+      revision: 1,
+      error: null,
+    });
+  try {
+    await flushPromises();
+    const input = wrapper.get('#local-video');
+    Object.defineProperty(input.element, 'files', {
+      value: [new File(['synthetic'], 'private.webm')],
+    });
+    await input.trigger('change');
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(
+      wrapper.get('[data-testid="media-status"]').attributes('data-state')
+    ).toBe('loading');
+    expect(commands()).toHaveLength(0);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    video.dispatchEvent(new Event('loadeddata'));
+    await flushPromises();
+    socket.frame('room.snapshot', snapshot);
+    const play = wrapper.get('.control-start > button');
+    expect(play.attributes('aria-disabled'), wrapper.text()).toBe('false');
+    await play.trigger('click');
+    expect(commands()).toHaveLength(1);
+    expect(play.attributes('aria-disabled')).toBe('true');
+    expect(wrapper.get('#control-note').classes()).toContain('visually-hidden');
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    receipt();
+    video.dispatchEvent(new Event('waiting'));
+    await vi.advanceTimersByTimeAsync(101);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    // Buffering and the room's readiness barrier have their own state after acknowledgement.
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      playback: room('waiting', 1).playback,
+      barrier: room('waiting', 1).barrier,
+    });
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    expect(
+      wrapper.get('[data-testid="playback-phase"]').attributes('data-state')
+    ).toBe('waiting');
+    expect(play.attributes('aria-disabled')).toBe('false');
+    socket.frame('room.snapshot', snapshot);
+    await play.trigger('click');
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(wrapper.get('.command-recovery').text()).toContain(
+      'No server acknowledgement'
+    );
+    const recovery = wrapper.get('.command-recovery button');
+    (recovery.element as HTMLButtonElement).focus();
+    await recovery.trigger('click');
+    expect(commands().at(-1)).toEqual(commands().at(-2));
+    receipt();
+    await flushPromises();
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get('.video-stage').element);
+    // The next command starts a fresh timer, and a new server epoch cancels it.
+    socket.frame('room.snapshot', snapshot);
+    await play.trigger('click');
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    socket.frame(
+      'room.snapshot',
+      { ...snapshot, epoch: '9'.repeat(32) },
+      '9'.repeat(32)
+    );
+    await vi.advanceTimersByTimeAsync(2);
+    expect(wrapper.find('.command-recovery').exists()).toBe(false);
+    expect(play.attributes('aria-disabled')).toBe('false');
+    await play.trigger('click');
+  } finally {
+    wrapper.unmount();
+  }
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test('a room pause that interrupts a pending play is not a player failure', async () => {

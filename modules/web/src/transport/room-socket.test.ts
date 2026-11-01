@@ -21,12 +21,12 @@ function harness(results: ProbeResult[]) {
   const ended: EndReason[] = [],
     errors: string[] = [],
     signals: AbortSignal[] = [],
-    uncertain: unknown[] = [];
+    pending: unknown[] = [];
   const events: SocketEvents = {
     snapshot() {},
     status() {},
     lease() {},
-    uncertain: (command) => uncertain.push(command),
+    pending: (command) => pending.push(command),
     error: (message) => errors.push(translate(message)),
     ended: (reason) => ended.push(reason),
   };
@@ -35,7 +35,7 @@ function harness(results: ProbeResult[]) {
     return Promise.resolve(results.shift() ?? 'unreachable');
   });
   const socket = new RoomSocket(roomFixture.roomId, events, probe);
-  return { socket, ended, errors, probe, signals, uncertain };
+  return { socket, ended, errors, probe, signals, pending };
 }
 
 test.each([
@@ -101,17 +101,17 @@ test.each([
 ] as const)(
   'lifecycle %s %o with probe answers %j ends as %s without reconnecting',
   async (type, payload, results, reason) => {
-    const { socket, ended, uncertain } = harness([...results]);
+    const { socket, ended, pending } = harness([...results]);
     socket.start();
     const connection = FakeSocket.instances[0]!;
     connection.welcome();
     // An ended connection also ends a command still awaiting its result.
     socket.command({ action: 'play' });
-    expect(uncertain.at(-1)).toBeDefined();
+    expect(pending.at(-1)).toBeDefined();
     connection.frame(type, payload);
     await vi.advanceTimersByTimeAsync(20000);
     expect(ended).toEqual([reason]);
-    expect(uncertain.at(-1)).toBeUndefined();
+    expect(pending.at(-1)).toBeUndefined();
     expect(socket.active).toBe(false);
     expect(FakeSocket.instances).toHaveLength(1);
     socket.dispose();
@@ -128,7 +128,7 @@ test('disposal aborts an in-flight refusal probe and ignores its answer', async 
       snapshot() {},
       status() {},
       lease() {},
-      uncertain() {},
+      pending() {},
       error() {},
       ended: (reason) => ended.push(reason),
     },

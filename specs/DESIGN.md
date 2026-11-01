@@ -196,6 +196,11 @@ Commands carry epoch, media generation, expected runtime revision, and command I
 The room coordinator validates in-memory authorization and connection ownership, rejects stale intent, applies the command, then acknowledges and broadcasts.
 Concurrent stale commands receive a fresh snapshot. Do not replay stale play or seek automatically.
 
+Keep one pending command per page and preserve focused controls while awaiting its result.
+Normal acknowledgement waits do not change the player layout or dim controls. Show an additional recovery overlay only when the matching result remains missing for more than three seconds.
+Measure this interval from command dispatch to its matching result, independently of media loading, buffering, and readiness waits. A received result ends the interval even when media preparation continues.
+The overlay never replaces the existing player status. Retrying uses the original command ID and input; a result, new epoch, terminal room connection, or page disposal clears the pending feedback.
+
 Keep at most 256 recent accepted command results per active room for up to 60 seconds, in memory only.
 Check current authorization before returning a duplicate result. Reject the same ID with changed input.
 After eviction, expected revision prevents reapplying an accepted command; return stale state and reconcile instead of promising an old receipt.

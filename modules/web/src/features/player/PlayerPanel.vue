@@ -88,7 +88,8 @@ const preferences = readPlayerPreferences();
 const active = ref(false),
   connected = ref(false),
   loading = ref(false),
-  uncertain = ref<Command>(),
+  pendingCommand = ref<Command>(),
+  commandDelayed = ref(false),
   seekSeconds = ref(0),
   muted = ref(preferences.muted),
   volume = ref(preferences.volume);
@@ -178,10 +179,13 @@ const host = computed(
 const permitted = computed(
   () => host.value || current.value.settings.controllers === 'everyone'
 );
+let commandDelayTimer: ReturnType<typeof setTimeout> | undefined;
+const commandRecovery = ref<HTMLButtonElement>();
 // Pending commands remain unavailable through guards and aria-disabled. Avoid native
 // disabling during that round trip so browsers keep the current control focused.
 const controls = computed(
-  () => connected.value && active.value && permitted.value && !uncertain.value
+  () =>
+    connected.value && active.value && permitted.value && !pendingCommand.value
 );
 const matched = computed(() =>
   mediaMatches(current.value.media, descriptor.value)
@@ -190,7 +194,7 @@ const matched = computed(() =>
 const controlNote = computed(() => {
   if (replaced.value) return t('player.controlReplaced');
   if (!connected.value || !active.value) return t('player.controlReconnecting');
-  if (uncertain.value) return t('player.controlUncertain');
+  if (pendingCommand.value) return t('player.controlPending');
   if (!permitted.value) return t('player.controlHost');
   if (!current.value.media)
     return host.value ? t('player.controlSelect') : t('player.controlWait');
@@ -207,7 +211,7 @@ const canReplace = computed(
     !loading.value &&
     connected.value &&
     active.value &&
-    !uncertain.value
+    !pendingCommand.value
 );
 const shownStatus = computed<ReadinessStatus>(() =>
   loading.value ? 'loading' : mediaStatus.value
@@ -347,8 +351,17 @@ const transport = new RoomSocket(
       roomErrorReload.value = !!options?.reload;
       if (options?.recheck) emit('recheck');
     },
-    uncertain(value) {
-      uncertain.value = value;
+    pending(value) {
+      clearTimeout(commandDelayTimer);
+      if (!value && document.activeElement === commandRecovery.value)
+        stage.value?.focus({ preventScroll: true });
+      pendingCommand.value = value;
+      commandDelayed.value = false;
+      // Only the command round trip owns this timer. Media loading and readiness do not.
+      if (value)
+        commandDelayTimer = setTimeout(() => {
+          commandDelayed.value = true;
+        }, 3000);
     },
     ended(reason) {
       if (reason === 'replaced') replaced.value = true;
@@ -513,7 +526,7 @@ async function chooseBilibili(
     !active.value ||
     !connected.value ||
     loading.value ||
-    uncertain.value
+    pendingCommand.value
   )
     return;
   clearMedia();
@@ -585,7 +598,7 @@ async function loadLocal(
   prepared?: MediaDescriptor,
   publishMedia = false
 ): Promise<void> {
-  if (!video.value || uncertain.value || !connected.value) return;
+  if (!video.value || pendingCommand.value || !connected.value) return;
   clearMedia();
   const generation = selectionGeneration,
     signal = selection.signal;
@@ -1128,6 +1141,7 @@ onUnmounted(() => {
   disposed = true;
   clearInterval(timer);
   clearTimeout(idleTimer);
+  clearTimeout(commandDelayTimer);
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
   document.removeEventListener('keydown', keyboard);
@@ -1138,7 +1152,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="player-panel" aria-labelledby="player-title">
+  <section
+    class="player-panel"
+    :class="{ 'command-pending': pendingCommand }"
+    aria-labelledby="player-title"
+  >
     <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">
       {{ t('common.watchTogether') }}
     </h3>
@@ -1229,7 +1247,7 @@ onUnmounted(() => {
       <div v-else-if="current.playback.phase === 'ended'" class="player-state">
         <h3>{{ t('player.again') }}</h3>
         <button
-          :disabled="!canControl && !uncertain"
+          :disabled="!canControl && !pendingCommand"
           :aria-disabled="!canControl"
           @click="command('replay')"
         >
@@ -1251,10 +1269,20 @@ onUnmounted(() => {
         class="visually-hidden"
         type="file"
         accept="video/*,.mkv"
-        :disabled="!active || !connected || !!uncertain"
+        :disabled="!active || !connected || !!pendingCommand"
         :aria-label="t('player.selectMatching')"
         @change="choose"
       />
+      <div v-if="commandDelayed" class="notice command-recovery" role="status">
+        <span>{{ t('player.commandDelayed') }}</span
+        ><button
+          ref="commandRecovery"
+          :disabled="!connected"
+          @click="transport.resolveUncertain()"
+        >
+          {{ t('player.checkOriginal') }}
+        </button>
+      </div>
       <div
         class="player-controls"
         @pointerdown="wake"
@@ -1298,7 +1326,7 @@ onUnmounted(() => {
                 duration: formatTime(totalSeconds),
               })
             "
-            :disabled="!canControl && !uncertain"
+            :disabled="!canControl && !pendingCommand"
             :aria-disabled="!canControl"
             @keydown="seekKeyboard"
             @pointerdown="(event) => !canControl && event.preventDefault()"
@@ -1326,7 +1354,9 @@ onUnmounted(() => {
                   ? t('player.pauseShortcut')
                   : t('player.playShortcut'))
               "
-              :disabled="(isPlaying ? !canControl : !canPlay) && !uncertain"
+              :disabled="
+                (isPlaying ? !canControl : !canPlay) && !pendingCommand
+              "
               :aria-disabled="isPlaying ? !canControl : !canPlay"
               :aria-describedby="controlNote ? 'control-note' : undefined"
               @click="togglePlayback"
@@ -1477,14 +1507,18 @@ onUnmounted(() => {
             · {{ t('player.part', { part: current.media.part }) }}</span
           >
         </h3>
-        <p v-if="controlNote" id="control-note" class="hint">
+        <p
+          v-if="controlNote"
+          id="control-note"
+          :class="pendingCommand ? 'visually-hidden' : 'hint'"
+        >
           {{ controlNote }}
         </p>
       </div>
       <button
         v-if="host"
         class="quiet change-media"
-        :disabled="!canReplace && !uncertain"
+        :disabled="!canReplace && !pendingCommand"
         :aria-disabled="!canReplace"
         @click="openMedia()"
       >
@@ -1516,12 +1550,6 @@ onUnmounted(() => {
     <p v-if="hostNotice" class="notice" role="status">
       {{ t('player.hostLeft') }}
     </p>
-    <div v-if="uncertain" class="notice" role="status">
-      <span>{{ t('player.checkingCommand') }}</span
-      ><button :disabled="!connected" @click="transport.resolveUncertain()">
-        {{ t('player.checkOriginal') }}
-      </button>
-    </div>
     <p v-if="waitTimedOut" class="notice" role="status">
       {{ t('player.waitTimeout') }}
       {{ permitted ? t('player.retryPlay') : t('player.hostRetry') }}

@@ -134,6 +134,10 @@ button:disabled,
   opacity: 0.45;
   cursor: not-allowed;
 }
+.player-panel.command-pending button[aria-disabled='true'] {
+  opacity: 1;
+  cursor: pointer;
+}
 button.quiet {
   background: transparent;
   color: var(--text);
@@ -1205,6 +1209,23 @@ fieldset select {
   height: 100%;
   object-fit: contain;
 }
+.command-recovery {
+  position: absolute;
+  z-index: 5;
+  inset: 12px 12px auto;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 12px;
+}
+.command-recovery > span {
+  flex: 1 1 220px;
+}
+.command-recovery button {
+  min-height: 36px;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.75rem;
+}
 .danmaku-overlay {
   position: absolute;
   inset: 0;
@@ -1564,10 +1585,12 @@ fieldset select {
   margin-top: 0;
 }
 @media (hover: hover) and (pointer: fine) {
-  button.quiet:hover:not(:disabled):not([aria-disabled='true']) {
+  button.quiet:hover:not(:disabled):not([aria-disabled='true']),
+  .player-panel.command-pending button.quiet:hover:not(:disabled) {
     background: var(--hover);
   }
   button:not(.quiet):hover:not(:disabled):not([aria-disabled='true']),
+  .player-panel.command-pending button:not(.quiet):hover:not(:disabled),
   .button:hover,
   .file-button:hover {
     filter: brightness(1.07);

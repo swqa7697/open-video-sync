@@ -116,7 +116,7 @@ Equal size and digest, plus duration within 250 ms, permit matching. Sampled mat
 
 A new page takes playback ownership from the same identity's previous page in that room. The old page disposes its player.
 A disconnected browser pauses after five seconds without liveness, reconnects, fetches state, and recalibrates its clock.
-An uncertain command can be checked with its original ID. Controls are never queued for offline replay.
+While a room command awaits its server acknowledgement, keep the player layout and button appearance stable and prevent duplicate controls. After more than three seconds without a result, an additional overlay offers **Check original command**, which retries with its original ID. This delay measures only the command round trip; video loading, buffering, and participant readiness have separate status and timers. Controls are never queued for offline replay.
 
 Waiting freezes the connected participants for startup or sustained buffering. Ready late joiners catch up without enlarging an existing wait.
 Buffering for 750 ms pauses the room; one second of stable readiness permits resumption.

@@ -31,11 +31,14 @@ test('independent identities manage a private room over direct HTTP', async ({
   await page.routeWebSocket('**/ws/v2/rooms/*', (socket) => {
     const server = socket.connectToServer();
     server.onMessage((data) => {
+      const frame =
+        typeof data === 'string'
+          ? (JSON.parse(data) as { type: string; eventSeq?: number })
+          : undefined;
       if (
         holdResults &&
-        (heldResults.length > 0 ||
-          (typeof data === 'string' &&
-            (JSON.parse(data) as { type: string }).type === 'command.result'))
+        frame?.eventSeq &&
+        (heldResults.length > 0 || frame.type === 'command.result')
       )
         heldResults.push(() => socket.send(data));
       else socket.send(data);
@@ -156,15 +159,45 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('Escape');
     await expect(changeVideo).toBeFocused();
     await expect(changeVideo).toHaveCSS('outline-style', 'none');
+    const playerLayout = await page.locator('.room-layout').boundingBox();
+    const playerInformation = await page
+      .locator('.video-information')
+      .boundingBox();
+    const playerStatus = await page.locator('.playback-status').textContent();
     holdResults = true;
     await page.keyboard.press('Space');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(changeVideo).toBeFocused();
     await expect.poll(() => heldResults.length).toBeGreaterThan(0);
     await expect(changeVideo).toBeDisabled();
+    await expect(changeVideo).toHaveCSS('opacity', '1');
+    await expect(page.locator('.command-recovery')).toHaveCount(0);
+    expect(await page.locator('.room-layout').boundingBox()).toEqual(
+      playerLayout
+    );
+    expect(await page.locator('.video-information').boundingBox()).toEqual(
+      playerInformation
+    );
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('command-pending.png') });
+    await expect(page.locator('.command-recovery')).toBeVisible({
+      timeout: 4500,
+    });
+    await expect(changeVideo).toBeFocused();
+    await expect(changeVideo).toHaveCSS('opacity', '1');
+    expect(await page.locator('.room-layout').boundingBox()).toEqual(
+      playerLayout
+    );
+    expect(await page.locator('.video-information').boundingBox()).toEqual(
+      playerInformation
+    );
+    expect(await page.locator('.playback-status').textContent()).toBe(
+      playerStatus
+    );
+    await page.screenshot({ path: testInfo.outputPath('command-delayed.png') });
     releaseResults();
+    await expect(page.locator('.command-recovery')).toHaveCount(0);
     await expect(changeVideo).toBeEnabled();
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
