@@ -178,6 +178,8 @@ const host = computed(
 const permitted = computed(
   () => host.value || current.value.settings.controllers === 'everyone'
 );
+// Pending commands remain unavailable through guards and aria-disabled. Avoid native
+// disabling during that round trip so browsers keep the current control focused.
 const controls = computed(
   () => connected.value && active.value && permitted.value && !uncertain.value
 );
@@ -856,13 +858,31 @@ function hoverSeek(event: PointerEvent): void {
   );
 }
 function dragSeek(event: Event): void {
+  if (!canControl.value) return;
   dragging.value = true;
   seekSeconds.value = Number((event.target as HTMLInputElement).value);
 }
 function seek(event: Event): void {
-  seekSeconds.value = Number((event.target as HTMLInputElement).value);
   dragging.value = false;
+  if (!canControl.value) return;
+  seekSeconds.value = Number((event.target as HTMLInputElement).value);
   command('seek');
+}
+function seekKeyboard(event: KeyboardEvent): void {
+  if (
+    !canControl.value &&
+    [
+      'ArrowLeft',
+      'ArrowRight',
+      'ArrowUp',
+      'ArrowDown',
+      'PageUp',
+      'PageDown',
+      'Home',
+      'End',
+    ].includes(event.key)
+  )
+    event.preventDefault();
 }
 function keyboard(event: KeyboardEvent): void {
   if (
@@ -880,13 +900,8 @@ function keyboard(event: KeyboardEvent): void {
   )
     return;
   const key = event.key.toLowerCase();
-  if (
-    key === ' ' &&
-    event.target instanceof Element &&
-    event.target.closest('button, a')
-  )
-    return;
   if (key === ' ' || key === 'k') {
+    // Keep the focused control in place while suppressing native Space clicks.
     event.preventDefault();
     togglePlayback();
   } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -1213,7 +1228,11 @@ onUnmounted(() => {
       </div>
       <div v-else-if="current.playback.phase === 'ended'" class="player-state">
         <h3>{{ t('player.again') }}</h3>
-        <button :disabled="!canControl" @click="command('replay')">
+        <button
+          :disabled="!canControl && !uncertain"
+          :aria-disabled="!canControl"
+          @click="command('replay')"
+        >
           <Icon name="replay" />{{ t('player.replay') }}
         </button>
       </div>
@@ -1279,7 +1298,10 @@ onUnmounted(() => {
                 duration: formatTime(totalSeconds),
               })
             "
-            :disabled="!canControl"
+            :disabled="!canControl && !uncertain"
+            :aria-disabled="!canControl"
+            @keydown="seekKeyboard"
+            @pointerdown="(event) => !canControl && event.preventDefault()"
             @input="dragSeek"
             @change="seek"
           />
@@ -1304,7 +1326,8 @@ onUnmounted(() => {
                   ? t('player.pauseShortcut')
                   : t('player.playShortcut'))
               "
-              :disabled="isPlaying ? !canControl : !canPlay"
+              :disabled="(isPlaying ? !canControl : !canPlay) && !uncertain"
+              :aria-disabled="isPlaying ? !canControl : !canPlay"
               :aria-describedby="controlNote ? 'control-note' : undefined"
               @click="togglePlayback"
             >
@@ -1461,7 +1484,8 @@ onUnmounted(() => {
       <button
         v-if="host"
         class="quiet change-media"
-        :disabled="!canReplace"
+        :disabled="!canReplace && !uncertain"
+        :aria-disabled="!canReplace"
         @click="openMedia()"
       >
         <Icon name="plus" :size="16" />{{ t('player.changeVideo') }}

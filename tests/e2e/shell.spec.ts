@@ -21,6 +21,26 @@ test('independent identities manage a private room over direct HTTP', async ({
   if (!baseURL) throw new Error('Browser base URL required.');
   const failures: string[] = [];
   page.on('pageerror', (error) => failures.push(error.message));
+  // Hold acknowledgements, rather than relying on a fast network to test pending focus.
+  let holdResults = false;
+  const heldResults: Array<() => void> = [];
+  const releaseResults = () => {
+    holdResults = false;
+    for (const send of heldResults.splice(0)) send();
+  };
+  await page.routeWebSocket('**/ws/v2/rooms/*', (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((data) => {
+      if (
+        holdResults &&
+        (heldResults.length > 0 ||
+          (typeof data === 'string' &&
+            (JSON.parse(data) as { type: string }).type === 'command.result'))
+      )
+        heldResults.push(() => socket.send(data));
+      else socket.send(data);
+    });
+  });
   const guest = await browser.newContext(),
     outsider = await browser.newContext();
   const file = {
@@ -45,6 +65,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     ).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('main')).toBeFocused();
+    await expect(page.getByRole('main')).toHaveCSS('outline-style', 'none');
     await dismissHelper(page);
     const firstIdentity = await (await page.request.get('/api/v2/me')).json();
     await page.locator('.profile-button').click();
@@ -79,6 +100,9 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       page.getByRole('heading', { name: 'Friday watch party' })
     ).toBeFocused();
+    await expect(
+      page.getByRole('heading', { name: 'Friday watch party' })
+    ).toHaveCSS('outline-style', 'none');
     await expect(page).toHaveTitle('Room · Open Video Sync');
     expect(await page.locator('video').getAttribute('src')).toMatch(/^blob:/);
     await expect(page.locator('#local-volume')).toHaveValue('0.5');
@@ -123,6 +147,68 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(false);
+    // Restored button focus must not turn page-level Space into another button click.
+    const changeVideo = page.getByRole('button', {
+      name: 'Change video',
+      exact: true,
+    });
+    await changeVideo.click();
+    await page.keyboard.press('Escape');
+    await expect(changeVideo).toBeFocused();
+    await expect(changeVideo).toHaveCSS('outline-style', 'none');
+    holdResults = true;
+    await page.keyboard.press('Space');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(changeVideo).toBeFocused();
+    await expect.poll(() => heldResults.length).toBeGreaterThan(0);
+    await expect(changeVideo).toBeDisabled();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    releaseResults();
+    await expect(changeVideo).toBeEnabled();
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    // Enter still activates a deliberately focused button.
+    await expect(changeVideo).toBeFocused();
+    await expect(changeVideo).toBeEnabled();
+    await page.keyboard.press('Enter');
+    await expect(
+      page.getByRole('dialog', { name: 'Change the video', exact: true })
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+    const fullscreen = page.getByRole('button', {
+      name: 'Fullscreen locally',
+      exact: true,
+    });
+    await fullscreen.click();
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    await expect(fullscreen).toBeFocused();
+    await expect(fullscreen).toHaveCSS('outline-style', 'none');
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+    await expect(fullscreen).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
     // Inputs and dialog buttons retain their native keys and cannot control the room.
     await page.locator('.profile-button').click();
     const nameInput = page.getByLabel('Display name (optional)');
@@ -150,6 +236,21 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
     await page.keyboard.press('Space');
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    const profile = page.locator('.profile-button');
+    await expect(profile).toBeFocused();
+    await expect(profile).toHaveCSS('outline-style', 'none');
+    await page.keyboard.press('Space');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing'
+    );
+    await expect(profile).toBeFocused();
+    await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
       'paused'
@@ -434,12 +535,32 @@ test('independent identities manage a private room over direct HTTP', async ({
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
+    holdResults = true;
     await seek.click({ position: { x: box.width / 3, y: box.height / 2 } });
+    await expect(seek).toBeFocused();
+    await expect.poll(() => heldResults.length).toBeGreaterThan(0);
+    await expect(seek).toBeDisabled();
+    await page.keyboard.press('ArrowRight');
+    await expect(seek).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('button', { name: 'Play together', exact: true })
+    ).toBeFocused();
+    releaseResults();
+    await expect(seek).toBeEnabled();
     await expect
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
       )
       .toBeGreaterThan(3);
+    await seek.focus();
+    await page.keyboard.press('Home');
+    await expect
+      .poll(() =>
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+      )
+      .toBeLessThan(0.2);
+    await expect(seek).toBeFocused();
     await expect(
       page.getByRole('button', { name: 'Show danmaku locally', exact: true })
     ).toHaveCount(0);
@@ -532,6 +653,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     ).toEqual({ local: ['ovs.appearance', 'ovs.player'], session: 0 });
     expect(failures).toEqual([]);
   } finally {
+    releaseResults();
     await guest.close();
     await outsider.close();
   }
@@ -729,6 +851,12 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await page.getByRole('radio', { name: 'Soft iris' }).press('ArrowRight');
   await expect(page.getByRole('radio', { name: 'Graphite' })).toBeChecked();
   await expect(page.getByRole('radio', { name: 'Graphite' })).toBeFocused();
+  await expect(
+    page
+      .locator('.appearance-choice')
+      .filter({ hasText: 'Graphite' })
+      .locator('.appearance-tile')
+  ).toHaveCSS('outline-style', 'none');
   await expect.poll(accent).not.toBe(iris);
   await page.screenshot({ path: testInfo.outputPath('appearance-light.png') });
   await page.keyboard.press('Escape');

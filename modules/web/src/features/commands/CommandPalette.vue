@@ -249,8 +249,7 @@ onBeforeUnmount(() => {
   background: var(--input);
 }
 .command-search:focus-within {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+  background: var(--surface-raised);
 }
 .command-search svg {
   color: var(--muted);

@@ -129,7 +129,8 @@ button,
   text-decoration: none;
   user-select: none;
 }
-button:disabled {
+button:disabled,
+.player-panel button[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -163,13 +164,15 @@ button:active,
 .file-button:active {
   filter: brightness(0.88);
 }
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 4px;
-}
-main:focus:not(:focus-visible),
-[tabindex='-1']:focus:not(:focus-visible) {
+:focus {
   outline: none;
+}
+:root[data-input='keyboard']
+  :is(button, .button, input, select, textarea, summary):focus-visible {
+  filter: brightness(1.15);
+}
+:root[data-input='keyboard'] :is(button.quiet, a):focus-visible {
+  background-color: var(--hover);
 }
 input:not([type='range']):not([type='checkbox']):not([type='radio']),
 select {
@@ -370,7 +373,6 @@ small {
   font-weight: 500;
 }
 .app-menu button:focus-visible {
-  outline-offset: -3px;
   background: var(--hover);
 }
 .app-menu button:last-child {
@@ -640,11 +642,7 @@ main {
   padding: 0.5rem 0.7rem;
 }
 .input-action:focus-within {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-.input-action input:focus-visible {
-  outline: none;
+  background: var(--surface-raised);
 }
 .room-draft {
   margin-top: 22px;
@@ -729,8 +727,7 @@ main {
   font-size: 0.8rem;
 }
 .file-drop:focus-within {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
+  background: var(--hover);
 }
 .media-preview {
   margin-top: 16px;
@@ -1567,10 +1564,10 @@ fieldset select {
   margin-top: 0;
 }
 @media (hover: hover) and (pointer: fine) {
-  button.quiet:hover:not(:disabled) {
+  button.quiet:hover:not(:disabled):not([aria-disabled='true']) {
     background: var(--hover);
   }
-  button:not(.quiet):hover:not(:disabled),
+  button:not(.quiet):hover:not(:disabled):not([aria-disabled='true']),
   .button:hover,
   .file-button:hover {
     filter: brightness(1.07);
@@ -2058,9 +2055,11 @@ fieldset select {
   color: var(--primary);
   box-shadow: inset 0 0 0 1px var(--primary);
 }
-.appearance-choice input:focus-visible + .appearance-tile {
-  outline: 2px solid var(--primary);
-  outline-offset: 3px;
+:root[data-input='keyboard']
+  .appearance-choice
+  input:focus-visible
+  + .appearance-tile {
+  filter: brightness(1.15);
 }
 .accent-swatch {
   display: grid;

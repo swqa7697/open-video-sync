@@ -22,6 +22,11 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await openQuickActions(page);
   const palette = page.locator('.command-palette'),
     input = page.getByRole('combobox');
+  await expect(input).toHaveCSS('outline-style', 'none');
+  await expect(page.locator('.command-search')).toHaveCSS(
+    'outline-style',
+    'none'
+  );
   expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
   await page.screenshot({
     path: testInfo.outputPath('commands-desktop-dark.png'),
@@ -85,6 +90,9 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(page.locator('#bilibili-part')).toHaveCount(0);
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
+  await expect(
+    page.locator('.input-action').filter({ has: page.locator('#join-code') })
+  ).toHaveCSS('outline-style', 'none');
   await runQuickAction(page, '/language zh-CN');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await openQuickActions(page);
