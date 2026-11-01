@@ -8,6 +8,7 @@
   "private": true,
   "exports": {
     "./bridge-json": "./bridge-json.js",
-    "./release": "./dist/release.json"
+    "./release": "./dist/release.json",
+    "./media-codecs": "./media-codecs.js"
   }
 }

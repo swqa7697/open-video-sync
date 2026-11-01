@@ -13,6 +13,7 @@ interface Track {
   index: number;
   buffer: SourceBuffer;
   segments: Segment[];
+  appended?: { seek: number; end: number };
   pending?:
     | {
         segment: Segment;
@@ -379,6 +380,8 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (!track.pending) {
       const segment = track.segments.find((s) => {
         if (s.end <= target || s.time > target + ahead) return false;
+        if (track.appended?.seek === seek && s.end <= track.appended.end)
+          return false;
         for (let i = 0; i < track.buffer.buffered.length; i++)
           if (
             track.buffer.buffered.start(i) <= Math.max(s.time, target) + 0.05 &&
@@ -402,7 +405,12 @@ export class BilibiliAdapter implements PlayerAdapter {
     this.assertSeek(seek);
     pending.at += pending.data.length;
     pending.data = undefined;
-    if (pending.at === pending.segment.length) track.pending = undefined;
+    if (pending.at === pending.segment.length) {
+      // Reordered frames can need the next fragment to complete this time range.
+      // Do not download a completed fragment again within the same seek.
+      track.appended = { seek, end: pending.segment.end };
+      track.pending = undefined;
+    }
     return true;
   }
   private async pump(): Promise<void> {

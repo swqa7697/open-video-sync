@@ -10,7 +10,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function fixture(lengths = [65 * 1024 * 1024 + 17], progressive = false) {
+function fixture(
+  lengths = [65 * 1024 * 1024 + 17],
+  progressive = false,
+  codec = 'avc1.640033',
+  reordered = false
+) {
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
   vi.stubGlobal('atob', (text: string) =>
@@ -83,12 +88,13 @@ function fixture(lengths = [65 * 1024 * 1024 + 17], progressive = false) {
         this.appends.push({ track: this.track, offset, length: data.length });
         this.next = end === segment.offset + segment.length ? undefined : end;
         if (progressive || this.next === undefined) {
-          const time =
+          let time =
             segment.time + ((end - segment.offset) / segment.length) * 5;
+          const start = Math.max(0, segment.time - (reordered ? 0.2 : 0));
+          if (reordered && segment.end < lengths.length * 5) time -= 0.2;
           const last = this.times.at(-1);
-          if (last && last[1] >= segment.time)
-            last[1] = Math.max(last[1], time);
-          else this.times.push([segment.time, time]);
+          if (last && last[1] >= start) last[1] = Math.max(last[1], time);
+          else this.times.push([start, time]);
         }
       } else this.initialized = true;
       this.updating = true;
@@ -130,7 +136,12 @@ function fixture(lengths = [65 * 1024 * 1024 + 17], progressive = false) {
     static isTypeSupported(): boolean {
       return true;
     }
-    addSourceBuffer(): FakeBuffer {
+    addSourceBuffer(mime: string): FakeBuffer {
+      expect(mime).toBe(
+        buffers.length === 0
+          ? `video/mp4; codecs="${codec}"`
+          : 'audio/mp4; codecs="mp4a.40.2"'
+      );
       const buffer = new FakeBuffer(buffers.length);
       buffers.push(buffer);
       return buffer;
@@ -169,7 +180,7 @@ function fixture(lengths = [65 * 1024 * 1024 + 17], progressive = false) {
           qualities: [120, 112, 32],
           tracks: indexes.map((index, i) => ({
             id: i === 0 ? 120 : 30216,
-            codec: i === 0 ? 'avc1.640033' : 'mp4a.40.2',
+            codec: i === 0 ? codec : 'mp4a.40.2',
             mime: i === 0 ? 'video/mp4' : 'audio/mp4',
             init: [0, 31],
             index: [32, 31 + index.length],
@@ -275,6 +286,34 @@ test('a paused high-bitrate fragment stops prefetch at the byte budget and resum
     f.adapter.dispose();
   }
 });
+
+test.each(['av01.0.08M.08', 'hvc1.1.6.L120.90', 'hev1.1.6.L120.90'])(
+  '%s initializes both tracks and advances past reordered fragment boundaries',
+  async (codec) => {
+    const f = fixture([1024, 1024], false, codec, true);
+    try {
+      await f.load();
+      await f.until(() => f.adapter.getState().status === 'ready');
+      expect(f.adapter.mediaInfo?.tracks[0]?.codec).toBe(codec);
+      expect(f.buffers.map((b) => b.initialized)).toEqual([true, true]);
+      expect(f.buffers[0]!.times).toEqual([[0, 10]]);
+      expect(f.buffers[1]!.times).toEqual([[0, 10]]);
+      const reads = f.ranges.length;
+      for (const buffer of f.buffers) buffer.times = [];
+      f.video.currentTime = 1;
+      f.video.dispatchEvent(new Event('seeking'));
+      await f.until(() =>
+        f.buffers.every((b) =>
+          b.times.some(([start, end]) => start <= 1 && end > 1)
+        )
+      );
+      expect(f.ranges.length).toBeGreaterThan(reads);
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.adapter.dispose();
+    }
+  }
+);
 
 test.each(['seek', 'dispose'] as const)(
   '%s discards a late chunk and does not append into a newer parser',

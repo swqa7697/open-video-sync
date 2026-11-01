@@ -24,6 +24,9 @@ function fixture(options = {}) {
     aborted = 0,
     mediaCalls = 0;
   const page = {};
+  page.MediaSource = options.noMediaSource
+    ? undefined
+    : { isTypeSupported: options.supports || (() => true) };
   page.self = page;
   page.top = options.frame ? {} : page;
   page.addEventListener = (name, callback) =>
@@ -47,7 +50,9 @@ function fixture(options = {}) {
   const play = {
     timelength: 100000,
     dash: {
-      video: [track, { ...track, id: 64 }],
+      video: options.videos
+        ? options.videos.map((t) => ({ ...track, ...t }))
+        : [track, { ...track, id: 64 }],
       audio: [
         { ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' },
       ],
@@ -218,6 +223,7 @@ function fixture(options = {}) {
     replies,
     requests,
     held,
+    play,
     get aborted() {
       return aborted;
     },
@@ -528,6 +534,89 @@ test('provider failures and restricted access cannot leak raw canaries', async (
   const f = fixture({ loggedOut: true });
   assert.equal((await f.call('session')).value.loggedIn, false);
 });
+test('previews and opens select the best supported codec at the preferred or highest playable quality', async () => {
+  const av1 = 'av01.0.08M.08',
+    hevc = 'hev1.1.6.L120.90',
+    avc = 'avc1.64001E';
+  const videos = [
+    { id: 64, codecs: avc },
+    { id: 64, codecs: hevc },
+    { id: 64, codecs: av1 },
+    { id: 32, codecs: avc },
+    { id: 32, codecs: av1 },
+    { id: 80, codecs: 'av01.0.12M.10' },
+    { id: 127, codecs: 'vp09.00.10.08' },
+  ];
+  for (const [supported, expected, qualities] of [
+    [[av1, hevc, avc], av1, [64, 32]],
+    [[hevc, avc], hevc, [64, 32]],
+    [[avc], avc, [64, 32]],
+  ]) {
+    const f = fixture({
+      videos,
+      supports: (mime) =>
+        mime.startsWith('audio/mp4;') ||
+        supported.some((codec) => mime === `video/mp4; codecs="${codec}"`),
+    });
+    const preview = await f.call('preview', { bvid: 'BV1hf4y1N75G', part: 1 });
+    const opened = await f.open();
+    for (const reply of [preview, opened]) {
+      assert.equal(reply.ok, true);
+      assert.equal(reply.value.quality, 64);
+      assert.equal(reply.value.tracks[0].codec, expected);
+      assert.deepEqual(reply.value.qualities, qualities);
+      assert(!JSON.stringify(reply).includes(CANARY));
+    }
+    const selected = await f.call('open', {
+      bvid: 'BV1hf4y1N75G',
+      part: 1,
+      generation: 2,
+      quality: 32,
+    });
+    assert.equal(selected.value.quality, 32);
+    assert.equal(
+      selected.value.tracks[0].codec,
+      supported.includes(av1) ? av1 : avc
+    );
+    const query = new URL(
+      f.requests.find((r) => r.url.includes('/playurl')).url
+    ).searchParams;
+    assert.equal(Number(query.get('fnval')) & 2048, 2048);
+    assert.equal(Number(query.get('fnval')) & 16, 16);
+  }
+  // A higher quality still wins when its only supported representation is AVC.
+  const f = fixture({
+    videos: [
+      { id: 32, codecs: av1 },
+      { id: 64, codecs: avc },
+    ],
+  });
+  const opened = await f.open();
+  assert.equal(opened.value.quality, 64);
+  assert.equal(opened.value.tracks[0].codec, avc);
+  for (const codec of ['hvc1.1.6.L120.90', hevc, 'avc3.64001E', av1]) {
+    const opened = await fixture({ videos: [{ codecs: codec }] }).open();
+    assert.equal(opened.ok, true);
+    assert.equal(opened.value.tracks[0].codec, codec);
+  }
+  for (const options of [
+    { noMediaSource: true },
+    { supports: () => false },
+    { supports: (mime) => !mime.startsWith('audio/mp4;') },
+    {
+      supports: () => {
+        throw Error(CANARY);
+      },
+    },
+    { videos: [{ codecs: 'av01.0.08M.08"; injected="x' }] },
+  ]) {
+    const f = fixture(options),
+      opened = await f.open();
+    assert.equal(opened.error, 'unsupported-codec');
+    assert.equal(f.requests.filter((r) => r.headers.Range).length, 0);
+    assert(!JSON.stringify(opened).includes(CANARY));
+  }
+});
 test('expired ranges refresh once through the same identity and return media bytes', async () => {
   const backup = `https://backup.bilivideo.com/upgcxcode/fixture.m4s?upsig=${CANARY}`;
   const f = fixture({
@@ -552,6 +641,32 @@ test('expired ranges refresh once through the same identity and return media byt
     [backup, backup]
   );
   assert(!JSON.stringify(f.replies).includes(CANARY));
+  // The same quality can acquire a preferred codec after open. Refresh must keep
+  // the original representation because the page already owns its byte index.
+  for (const keepOriginal of [true, false]) {
+    const videos = [{ id: 64, codecs: 'hvc1.1.6.L120.90' }];
+    const f = fixture({ expired: true, videos }),
+      opened = await f.open();
+    f.play.dash.video.unshift({
+      ...f.play.dash.video[0],
+      codecs: 'av01.0.08M.08',
+    });
+    f.play.dash.audio.unshift({ ...f.play.dash.audio[0], id: 30280 });
+    if (!keepOriginal) f.play.dash.video.pop();
+    const reply = await f.call('bytes', {
+      handle: opened.value.handle,
+      track: 0,
+      offset: 0,
+      length: 32,
+      generation: 1,
+    });
+    assert.equal(reply.ok, keepOriginal);
+    if (!keepOriginal) assert.equal(reply.error, 'media-changed');
+    assert.equal(
+      f.requests.filter((r) => r.headers.Range).length,
+      keepOriginal ? 2 : 1
+    );
+  }
 });
 test('oversized streams and unapproved final destinations fail without exposing bytes', async () => {
   for (const options of [{ oversize: true }, { redirect: true }]) {

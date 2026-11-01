@@ -191,7 +191,15 @@ test('quality choices use a small menu and survive player recreation', async () 
       quality: selectedQuality,
       qualities: [120, 80],
       handle: 'h1-1234',
-      tracks: [],
+      tracks: [
+        {
+          id: selectedQuality,
+          codec: selectedQuality === 120 ? 'av01.0.08M.08' : 'hev1.1.6.L120.90',
+          mime: 'video/mp4',
+          init: [0, 31],
+          index: [32, 63],
+        },
+      ],
     })
   );
   vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
@@ -216,6 +224,7 @@ test('quality choices use a small menu and survive player recreation', async () 
   let wrapper = await open();
   try {
     expect(wrapper.get('.quality-trigger').text()).toBe('4K');
+    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AV1');
     await wrapper.get('.quality-trigger').trigger('click');
     expect(wrapper.find('.player-menu:not(.quality-menu)').exists()).toBe(
       false
@@ -226,10 +235,16 @@ test('quality choices use a small menu and survive player recreation', async () 
     await option.trigger('click');
     await flushPromises();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
+      'HEVC'
+    );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     wrapper.unmount();
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
+      'HEVC'
+    );
     await wrapper.get('.quality-trigger').trigger('click');
     expect(wrapper.get('[aria-checked="true"]').text()).toBe('1080p');
     await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Escape' });
@@ -324,7 +339,15 @@ test('host episode selection publishes resolved metadata and retains the list du
       quality: 80,
       qualities: [80],
       handle: 'h1-1234',
-      tracks: [],
+      tracks: [
+        {
+          id: 80,
+          codec: 'avc1.64001E',
+          mime: 'video/mp4',
+          init: [0, 31],
+          index: [32, 63],
+        },
+      ],
     })
   );
   vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
@@ -349,6 +372,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     socket.readyState = 1;
     socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
     await flushPromises();
+    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AVC');
     await panel.selectEpisode(first);
     await panel.selectEpisode({ ...second, part: 3 });
     expect(
@@ -358,6 +382,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     ).toHaveLength(0);
     const selecting = panel.selectEpisode(second);
     await flushPromises();
+    expect(wrapper.find('.codec-label').exists()).toBe(false);
     expect(panel.canReplace).toBe(false);
     expect(panel.playlist).toEqual(playlist);
     finish?.();
@@ -382,6 +407,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toEqual(playlist);
+    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AVC');
     socket.frame('room.snapshot', {
       ...snapshot,
       revision: 3,
@@ -390,6 +416,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toBeUndefined();
+    expect(wrapper.find('.codec-label').exists()).toBe(false);
   } finally {
     wrapper.unmount();
   }

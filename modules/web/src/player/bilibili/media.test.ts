@@ -93,6 +93,38 @@ test('helper metadata and display comments reject foreign payload fields and scr
     ...preview,
     handle: 'h1-1234',
   });
+  for (const codec of [
+    'av01.0.08M.08',
+    'av01.0.08M.10.0.110.01.01.01.0',
+    'hvc1.1.6.L120.90',
+    'hev1.1.6.L120.90',
+    'avc3.64001E',
+  ]) {
+    const candidate = {
+      ...preview,
+      tracks: [{ ...preview.tracks[0], codec }, preview.tracks[1]],
+    };
+    expect(decodePreview(candidate, first.bvid, 1)).toEqual(candidate);
+  }
+  for (const codec of [
+    'vp09.00.10.08',
+    'av01',
+    'hvc1.',
+    'avc1..64001E',
+    'av01.0.08M.08"; injected="x',
+    `hvc1.${'1'.repeat(60)}`,
+  ]) {
+    expect(() =>
+      decodePreview(
+        {
+          ...preview,
+          tracks: [{ ...preview.tracks[0], codec }, preview.tracks[1]],
+        },
+        first.bvid,
+        1
+      )
+    ).toThrow();
+  }
   for (const invalid of [
     { ...preview, handle: 'h1-1234' },
     { ...preview, signedURL: 'synthetic' },

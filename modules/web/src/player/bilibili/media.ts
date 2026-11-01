@@ -1,4 +1,5 @@
 import { message, LocalizedError } from '../../i18n';
+import { videoCodecRank } from '@ovs/helper/media-codecs';
 import { boundedText, exact, HelperError, integer, object } from './bridge';
 export interface TrackInfo {
   id: number;
@@ -158,9 +159,9 @@ export function decodePreview(
     const codec = boundedText(t.codec, 60);
     if (
       t.mime !== (index === 0 ? 'video/mp4' : 'audio/mp4') ||
-      !(index === 0 ? /^avc1\.[a-zA-Z0-9.]+$/ : /^mp4a\.[a-zA-Z0-9.]+$/).test(
-        codec
-      )
+      !(index === 0
+        ? videoCodecRank(codec) >= 0
+        : /^mp4a\.[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/.test(codec))
     )
       throw new HelperError('unsupported-codec');
     return {

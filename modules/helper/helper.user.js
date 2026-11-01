@@ -19,6 +19,7 @@
 (() => {
   'use strict';
   /* OVS_BRIDGE_JSON */
+  /* OVS_MEDIA_CODECS */
   const ORIGIN = '{{ORIGIN}}';
   const pageWindow = unsafeWindow;
   if (location.origin !== ORIGIN || pageWindow.top !== pageWindow.self) return;
@@ -277,7 +278,24 @@
     }
     if (episodes.length > 1) return { title, episodes };
   }
-  async function resolve(bvid, part, selectedQuality = 0) {
+  function supportsTrack(track, mime) {
+    if (
+      (track.mimeType || track.mime_type) !== mime ||
+      typeof track.codecs !== 'string' ||
+      track.codecs.length > 60
+    )
+      return false;
+    try {
+      return (
+        pageWindow.MediaSource?.isTypeSupported(
+          `${mime}; codecs="${track.codecs}"`
+        ) === true
+      );
+    } catch {
+      return false;
+    }
+  }
+  async function resolve(bvid, part, selectedQuality = 0, currentTracks) {
     if (
       !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
       !Number.isInteger(part) ||
@@ -301,23 +319,46 @@
       bvid,
       cid: String(page.cid),
       qn: String(selectedQuality || 127),
-      fnval: '16',
+      // DASH plus AV1. DASH responses also include HEVC and AVC representations.
+      fnval: String(16 | 2048),
       fourk: '1',
     });
-    if (!play.dash?.video?.length || !play.dash?.audio?.length)
+    if (
+      !Array.isArray(play.dash?.video) ||
+      !play.dash.video.length ||
+      !Array.isArray(play.dash?.audio) ||
+      !play.dash.audio.length
+    )
       throw Error('unsupported-stream');
     const playable = play.dash.video.filter(
       (t) =>
+        t &&
         Number.isSafeInteger(t.id) &&
         t.id > 0 &&
         t.id <= 127 &&
-        typeof t.codecs === 'string' &&
-        t.codecs.startsWith('avc1')
+        videoCodecRank(t.codecs) >= 0 &&
+        supportsTrack(t, 'video/mp4')
     );
-    const video =
-      playable.find((t) => t.id === selectedQuality) ||
-      playable.sort((a, b) => b.id - a.id)[0];
-    const audio = play.dash.audio.find((t) => t.codecs.startsWith('mp4a'));
+    playable.sort(
+      (a, b) =>
+        b.id - a.id || videoCodecRank(a.codecs) - videoCodecRank(b.codecs)
+    );
+    const matches = (track, current) =>
+      track.id === current.id && track.codecs === current.codec;
+    const audioTracks = play.dash.audio.filter(
+      (t) =>
+        t &&
+        typeof t.codecs === 'string' &&
+        /^mp4a\.[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/.test(t.codecs) &&
+        supportsTrack(t, 'audio/mp4')
+    );
+    const video = currentTracks
+      ? playable.find((t) => matches(t, currentTracks[0]))
+      : playable.find((t) => t.id === selectedQuality) || playable[0];
+    const audio = currentTracks
+      ? audioTracks.find((t) => matches(t, currentTracks[1]))
+      : audioTracks[0];
+    if (currentTracks && (!video || !audio)) throw Error('media-changed');
     if (!video || !audio) throw Error('unsupported-codec');
     if (
       !Number.isFinite(play.timelength) ||
@@ -522,7 +563,12 @@
         });
       } catch (e) {
         if (e.message !== 'access-expired') throw e;
-        const fresh = await resolve(media.bvid, media.part, media.quality);
+        const fresh = await resolve(
+          media.bvid,
+          media.part,
+          media.quality,
+          media.tracks
+        );
         if (
           q.generation !== generation ||
           q.client !== client ||

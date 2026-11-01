@@ -31,6 +31,7 @@ import {
   type ProbeResult,
 } from '../../transport/room-socket';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
+import { videoCodecRank } from '@ovs/helper/media-codecs';
 import { HelperError } from '../../player/bilibili/bridge';
 import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 import Icon from '../../components/Icon.vue';
@@ -114,6 +115,12 @@ const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
 const qualityTrigger = ref<HTMLButtonElement>(),
   qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
+const videoCodec = computed(() => {
+  if (current.value.media?.kind !== 'bilibili') return undefined;
+  return ['AV1', 'HEVC', 'AVC'][
+    videoCodecRank(streamInfo.value?.tracks[0]?.codec)
+  ];
+});
 const playlist = shallowRef<Playlist>();
 const videoTitle = ref('');
 const totalSeconds = computed(
@@ -1502,6 +1509,16 @@ onUnmounted(() => {
             ? t('common.localFileLabel')
             : t('media.bilibiliLabel')
         }}</span>
+        <span
+          v-if="videoCodec"
+          class="codec-label"
+          :title="t('player.videoCodec', { codec: videoCodec })"
+        >
+          <span class="visually-hidden">{{
+            t('player.videoCodec', { codec: videoCodec })
+          }}</span
+          ><span aria-hidden="true">{{ videoCodec }}</span>
+        </span>
         <h3
           :title="
             videoTitle ||

@@ -37,7 +37,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
             baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY',
             SegmentBase: { Initialization: '0-31', indexRange: '32-63' }
           };
-          data = { timelength: 5000, dash: { video: [track], audio: [
+          data = { timelength: 5000, dash: { video: [track, { ...track, codecs: 'av01.0.08M.08' }], audio: [
             { ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' }
           ] } };
         } else throw Error('Unexpected platform request');

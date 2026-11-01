@@ -16,6 +16,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Room Sharing: Let users create rooms, share invitation links or codes, and join shared rooms
 - Host Preferences: The room creator chooses who can control playback and whether to wait for participants. Synchronization uses automatic internal defaults.
 - Browser Player: Provide a web player for selecting and watching supported videos within a room
+  - For Bilibili, support AV1, HEVC, and AVC when the participant's browser can decode them. Preserve the preferred or highest playable quality, then prefer AV1 → HEVC → AVC within that quality. Skip unsupported representations automatically.
 - Interface Language: Support English and Simplified Chinese. Follow the device language by default, with English fallback. Allow immediate browser-local overrides that survive reloads.
 - Appearance: Use a muted, cool accent by default and allow local accent changes. Default to dark mode and allow manual light/dark choices through settings or Quick actions. Remember browser-local choices and respect reduced motion. Keep playback and keyboard actions immediate.
 - Application Settings: Keep only server status, settings, and user identity on the right of the header. Group appearance, language, notifications, and About in the settings menu. Show notifications as bottom toasts with a browser-local left/center/right position, defaulting to right. About shows the Sync service, Web frontend, and Helper script versions bundled in the deployed image.

@@ -5,7 +5,7 @@ OVS is a private, self-hosted application for synchronized viewing. Each partici
 This repository includes persistent anonymous identities and private rooms with invitation links and codes.
 Hosts can save room preferences, replace invitations, remove participants, and close rooms. Participants can leave rooms.
 The Go application embeds the Vue frontend and stores identities, memberships, room settings, and media descriptors in SQLite. Playback, waiting, authorization, and retry results run in application memory.
-Authenticated room sockets support local files and browser-local Bilibili AVC/AAC playback with danmaku.
+Authenticated room sockets support local files and browser-local Bilibili AV1/HEVC/AVC video with AAC audio and danmaku.
 Bilibili uses an instance-scoped Tampermonkey helper, based on the accepted [feasibility path](specs/DESIGN.md#831-accepted-b0-baseline).
 
 ## Repository layout
@@ -141,15 +141,18 @@ Provider responses and signed media locations stay in helper memory. The room re
 When a track's primary address is unsupported, the helper selects a permitted HTTPS CDN backup from the platform response. If none is supported, OVS reports an incompatible media address.
 The page requests bounded byte ranges through opaque handles. It cannot supply URLs, headers, methods, or cookies.
 
-The player lists the returned playable AVC qualities and requests the selected quality through the helper.
+The player lists the returned playable qualities and requests the selected quality through the helper.
 The dedicated quality button opens a small selection menu. The browser remembers the preferred quality across media changes and reloads.
 Without a preference, or when the preferred tier is unavailable, choose the highest returned playable quality. Retry keeps the preference.
+At that quality, prefer AV1, then HEVC (H.265), then AVC (H.264). Check each track's exact codec against browser MediaSource support, including its profile and level; skip unsupported tracks and qualities. HEVC supports both `hvc1` and `hev1` representations. Codec selection stays local to each participant.
+A small badge beside the Bilibili source label shows the loaded video codec: AV1, HEVC, or AVC. It updates after quality changes and clears while loading another video.
 Switching reloads local media buffers, reports readiness, and converges to the authoritative room position without changing room playback intent.
 Only an active loaded quality is displayed as selected. No adaptive Auto mode is offered.
 Large DASH fragments, including those above 64 MiB, stream through bounded chunks without whole-fragment assembly.
+Reordered frames can span fragments; the player advances to the next fragment without repeatedly downloading a completed fragment.
 The player limits prefetch and reclaims played buffers under memory pressure. Browser memory and codec limits still apply.
-Quality switching needs new live-platform validation; the earlier B0 evidence covers the previous fixed-quality path.
-DASH AVC/AAC remains the supported path. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
+Expired locations refresh with the same video and audio representations; a changed encoding requires a player reload instead of mixing fragments.
+AV1, HEVC, and quality switching need new live-platform validation; the earlier B0 evidence covers fixed-quality AVC/AAC. Playback requires browser and device decoding support. Local files use the browser's decoder and contain no alternate platform stream to select. Live, DRM, paid episodic formats, other codecs, and mobile are unverified.
 
 Danmaku follows observed playback through pause and seek. Visibility, density, and text size remain local.
 Click the danmaku icon to toggle comments; hover over it for density, text size, status, and reload controls.

@@ -320,6 +320,7 @@
     "fullscreen": "Fullscreen locally",
     "volume": "Volume",
     "videoQuality": "Video quality",
+    "videoCodec": "Video codec: {codec}",
     "qualityHint": "Quality is available after the video loads.",
     "danmakuDensity": "Danmaku density",
     "commentCount": "{count} comments",

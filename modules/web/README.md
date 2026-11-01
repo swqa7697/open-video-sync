@@ -7,7 +7,7 @@ Keep user names, room titles, video titles, and danmaku as text without translat
 The language store resolves the first browser language, follows `languagechange` in system mode, and saves only an allowlisted preference in `ovs.language`.
 English is the fallback. Blocked storage still allows language changes until reload. Browser journeys cover both supported languages.
 `HomeIntro.vue` randomly selects one of five localized headings on each home visit, using neutral greetings and short feature introductions. The choice stays in component memory through form edits and language changes, without timers or browser storage.
-The package declares a local link to `../helper` and consumes the helper's public bridge parser and generated release metadata through `@ovs/helper` exports.
+The package declares a local link to `../helper` and consumes the helper's public bridge parser, video codec allowlist, and generated release metadata through `@ovs/helper` exports.
 
 Run these commands from the repository root:
 

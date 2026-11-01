@@ -1504,6 +1504,19 @@ fieldset select {
   font-weight: 600;
   color: var(--muted);
 }
+.codec-label {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.025em;
+  vertical-align: middle;
+}
 .video-description h3 {
   margin-top: 4px;
   overflow: hidden;

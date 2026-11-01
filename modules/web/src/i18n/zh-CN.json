@@ -320,6 +320,7 @@
     "fullscreen": "本地全屏",
     "volume": "音量",
     "videoQuality": "视频画质",
+    "videoCodec": "视频编码：{codec}",
     "qualityHint": "视频加载后可选择画质。",
     "danmakuDensity": "弹幕密度",
     "commentCount": "{count} 条弹幕",
