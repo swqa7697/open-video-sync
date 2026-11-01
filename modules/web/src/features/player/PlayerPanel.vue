@@ -109,6 +109,15 @@ const active = ref(false),
   seekSeconds = ref(0),
   muted = ref(preferences.muted),
   volume = ref(preferences.volume);
+const volumeFeedback = ref(false);
+let volumeFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+function showVolumeFeedback(): void {
+  volumeFeedback.value = true;
+  clearTimeout(volumeFeedbackTimer);
+  volumeFeedbackTimer = setTimeout(() => {
+    volumeFeedback.value = false;
+  }, 1200);
+}
 const preferredQuality = ref(preferences.quality);
 watch([volume, muted, preferredQuality, danmakuArea], () =>
   savePlayerPreferences({
@@ -1080,6 +1089,7 @@ function keyboard(event: KeyboardEvent): void {
       )
     );
     muted.value = false;
+    showVolumeFeedback();
   } else if (key === 'm') {
     event.preventDefault();
     muted.value = !muted.value;
@@ -1302,6 +1312,7 @@ onUnmounted(() => {
   disposed = true;
   clearInterval(timer);
   clearTimeout(idleTimer);
+  clearTimeout(volumeFeedbackTimer);
   clearTimeout(commandDelayTimer);
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
@@ -1350,6 +1361,16 @@ onUnmounted(() => {
         :aria-label="t('player.roomVideo')"
       />
       <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
+      <div
+        v-if="volumeFeedback"
+        class="volume-feedback"
+        role="status"
+        :aria-label="t('player.localVolume')"
+        aria-atomic="true"
+      >
+        <Icon :name="muted || !volume ? 'mute' : 'volume'" :size="22" />
+        <span>{{ Math.round(volume * 100) }}</span>
+      </div>
       <div v-if="replaced" class="player-state">
         <Icon name="screen" :size="36" />
         <h3>{{ t('player.moved') }}</h3>

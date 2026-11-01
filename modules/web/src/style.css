@@ -138,7 +138,8 @@ button:disabled,
   opacity: 1;
   cursor: pointer;
 }
-button.quiet {
+button.quiet,
+.button.quiet {
   background: transparent;
   color: var(--text);
 }
@@ -355,6 +356,13 @@ small {
   align-items: center;
   gap: 1.5rem;
   min-width: 0;
+}
+.repo-stars {
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-color: var(--border);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 .app-menu {
   inset: auto;
@@ -1209,6 +1217,27 @@ fieldset select {
   height: 100%;
   object-fit: contain;
 }
+.volume-feedback {
+  position: absolute;
+  z-index: 4;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 100px;
+  justify-content: center;
+  padding: 12px 16px;
+  border: 1px solid #ffffff26;
+  border-radius: 10px;
+  background: #080b10e6;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .command-recovery {
   position: absolute;
   z-index: 5;
@@ -1685,8 +1714,22 @@ fieldset select {
   .header-end {
     gap: 0.6rem;
   }
+  .repo-stars {
+    width: 44px;
+    padding: 0.5rem;
+    flex-shrink: 0;
+  }
+  .repo-stars > span,
+  .repo-stars > svg:first-child {
+    display: none;
+  }
+  .repo-stars > svg {
+    width: 20px;
+    height: 20px;
+  }
   .server-status {
-    font-size: 0.63rem;
+    font-size: 0;
+    gap: 0;
   }
   .profile-name {
     display: none;
@@ -1946,6 +1989,14 @@ fieldset select {
   }
   .viewing .brand {
     font-size: 1rem !important;
+  }
+}
+@media (max-width: 360px) {
+  .app-header {
+    gap: 0.5rem;
+  }
+  .header-end {
+    gap: 0.35rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {

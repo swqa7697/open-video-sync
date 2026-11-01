@@ -62,6 +62,16 @@ test('independent identities manage a private room over direct HTTP', async ({
       'Server: ready'
     );
     await expect(page).toHaveTitle('Watch together · Open Video Sync');
+    const favicon = await page.request.get(
+      await page
+        .locator('link[rel="icon"]')
+        .evaluate((node: HTMLLinkElement) => node.href)
+    );
+    expect(favicon.ok()).toBe(true);
+    expect(favicon.headers()['content-type']).toContain('image/svg+xml');
+    await expect(
+      page.getByRole('link', { name: 'Star Open Video Sync on GitHub' })
+    ).toHaveAttribute('href', 'https://github.com/swqa7697/open-video-sync');
     for (const landmark of ['banner', 'main', 'contentinfo'] as const)
       await expect(page.getByRole(landmark)).toHaveCount(1);
     await page.keyboard.press('Tab');
@@ -83,8 +93,12 @@ test('independent identities manage a private room over direct HTTP', async ({
       [1440, 900],
       [1024, 768],
       [390, 844],
+      [320, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth)
+      ).toBeLessThanOrEqual(width!);
       for (const colorScheme of ['light', 'dark'] as const) {
         await openAppPanel(page, 'Appearance');
         await page
@@ -361,17 +375,21 @@ test('independent identities manage a private room over direct HTTP', async ({
       'data-state',
       'ready'
     );
-    // Branding is a native link, so normal and middle clicks open a separate page.
-    for (const button of ['left', 'middle'] as const) {
-      const popup = page.context().waitForEvent('page');
-      await page
-        .getByRole('link', { name: 'OVS home', exact: true })
-        .click({ button });
-      const home = await popup;
-      await home.waitForURL('**/');
-      await home.close();
-      await page.bringToFront();
+    // Branding shares the Leave action, including confirmation and cancellation.
+    const home = page.getByRole('button', { name: 'OVS home', exact: true });
+    const pageCount = page.context().pages().length;
+    const activeRoomURL = page.url();
+    for (const input of ['pointer', 'keyboard']) {
+      if (input === 'pointer') await home.click();
+      else await home.press('Enter');
+      await expect(
+        page.getByRole('dialog', { name: 'Leave this room?' })
+      ).toBeVisible();
+      expect(page.context().pages()).toHaveLength(pageCount);
+      expect(page.url()).toBe(activeRoomURL);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(page.locator('.room')).toBeVisible();
+      await expect(home).toBeFocused();
     }
     const roomURL = page.url(),
       inviteURL = await invitationLink(page);
@@ -701,12 +719,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(seek).toBeEnabled();
     await expect(page.locator('.video-stage')).toBeFocused();
     await page.keyboard.press('ArrowUp');
+    await expect(page.locator('.volume-feedback')).toHaveText('70');
     await page.screenshot({
       path: testInfo.outputPath('seek-keyboard.png'),
     });
     await expect(page.locator('#local-volume')).toHaveValue('0.7');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
     await page.keyboard.press('ArrowDown');
+    await expect(page.locator('.volume-feedback')).toHaveText('60');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.6);
     await page.keyboard.press('m');
     await expect(page.locator('video')).toHaveJSProperty('muted', true);
@@ -853,7 +873,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     });
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.locator('.room')).toBeVisible();
-    await closeRoom(page);
+    await home.click();
+    await page
+      .getByRole('button', { name: 'Confirm leave', exact: true })
+      .click();
     await expect(
       page.getByRole('heading', { name: 'Start a watch party', exact: true })
     ).toBeFocused();
@@ -904,7 +927,9 @@ test('settings groups local preferences and shows packaged versions and source r
   const trigger = page.getByRole('button', { name: 'Settings', exact: true });
   const menu = page.getByRole('menu', { name: 'Settings', exact: true });
   const about = page.getByRole('dialog', { name: 'About', exact: true });
-  await expect(page.locator('.header-end > :visible')).toHaveCount(3);
+  await expect(
+    page.getByRole('link', { name: 'Star Open Video Sync on GitHub' })
+  ).toBeVisible();
   await trigger.focus();
   await trigger.press('ArrowDown');
   await expect(

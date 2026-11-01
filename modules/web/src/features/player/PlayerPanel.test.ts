@@ -436,6 +436,22 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     stage.element.focus();
     await stage.trigger('keydown', { key: 'Tab' });
     expect(hidden()).toBe(false);
+    // Shortcut feedback replaces its expiry on each press and clamps to 0–100%.
+    await stage.trigger('keydown', { key: 'ArrowUp' });
+    expect(wrapper.get('.volume-feedback').text()).toBe('60');
+    await advance(1000);
+    await stage.trigger('keydown', { key: 'ArrowDown' });
+    expect(wrapper.get('.volume-feedback').text()).toBe('50');
+    await advance(1199);
+    expect(wrapper.find('.volume-feedback').exists()).toBe(true);
+    await advance(1);
+    expect(wrapper.find('.volume-feedback').exists()).toBe(false);
+    for (let press = 0; press < 7; press++)
+      await stage.trigger('keydown', { key: 'ArrowDown' });
+    expect(wrapper.get('.volume-feedback').text()).toBe('0');
+    for (let press = 0; press < 12; press++)
+      await stage.trigger('keydown', { key: 'ArrowUp' });
+    expect(wrapper.get('.volume-feedback').text()).toBe('100');
   } finally {
     wrapper.unmount();
   }

@@ -553,6 +553,15 @@ function requestLeave(): void {
   destinationAfterLeave = undefined;
   leaveConfirmation.value = true;
 }
+function goHome(): void {
+  if (room.value) {
+    requestLeave();
+    return;
+  }
+  pendingLink.value = undefined;
+  history.replaceState(null, '', '/');
+  focusMain();
+}
 async function confirmLeave(): Promise<void> {
   const destination = destinationAfterLeave;
   await manage('leave');
@@ -621,16 +630,16 @@ onUnmounted(() => {
     }}</a>
     <header class="app-header">
       <div class="header-start">
-        <a
+        <button
+          type="button"
           class="brand quiet"
           :aria-label="t('app.home')"
-          href="/"
-          target="_blank"
-          rel="noopener noreferrer"
+          :disabled="!!room && busy"
+          @click="goHome"
         >
           <span class="brand-mark"><Icon name="play" :size="18" /></span
           ><span>OVS</span><span class="brand-name">Open Video Sync</span>
-        </a>
+        </button>
         <button
           class="quiet command-trigger"
           :aria-label="t('commands.open')"
@@ -644,7 +653,23 @@ onUnmounted(() => {
         </button>
       </div>
       <div class="header-end">
-        <p class="server-status" role="status" :data-state="connection.status">
+        <a
+          class="button quiet repo-stars"
+          href="https://github.com/swqa7697/open-video-sync"
+          target="_blank"
+          rel="noopener noreferrer"
+          :aria-label="t('app.githubStar')"
+          :title="t('app.githubStar')"
+        >
+          <Icon name="github" :size="18" /><Icon name="star" :size="16" />
+          <span>Star</span>
+        </a>
+        <p
+          class="server-status"
+          role="status"
+          :data-state="connection.status"
+          :title="serverText"
+        >
           <span class="status-dot" />{{ serverText }}
         </p>
         <AppSettings ref="appSettings" />

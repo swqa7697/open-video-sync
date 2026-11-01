@@ -87,14 +87,14 @@ Different participants can reuse it until the host replaces it or the room close
 Only the host can retrieve invitations, replace media, change settings, remove participants, or close the room for everyone.
 Room settings and destructive confirmation appear in dialogs. **Members** toggles a side panel or opens a narrow-screen dialog.
 
-**Leave** asks for confirmation before leaving the active session. The OVS logo opens home in a new tab and supports middle click. After the host leaves, everyone can control playback without gaining management rights.
+**Leave** and the OVS logo use the same confirmation before leaving the room and returning home in the current tab. Cancelling keeps the room open. After the host leaves, everyone can control playback without gaining management rights.
 A returning host keeps Everyone enabled and can deliberately change it later. Ownership never transfers.
 The final explicit departure closes the room immediately. Closing a room page starts a 30-second reconnection grace.
 Refresh, brief disconnection, tab replacement, and backgrounding do not by themselves close the room.
 After server restart, restored rooms have 60 seconds for reconnection before empty rooms close.
 Restarted playback begins paused at zero with a fresh epoch. Invitations stop working after closure.
 
-The header reports server availability. Failed persistent changes leave memory unchanged.
+The browser tab uses the OVS play icon. The header includes a GitHub Star button linking to this repository and reports server availability. Failed persistent changes leave memory unchanged.
 A failed automatic departure transition reports a storage error to remaining viewers and stops automatic lifecycle writes until restart.
 Existing playback stays available; the operator must fix storage and restart OVS.
 Create/redeem retry results remain in memory for 60 seconds. An uncertain creation checks its original request and known room ID.
@@ -110,7 +110,7 @@ Play/pause, replay, seeking, volume, mute, and fullscreen are inside the video s
 Moving the pointer into or within the player reveals its controls. During playback, controls hide after three seconds without activity; while paused, they remain visible until the pointer leaves. Leaving the player hides controls immediately in either state. Hovering the control bar, opening the quality or danmaku menu, or dragging the seek slider keeps controls visible until that interaction ends. Keyboard focus and player shortcuts reveal controls without preventing later automatic hiding.
 Shared controls follow server permissions. Volume, mute, fullscreen, quality, and danmaku affect only your browser.
 The player has no playback-speed menu. Small synchronization rate corrections remain automatic.
-Click the video surface or use Space/K anywhere on the foreground OVS page for playback; player focus is not required. Left/Right seeks five seconds; Up/Down changes volume by 10%.
+Click the video surface or use Space/K anywhere on the foreground OVS page for playback; player focus is not required. Left/Right seeks five seconds; Up/Down changes volume by 10% and briefly shows the volume from 0 to 100 without a percent sign over the video.
 M toggles mute, D toggles Bilibili danmaku, and F toggles fullscreen. Text inputs and sliders keep their native keyboard behavior.
 After pointer seeking, focus returns to the player so shortcuts remain available. Use Tab or `/seek` to focus the seek slider for native keyboard control.
 Menus and dialogs keep their keyboard controls, including Space activation on buttons. Outside these surfaces and inputs, Space controls playback even when a button retains focus after a click or dialog dismissal. Enter still activates focused buttons. Focus uses subtle color feedback without outlines and stays on the current control. Switching tabs or putting the browser in the background does not pause playback. Shared controls and synchronization continue while connected.
