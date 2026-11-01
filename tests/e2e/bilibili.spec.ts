@@ -1,6 +1,6 @@
 import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
-import { closeRoom, invitationLink } from './flows';
+import { closeRoom, invitationLink, observePageKeyboard } from './flows';
 import release from '../../modules/helper/dist/release.json';
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
@@ -436,9 +436,45 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     ).toBe(fullHeight);
   }
   await area.selectOption('0.25');
+  const panelKeys = await observePageKeyboard(page);
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('.command-palette')).toHaveCount(0);
+  // Hover can open a panel while keyboard focus remains in the player beneath it.
+  await danmaku.hover();
+  const playerVolume = page.getByRole('slider', {
+    name: 'Local volume',
+    exact: true,
+  });
+  await playerVolume.focus();
+  await expect(playerVolume).toBeFocused();
+  const volume = await page.locator('#local-volume').inputValue();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('m');
+  await page.keyboard.press('f');
+  await expect(page.locator('#local-volume')).toHaveValue(volume);
+  expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   await page.keyboard.press('Escape');
   await expect(danmaku).toBeFocused();
   await expect(preferences).toHaveCount(0);
+  expect(await panelKeys.evaluate((state) => state.events)).toEqual([]);
+  await panelKeys.evaluate((state) => state.stop());
+  await panelKeys.dispose();
+  await page
+    .getByRole('button', { name: 'Fullscreen locally', exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await danmaku.press('ArrowDown');
+  await expect(preferences).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(preferences).toHaveCount(0);
+  await expect(danmaku).toBeFocused();
+  expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(false);
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',

@@ -46,6 +46,9 @@ For a direct Docker build, pass `--build-arg OVS_BUILD_INFO="$(node scripts/vers
 Press **Cmd/Ctrl + K** or select **Quick actions** beside the OVS logo to search available actions in English or Chinese.
 Use **↑/↓** to select, **Enter** to run, and **Esc** to close. The menu opens and closes immediately and returns focus to your previous control.
 Search stays in the current page. Actions follow room permissions and connection state.
+Open dialogs and menus contain keyboard input, including repeated keys and releases after dismissal.
+In fullscreen, Esc closes the top dialog or menu first; press Esc again to exit fullscreen.
+Chromium may request keyboard-lock permission. If the browser refuses locking or does not provide it on ordinary HTTP, Esc can still exit fullscreen; OVS also dismisses the top overlay.
 
 | Input                                                                                                | Action                                                                                                                             |
 | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |

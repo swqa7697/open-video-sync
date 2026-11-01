@@ -9,6 +9,7 @@ import {
   watch,
 } from 'vue';
 import Icon from '../../components/Icon.vue';
+import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 import { errorMessage, t, translate } from '../../i18n';
 import { searchCommands, type CommandMatch, type QuickCommand } from './search';
 
@@ -86,6 +87,20 @@ function keyboard(event: KeyboardEvent): void {
     if (match) void choose(match);
   }
 }
+function shortcut(event: KeyboardEvent): void {
+  if (
+    !event.defaultPrevented &&
+    !event.isComposing &&
+    event.keyCode !== 229 &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.ctrlKey || event.metaKey) &&
+    event.key.toLowerCase() === 'k'
+  ) {
+    event.preventDefault();
+    if (!event.repeat) emit('close');
+  }
+}
 onMounted(() => {
   trigger =
     document.activeElement instanceof HTMLElement
@@ -103,9 +118,11 @@ onBeforeUnmount(() => {
 <template>
   <dialog
     ref="dialog"
+    v-keyboard-boundary="() => emit('close')"
     class="command-palette"
     :aria-labelledby="`${id}-title`"
     @cancel.prevent="emit('close')"
+    @keydown="shortcut"
     @click="(event) => event.target === dialog && emit('close')"
   >
     <div class="command-heading">

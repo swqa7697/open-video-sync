@@ -36,6 +36,11 @@ import { HelperError } from '../../player/bilibili/bridge';
 import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 import Icon from '../../components/Icon.vue';
 import Modal from '../../components/Modal.vue';
+import {
+  dismissKeyboardOverlay,
+  hasKeyboardOverlay,
+  vKeyboardBoundary,
+} from '../../components/overlay-keyboard';
 import MediaPicker from '../media/MediaPicker.vue';
 import DanmakuControl from './DanmakuControl.vue';
 import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
@@ -61,6 +66,14 @@ const emit = defineEmits<{
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
+type EscapeKeyboard = {
+  lock(keys: string[]): Promise<void>;
+  unlock(): void;
+};
+let escapeKeyboard: EscapeKeyboard | undefined;
+let keyboardGeneration = 0;
+let wasFullscreen = false;
+let exitingFullscreen = false;
 const preferences = readPlayerPreferences();
 const danmakuStatus = ref<Message | ''>(''),
   showDanmaku = ref(true),
@@ -514,11 +527,62 @@ function outsideQuality(event: PointerEvent): void {
 }
 async function fullscreen(): Promise<void> {
   try {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await stage.value?.requestFullscreen();
+    if (document.fullscreenElement) {
+      exitingFullscreen = true;
+      try {
+        await document.exitFullscreen();
+      } catch (reason) {
+        exitingFullscreen = false;
+        throw reason;
+      }
+    } else {
+      exitingFullscreen = false;
+      // Allow overlays to consume Escape before the browser exits fullscreen.
+      const options: FullscreenOptions & { keyboardLock: 'browser' } = {
+        keyboardLock: 'browser',
+      };
+      try {
+        await stage.value?.requestFullscreen(options);
+      } catch (reason) {
+        if (
+          !(reason instanceof DOMException) ||
+          reason.name !== 'NotSupportedError'
+        )
+          throw reason;
+        await stage.value?.requestFullscreen();
+      }
+      const keyboard = (navigator as Navigator & { keyboard?: EscapeKeyboard })
+        .keyboard;
+      if (!disposed && document.fullscreenElement === stage.value && keyboard) {
+        const generation = ++keyboardGeneration;
+        escapeKeyboard = keyboard;
+        try {
+          // Chromium uses a separate, permission-controlled API for Escape.
+          await keyboard.lock(['Escape']);
+        } catch {
+          // Fullscreen remains usable when the browser denies keyboard locking.
+          if (generation === keyboardGeneration) escapeKeyboard = undefined;
+        }
+      }
+    }
   } catch {
     showError(message('player.fullscreenUnavailable'));
   }
+}
+function releaseFullscreenKeyboard(): void {
+  keyboardGeneration++;
+  escapeKeyboard?.unlock();
+  escapeKeyboard = undefined;
+}
+function fullscreenChanged(): void {
+  const active = document.fullscreenElement === stage.value;
+  if (!active) {
+    releaseFullscreenKeyboard();
+    // Browser-owned exits can bypass DOM keys when locking is unavailable/denied.
+    if (wasFullscreen && !exitingFullscreen) dismissKeyboardOverlay();
+    exitingFullscreen = false;
+  }
+  wasFullscreen = active;
 }
 function reloadDanmaku(): void {
   if (adapter instanceof BilibiliAdapter) adapter.reloadDanmaku();
@@ -912,19 +976,28 @@ function seekKeyboard(event: KeyboardEvent): void {
 function keyboard(event: KeyboardEvent): void {
   if (
     event.defaultPrevented ||
+    hasKeyboardOverlay() ||
     document.visibilityState !== 'visible' ||
     event.isComposing ||
     event.keyCode === 229 ||
-    (event.target instanceof Element &&
-      event.target.closest(
-        'input, select, textarea, [contenteditable], [role="menu"], [role="tablist"], dialog, [role="dialog"]'
-      )) ||
     event.altKey ||
     event.ctrlKey ||
     event.metaKey
   )
     return;
   const key = event.key.toLowerCase();
+  if (key === 'escape' && document.fullscreenElement) {
+    event.preventDefault();
+    if (!event.repeat) void fullscreen();
+    return;
+  }
+  if (
+    event.target instanceof Element &&
+    event.target.closest(
+      'input, select, textarea, [contenteditable], [role="menu"], [role="tablist"], dialog, [role="dialog"]'
+    )
+  )
+    return;
   if (key === ' ' || key === 'k') {
     // Keep the focused control in place while suppressing native Space clicks.
     event.preventDefault();
@@ -1159,6 +1232,7 @@ onMounted(() => {
   }, 250);
   document.addEventListener('visibilitychange', visibility);
   document.addEventListener('keydown', keyboard);
+  document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('pointerdown', outsideQuality);
 });
 onUnmounted(() => {
@@ -1169,6 +1243,8 @@ onUnmounted(() => {
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
   document.removeEventListener('keydown', keyboard);
+  document.removeEventListener('fullscreenchange', fullscreenChanged);
+  releaseFullscreenKeyboard();
   document.removeEventListener('pointerdown', outsideQuality);
   transport.dispose();
   clearMedia();
@@ -1502,6 +1578,7 @@ onUnmounted(() => {
         v-if="qualityMenu && streamInfo"
         id="video-quality"
         ref="qualityOptions"
+        v-keyboard-boundary="() => closeQuality(true)"
         class="player-menu quality-menu"
         role="menu"
         :aria-label="t('player.videoQuality')"

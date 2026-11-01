@@ -4,6 +4,22 @@ export interface VideoFile {
   mimeType: string;
   buffer: Buffer;
 }
+export async function observePageKeyboard(page: Page) {
+  return page.evaluateHandle(() => {
+    const events: string[] = [];
+    const record = (event: KeyboardEvent) => {
+      events.push(`${event.type}:${event.key}`);
+    };
+    const types = ['keydown', 'keypress', 'keyup'] as const;
+    for (const type of types) document.addEventListener(type, record);
+    return {
+      events,
+      stop() {
+        for (const type of types) document.removeEventListener(type, record);
+      },
+    };
+  });
+}
 export async function openAppPanel(page: Page, name: string): Promise<void> {
   await page.locator('.app-settings-trigger').click();
   await page.getByRole('menuitem', { name, exact: true }).click();

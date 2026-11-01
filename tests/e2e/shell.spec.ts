@@ -8,6 +8,7 @@ import {
   dismissHelper,
   invitationLink,
   openAppPanel,
+  observePageKeyboard,
   openQuickActions,
   runQuickAction,
   settings,
@@ -147,7 +148,64 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(true);
+    await openQuickActions(page);
+    const paletteKeys = await observePageKeyboard(page);
+    await page.getByRole('combobox').pressSequentially('m f k d ');
+    await page.getByRole('combobox').press('Control+a');
+    await page.getByRole('combobox').press('Backspace');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await page.screenshot({
+      path: testInfo.outputPath('fullscreen-quick-actions-open.png'),
+    });
+    await page.keyboard.down('Escape');
+    await expect(page.locator('.command-palette')).toHaveCount(0);
+    await page.keyboard.down('Escape');
+    await page.keyboard.up('Escape');
+    await page.screenshot({
+      path: testInfo.outputPath('fullscreen-quick-actions-dismissed.png'),
+    });
+    await expect(page.locator('.command-palette')).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    expect(await paletteKeys.evaluate((state) => state.events)).toEqual([]);
+    await paletteKeys.evaluate((state) => state.stop());
+    await paletteKeys.dispose();
+    await expect(page.locator('#local-volume')).toHaveValue('0.6');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused'
+    );
+    await runQuickAction(page, '/appearance');
+    const appearance = page.getByRole('dialog', {
+      name: 'Appearance',
+      exact: true,
+    });
+    await expect(appearance).toBeVisible();
+    const modalKeys = await observePageKeyboard(page);
+    await appearance.getByRole('button', { name: 'Close dialog' }).focus();
+    await page.keyboard.press('m');
     await page.keyboard.press('f');
+    await page.keyboard.press('Control+k');
+    await expect(appearance).toBeVisible();
+    await expect(page.locator('.command-palette')).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath('fullscreen-modal-open.png'),
+    });
+    await page.keyboard.down('Escape');
+    await expect(appearance).toHaveCount(0);
+    await page.keyboard.down('Escape');
+    await page.keyboard.up('Escape');
+    expect(await modalKeys.evaluate((state) => state.events)).toEqual([]);
+    await modalKeys.evaluate((state) => state.stop());
+    await modalKeys.dispose();
+    expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath('fullscreen-modal-dismissed.png'),
+    });
+    await page.getByRole('slider', { name: 'Seek', exact: true }).focus();
+    await page.keyboard.press('Escape');
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(false);
@@ -450,12 +508,39 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(true);
+    // A native exit notification can arrive after the next palette has opened.
+    const deferredExit = await page.evaluateHandle(() => {
+      let pending: Event | undefined;
+      function defer(event: Event): void {
+        if (document.fullscreenElement) return;
+        event.stopImmediatePropagation();
+        pending = event;
+      }
+      document.addEventListener('fullscreenchange', defer, true);
+      return {
+        get pending() {
+          return !!pending;
+        },
+        release() {
+          document.removeEventListener('fullscreenchange', defer, true);
+          if (pending) pending.target?.dispatchEvent(pending);
+        },
+      };
+    });
     await runQuickAction(page, '/fullscreen');
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(false);
+    await openQuickActions(page, '/local');
+    await expect
+      .poll(() => deferredExit.evaluate((state) => state.pending))
+      .toBe(true);
+    await deferredExit.evaluate((state) => state.release());
+    await deferredExit.dispose();
+    await expect(page.getByRole('combobox')).toBeFocused();
     const fileChooser = page.waitForEvent('filechooser');
-    await runQuickAction(page, '/local');
+    await page.getByRole('combobox').press('Enter');
+    await expect(page.locator('.command-palette')).toHaveCount(0);
     await (await fileChooser).setFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
@@ -789,6 +874,9 @@ test('settings groups local preferences and shows packaged versions and source r
   await expect(
     menu.getByRole('menuitem', { name: 'Appearance' })
   ).toBeFocused();
+  const menuKeys = await observePageKeyboard(page);
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('.command-palette')).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
   await expect(menu.getByRole('menuitem', { name: 'Language' })).toBeFocused();
   await page.keyboard.press('End');
@@ -802,6 +890,9 @@ test('settings groups local preferences and shows packaged versions and source r
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
+  expect(await menuKeys.evaluate((state) => state.events)).toEqual([]);
+  await menuKeys.evaluate((state) => state.stop());
+  await menuKeys.dispose();
   await trigger.click();
   await page.getByRole('heading', { name: 'Start a watch party' }).click();
   await expect(menu).toBeHidden();

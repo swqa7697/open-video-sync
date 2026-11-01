@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, useId } from 'vue';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
+import { vKeyboardBoundary } from '../components/overlay-keyboard';
 import AppearancePanel from './AppearancePanel.vue';
 import LanguagePanel from './LanguagePanel.vue';
 import AboutPanel from './AboutPanel.vue';
@@ -31,6 +32,10 @@ function positionMenu(): void {
 }
 function closeMenu(): void {
   menu.value?.hidePopover();
+}
+function dismissMenu(): void {
+  closeMenu();
+  trigger.value?.focus({ preventScroll: true });
 }
 function openMenu(last = false): void {
   menu.value?.showPopover();
@@ -100,6 +105,7 @@ onUnmounted(() => window.removeEventListener('resize', closeMenu));
   <div
     :id="menuId"
     ref="menu"
+    v-keyboard-boundary="dismissMenu"
     popover
     role="menu"
     class="app-menu"

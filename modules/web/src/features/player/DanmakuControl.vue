@@ -2,6 +2,7 @@
 import { nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue';
 import { t } from '../../i18n';
 import Icon from '../../components/Icon.vue';
+import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 
 const props = defineProps<{
   open: boolean;
@@ -169,7 +170,6 @@ onUnmounted(() => {
     @pointerenter="enter"
     @pointerleave="leave"
     @focusout="focusOut"
-    @keydown.esc.stop.prevent="close(true)"
   >
     <button
       ref="trigger"
@@ -196,6 +196,7 @@ onUnmounted(() => {
       v-if="open"
       :id="panelId"
       ref="panel"
+      v-keyboard-boundary="() => close(true)"
       class="player-menu danmaku-menu"
       role="dialog"
       :aria-labelledby="titleId"

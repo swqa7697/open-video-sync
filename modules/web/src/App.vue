@@ -4,6 +4,10 @@ import { useLanguageStore } from './stores/language';
 import AppSettings from './features/AppSettings.vue';
 import HomeIntro from './features/HomeIntro.vue';
 import CommandPalette from './features/commands/CommandPalette.vue';
+import {
+  hasKeyboardOverlay,
+  useOverlayKeyboard,
+} from './components/overlay-keyboard';
 import { usePreferenceCommands } from './features/commands/preferences';
 import type { QuickCommand, VideoSelection } from './features/commands/search';
 
@@ -556,14 +560,12 @@ async function confirmLeave(): Promise<void> {
   const route = destination && /^\/rooms\/([a-f0-9]{32})$/.exec(destination);
   if (route) await open(route[1]!, true);
 }
-function keyboardInput(): void {
-  document.documentElement.dataset.input = 'keyboard';
-}
+useOverlayKeyboard();
 function pointerInput(): void {
   document.documentElement.dataset.input = 'pointer';
 }
 function togglePalette(): void {
-  if (!paletteOpen.value && document.querySelector('dialog[open]')) return;
+  if (!paletteOpen.value && hasKeyboardOverlay()) return;
   document.querySelector<HTMLElement>(':popover-open')?.hidePopover();
   paletteOpen.value = !paletteOpen.value;
 }
@@ -578,13 +580,12 @@ function commandShortcut(event: KeyboardEvent): void {
     event.key.toLowerCase() !== 'k'
   )
     return;
-  if (!paletteOpen.value && document.querySelector('dialog[open]')) return;
+  if (hasKeyboardOverlay()) return;
   event.preventDefault();
   if (event.repeat) return;
   togglePalette();
 }
 onMounted(() => {
-  document.addEventListener('keydown', keyboardInput, true);
   document.addEventListener('keydown', commandShortcut);
   document.addEventListener('pointerdown', pointerInput, true);
   recheck();
@@ -602,7 +603,6 @@ onMounted(() => {
 });
 onUnmounted(() => {
   stopLanguage();
-  document.removeEventListener('keydown', keyboardInput, true);
   document.removeEventListener('keydown', commandShortcut);
   document.removeEventListener('pointerdown', pointerInput, true);
   controller.abort();

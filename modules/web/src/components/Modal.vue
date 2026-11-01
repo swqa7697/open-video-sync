@@ -3,6 +3,7 @@ import { t } from '../i18n';
 
 import { nextTick, onMounted, onBeforeUnmount, ref, useId } from 'vue';
 import Icon from './Icon.vue';
+import { vKeyboardBoundary } from './overlay-keyboard';
 defineProps<{ title: string }>();
 const emit = defineEmits<{ close: [] }>();
 const dialog = ref<HTMLDialogElement>();
@@ -72,6 +73,7 @@ onBeforeUnmount(() => {
 <template>
   <dialog
     ref="dialog"
+    v-keyboard-boundary="close"
     class="modal"
     :aria-labelledby="titleId"
     @cancel.prevent="close"
