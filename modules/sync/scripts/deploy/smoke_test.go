@@ -192,13 +192,7 @@ func TestDeploymentSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image := "ovs:deploy-" + name
-	docker("tag", baseImage, image)
-	t.Cleanup(func() {
-		cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
-		defer stop()
-		_, _ = output(cleanup, "docker", "image", "rm", image)
-	})
+	image := baseImage
 	if err := transferImages(ctx, target, []string{image, caddyImage}, "linux/"+runtime.GOARCH, p); err != nil {
 		t.Fatal(err)
 	}
@@ -285,29 +279,41 @@ func TestDeploymentSmoke(t *testing.T) {
 	for _, key := range []string{"URL", "PROXY", "PROXY_NETWORK", "TRUSTED_PROXIES", "PROXY_SUBNET"} {
 		t.Setenv(key, "")
 	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	deployErr := runTarget(ctx, "deploy", target, httpClient)
-	if deployErr == nil {
-		deployErr = runTarget(ctx, "status", target, httpClient)
-	}
-	if err := os.Chdir(oldDir); err != nil {
-		t.Fatal(err)
-	}
-	if deployErr != nil {
-		t.Fatal("full local deployment flow:", deployErr)
-	}
-	if got, _, err := client.Me(ctx); err != nil || got != identity {
-		t.Fatalf("full deployment lost identity: %v", err)
-	}
-	s = open("")
-	fullImage := call(request{Action: "status"}).Settings.Image
+	customImage := "localhost:5000/ovs-smoke:" + name
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
 		defer stop()
-		_, _ = output(cleanup, "docker", "image", "rm", fullImage)
+		_, _ = output(cleanup, "docker", "image", "rm", customImage)
 	})
+	for _, selectedImage := range []string{baseImage, customImage} {
+		t.Setenv("IMAGE", selectedImage)
+		if err := os.Chdir(root); err != nil {
+			t.Fatal(err)
+		}
+		deployErr := runTarget(ctx, "deploy", target, httpClient)
+		if deployErr == nil {
+			deployErr = runTarget(ctx, "status", target, httpClient)
+		}
+		if err := os.Chdir(oldDir); err != nil {
+			t.Fatal(err)
+		}
+		if deployErr != nil {
+			t.Fatalf("full local deployment flow for %s: %v", selectedImage, deployErr)
+		}
+		if got, _, err := client.Me(ctx); err != nil || got != identity {
+			t.Fatalf("full deployment lost identity: %v", err)
+		}
+		s = open("")
+		if got := call(request{Action: "status"}).Settings.Image; got != selectedImage {
+			t.Fatalf("deployed image = %q, want %q", got, selectedImage)
+		}
+		runningImage, err := target.output(ctx, "docker inspect --format '{{.Config.Image}}' $(docker ps -q --filter label=com.docker.compose.service=ovs)")
+		if err != nil || runningImage != selectedImage {
+			t.Fatalf("running image = %q, want %q: %v", runningImage, selectedImage, err)
+		}
+		s.close()
+	}
+	s = open("")
 	call(request{Action: "stop"})
 	if _, err := s.call(request{Action: "status"}); err == nil {
 		t.Fatal("stopped service reported healthy")

@@ -57,13 +57,14 @@ func TestComposeExposure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.Image, c.Release = "ovs:deploy-test", "test"
+		c.Image, c.Release = "ovs:s1.2.3-w4.5.6-h7.8.9", "test"
 		b, err := composeConfig(c, "/srv/ovs")
 		if err != nil {
 			t.Fatal(err)
 		}
 		var doc struct {
 			Services map[string]struct {
+				Image       string
 				Ports       []json.RawMessage
 				Environment map[string]string
 				Build       any
@@ -77,7 +78,7 @@ func TestComposeExposure(t *testing.T) {
 			t.Fatal(err)
 		}
 		ovs := doc.Services["ovs"]
-		if ovs.Build != nil || ovs.Environment["OVS_PUBLIC_ORIGIN"] != c.URL {
+		if ovs.Image != c.Image || ovs.Build != nil || ovs.Environment["OVS_PUBLIC_ORIGIN"] != c.URL {
 			t.Fatalf("incorrect deployment service: %s", b)
 		}
 		if (len(ovs.Ports) == 0) != (c.managedTLS() || c.Network != "") {

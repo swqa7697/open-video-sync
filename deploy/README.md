@@ -21,7 +21,7 @@ alias or `user@host`. Use SSH config for keys, ports, and jump hosts. Deployment
 uses noninteractive SSH authentication and preserves host-key checks; establish
 the trusted SSH connection before deploying. No SSH password is stored.
 
-The local machine needs Go, Make, Docker 28 or later with Buildx, and OpenSSH. The remote
+The local machine needs Go, Node, Make, Docker 28 or later with Buildx, and OpenSSH. The remote
 machine needs Linux amd64 or arm64, Docker Engine and CLI, a normal POSIX login
 environment, and permission to use Docker without an interactive sudo prompt.
 Docker must run on that remote host: the helper checks host ports and mounts
@@ -33,6 +33,10 @@ and streams the image through SSH to `docker image load`. Managed HTTPS also
 transfers the pinned Caddy image. The remote machine does not need a registry
 account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
 needs access to build dependencies, images, and Compose release downloads.
+
+Deployment uses the same `IMAGE` as `make image`: `ovs:s<sync>-w<web>-h<helper>`,
+with versions from `versions.toml`. Set `IMAGE=my-ovs:testing` to build, transfer,
+and run a custom tag.
 
 Deployment shows numbered steps, completion or failure, elapsed time, and remote
 substeps through configuration validation, container replacement, and health checks.
@@ -60,14 +64,16 @@ Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
 | ----------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
 | `HOST`            | Required                               | SSH destination                                                                |
 | `URL`             | Saved value                            | Public origin; required for the first deployment                               |
+| `IMAGE`           | `ovs:s<sync>-w<web>-h<helper>`         | Application image tag built locally and used remotely                          |
 | `DEPLOY_DIR`      | Remote `~/.local/share/ovs`            | Absolute remote configuration directory                                        |
 | `PROXY`           | Saved value, initially `auto`          | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
 | `PROXY_NETWORK`   | Saved value                            | Existing Docker network for an external container proxy                        |
 | `TRUSTED_PROXIES` | Saved value                            | Trusted proxy CIDRs; required for an external container proxy                  |
 | `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps                |
 
-Saved settings are reused when a variable is omitted. Explicitly passing a new
-`URL` changes the public origin. Choose the final origin before inviting people:
+Saved connection and proxy settings are reused when a variable is omitted. `IMAGE`
+uses the current local versions or an explicit override on each deployment.
+Explicitly passing a new `URL` changes the public origin. Choose the final origin before inviting people:
 an origin change affects browser identities, invitation links, and the helper's
 installation scope. Returning to `PROXY=auto` clears external network/trust settings.
 
@@ -129,14 +135,15 @@ the last deployment that passed public checks. A retry uses active settings so
 operators can diagnose and repair the attempted release. Configuration and image
 preparation failures leave the running application unchanged.
 
-Images receive unique tags. The tool verifies execution configuration and layer
-digests after transfer, then records the remote image IDs. This supports both
+The tool verifies execution configuration and layer digests after transfer, then
+records the remote image IDs. This supports both
 classic and containerd Docker image stores, whose image IDs can differ. Once
 images and configurations are valid, OVS stops before the replacement starts.
 Startup or migration failures preserve the data and report an error. There is no
-automatic image downgrade, database rollback, or backup command. Old image tags
-and release configurations remain available for diagnosis; remove obsolete images
-manually only after checking that no deployment uses them.
+automatic image downgrade, database rollback, or backup command. Rebuilding the
+same tag replaces its image reference. Release configurations and recorded image
+IDs remain available for diagnosis; remove obsolete images manually only after
+checking that no deployment uses them.
 
 The tool waits up to five minutes for public readiness and UI checks. HTTPS must
 pass normal trust-chain, host, and expiry validation; redirects are not accepted.

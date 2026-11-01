@@ -131,6 +131,10 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	if err := validateHost(target.host); err != nil {
 		return err
 	}
+	image := os.Getenv("IMAGE")
+	if action == "deploy" && image == "" {
+		return errors.New("IMAGE is required; use make deploy to select the application image tag")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
 	p := newProgress(action, target.host)
@@ -253,8 +257,9 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	} else {
 		p.note("Reuse compatible remote Compose; download and installation skipped.")
 	}
-	c.Release, c.Image = id, "ovs:deploy-"+id
+	c.Release, c.Image = id, image
 	p.begin("Build OVS image for linux/" + arch)
+	p.note("Image: " + c.Image)
 	channel := os.Getenv("CHANNEL")
 	if channel == "" {
 		channel = "dev"

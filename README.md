@@ -250,6 +250,7 @@ Run `make help` to list the available targets.
 `make build` accepts `CHANNEL=dev`, `VERBOSE=1`, and `CLEAN=1`. `CLEAN=1` runs `make clean` first, including deletion of local `data/`. `versions.toml` supplies all module release versions; `versions.sync` selects the Go binary version.
 Stop the development server before running `make clean`, `make uninstall`, or `make build CLEAN=1`. These commands reset the repository's `data/` directory, including its database and ownership lock. They preserve custom `OVS_DATA_DIR` locations, `.misc/`, `.tmp/`, dependency lockfiles, global caches, Docker resources, and system tools. Frontend tool caches inside `node_modules/` remain with `make clean` and are removed with `make uninstall`.
 Container targets default to `ovs:s<sync>-w<web>-h<helper>`, using all three module versions, and accept an `IMAGE` override. The prefixes `s`, `w`, and `h` identify sync, web, and helper. `node scripts/versions.mjs image-tag` prints the combined tag without the `ovs:` prefix. `proxy-smoke` also accepts `CADDY_IMAGE=caddy:2`.
+`make deploy` builds, transfers, and runs the same `IMAGE` tag. Override it with `make deploy HOST=ovs-prod IMAGE=my-ovs:testing`.
 
 Make commands and lifecycle scripts use target labels and terminal colors. Set `NO_COLOR=1` to disable colors; redirected logs remain plain.
 Use `VERBOSE=1` to show recipe commands and enable tracing in installation and build scripts.
@@ -341,7 +342,7 @@ Absent `/api`, `/health`, and `/ws` routes return `404`; they never receive SPA 
 
 For remote deployment, the server needs Linux, Docker Engine/CLI, and SSH access
 with permission to run Docker. The deployment command prepares Compose and optional
-Caddy automatically. The local machine uses the normal Go, Make, Docker Buildx, and
+Caddy automatically. The local machine uses the normal Go, Node, Make, Docker Buildx, and
 SSH development tools. No registry account or remote source checkout is needed.
 
 ```bash

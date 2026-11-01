@@ -25,7 +25,7 @@ func main() {
 			err = runLocal(ctx, os.Args[1])
 		}
 	} else {
-		err = fmt.Errorf("usage: deploy {deploy|status|logs|restart|stop}; configure HOST, URL, DEPLOY_DIR, PROXY, PROXY_NETWORK, TRUSTED_PROXIES, PROXY_SUBNET through environment")
+		err = fmt.Errorf("usage: deploy {deploy|status|logs|restart|stop}; configure HOST, URL, IMAGE, DEPLOY_DIR, PROXY, PROXY_NETWORK, TRUSTED_PROXIES, PROXY_SUBNET through environment")
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deploy:", err)

@@ -571,7 +571,7 @@ func (r *remote) ensureResources(c *settings) error {
 }
 
 func (r *remote) activate(c, previous settings) error {
-	if !safeName.MatchString(c.Release) || !strings.HasPrefix(c.Image, "ovs:deploy-") || strings.ContainsAny(c.Image, " \n\r\t$") {
+	if !safeName.MatchString(c.Release) || c.Image == "" || strings.HasPrefix(c.Image, "-") || strings.ContainsAny(c.Image, " \n\r\t$\x00") {
 		return errors.New("invalid release image or identifier")
 	}
 	if !r.findCompose() {
