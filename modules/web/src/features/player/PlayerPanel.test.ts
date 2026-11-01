@@ -59,6 +59,7 @@ function fakeMedia(video: HTMLVideoElement) {
     readyState: 4,
     paused: true,
     seeking: false,
+    holdSeek: false,
     blocked: false,
     interrupted: 0,
   };
@@ -77,6 +78,8 @@ function fakeMedia(video: HTMLVideoElement) {
         media.seeking = true;
         media.readyState = 1;
         setTimeout(() => {
+          video.dispatchEvent(new Event('seeking'));
+          if (media.holdSeek) return;
           media.seeking = false;
           media.readyState = 2;
           video.dispatchEvent(new Event('seeked'));
@@ -680,6 +683,109 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   ).toBe('buffering');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
+});
+test('a playing seek reports buffering until the room can wait and resume without a manual pause', async () => {
+  vi.useFakeTimers();
+  const { wrapper, socket, video, media } = await join('playing');
+  try {
+    await select(wrapper, video);
+    for (const raw of [...socket.sent]) {
+      const ping = JSON.parse(raw);
+      if (ping.type !== 'clock.ping') continue;
+      const sent = ping.payload.clientSendMs;
+      socket.onmessage?.({
+        data: JSON.stringify({
+          v: 2,
+          type: 'clock.pong',
+          requestId: ping.requestId,
+          payload: {
+            clientSendMs: sent,
+            serverReceiveMs: sent,
+            serverSendMs: sent,
+          },
+        }),
+      });
+    }
+    const playing = {
+      ...room('playing', 2),
+      settings: { ...roomFixture.settings, controllers: 'everyone' },
+      playback: {
+        phase: 'playing',
+        positionMs: 0,
+        anchorServerMs: 0,
+        desiredPlaying: true,
+      },
+    };
+    socket.frame('room.snapshot', playing);
+    await flushPromises();
+    expect(video.paused).toBe(false);
+    media.holdSeek = true;
+    await wrapper.get('#seek-seconds').setValue(5);
+    const command = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .findLast((frame) => frame.type === 'playback.command');
+    socket.frame('command.result', {
+      commandId: command.commandId,
+      accepted: true,
+      revision: 3,
+      error: null,
+    });
+    socket.frame('room.snapshot', {
+      ...playing,
+      revision: 3,
+      playback: { ...playing.playback, positionMs: 5000 },
+    });
+    await vi.advanceTimersByTimeAsync(750);
+    expect(video.seeking).toBe(true);
+    expect(reported(socket).at(-1)).toBe('buffering');
+    const waiting = {
+      ...playing,
+      revision: 4,
+      barrier: {
+        ...room('waiting', 4).barrier!,
+        reason: 'buffering',
+        targetPositionMs: 5750,
+      },
+      playback: {
+        ...playing.playback,
+        phase: 'waiting',
+        positionMs: 5750,
+        anchorServerMs: 750,
+      },
+    };
+    socket.frame('room.snapshot', waiting);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(video.paused).toBe(true);
+    expect(video.currentTime).toBe(5.75);
+    media.seeking = false;
+    media.readyState = 4;
+    video.dispatchEvent(new Event('seeked'));
+    video.dispatchEvent(new Event('canplay'));
+    await flushPromises();
+    expect(reported(socket).at(-1)).toBe('ready');
+    await vi.advanceTimersByTimeAsync(1000);
+    socket.frame('room.snapshot', {
+      ...playing,
+      revision: 5,
+      playback: {
+        ...playing.playback,
+        positionMs: 5750,
+        anchorServerMs: performance.now(),
+      },
+    });
+    await flushPromises();
+    expect(video.paused).toBe(false);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    const commands = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'playback.command');
+    expect(commands.map((frame) => frame.payload)).toEqual([
+      { action: 'seek', positionMs: 5000 },
+    ]);
+  } finally {
+    wrapper.unmount();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 });
 test('an interrupted Enable playback shows no failure and keeps focus in the player', async () => {
   const { wrapper, socket, video, media } = await join('waiting');

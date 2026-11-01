@@ -267,6 +267,22 @@ test('readiness needs a usable clock estimate, and a degraded one does not block
     reportedReadiness({
       ...base,
       estimate: { offsetMs: 0, uncertaintyMs: 40 },
+      seeking: true,
+      status: 'buffering',
+    })
+  ).toBe('buffering');
+  expect(
+    reportedReadiness({
+      ...base,
+      estimate: undefined,
+      seeking: true,
+      status: 'buffering',
+    })
+  ).toBe('loading');
+  expect(
+    reportedReadiness({
+      ...base,
+      estimate: { offsetMs: 0, uncertaintyMs: 40 },
       matched: false,
     })
   ).toBe('mismatch');

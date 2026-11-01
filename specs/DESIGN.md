@@ -210,7 +210,7 @@ A new epoch requires new user intent. Never persist command receipts or queue co
 
 Use browser `performance.now()` and server monotonic time. Keep the existing four-timestamp clock exchange and bounded low-RTT sample window.
 Reset estimates on reconnect, epoch change, and resume from suspension. Track uncertainty without claiming it bounds actual playback skew.
-A client may show the room while calibrating, but reports readiness as loading until it has a usable estimate and is not seeking.
+A client may show the room while calibrating, but reports loading until it has a usable clock estimate. While seeking, report buffering when playable data is missing; otherwise report loading. Neither status is ready, but buffering lets sustained seek delays trigger the room's buffering wait.
 Sample player position locally every 250 ms while visible and playing. No diagnostic observation message goes to the server.
 
 Use internal defaults: 100-ms soft drift, 750-ms hard drift, sustained-error filtering, and rate correction between 0.95 and 1.05 when supported.

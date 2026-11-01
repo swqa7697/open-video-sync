@@ -197,6 +197,9 @@ export function reportedReadiness(input: {
 }): ReadinessStatus {
   if (input.pending) return 'loading';
   if (!input.matched) return 'mismatch';
-  if (!input.estimate || input.seeking) return 'loading';
+  if (!input.estimate) return 'loading';
+  // A streamed seek can wait for data before seeked. Keep that buffering signal
+  // so the room can freeze its moving target and resume after data arrives.
+  if (input.seeking && input.status !== 'buffering') return 'loading';
   return input.status;
 }
