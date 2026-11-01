@@ -55,9 +55,8 @@ export class BilibiliAdapter implements PlayerAdapter {
       'seeking',
       () => {
         this.seekGeneration++;
-        this.dmRequest++;
-        this.dmSegment = 0;
-        this.danmaku.clear();
+        this.danmaku.reset();
+        void this.loadDanmaku(true);
       },
       { signal: this.lifetime.signal }
     );
@@ -469,13 +468,15 @@ export class BilibiliAdapter implements PlayerAdapter {
       this.pumping = false;
     }
   }
-  private async loadDanmaku(): Promise<void> {
+  private async loadDanmaku(seeking = false): Promise<void> {
     if (!this.info || this.disposed) return;
     const segment = Math.min(
       Math.ceil(this.info.duration / 360),
       Math.floor(this.video.currentTime / 360) + 1
     );
+    // A same-segment seek reuses both loaded comments and an in-flight reply.
     if (segment === this.dmSegment) return;
+    if (seeking) this.danmaku.clear();
     this.dmSegment = segment;
     const request = ++this.dmRequest;
     this.onDanmaku(message('player.danmakuLoading'));

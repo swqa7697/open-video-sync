@@ -211,12 +211,8 @@ function fixture(
     }
   );
   const onError = vi.fn();
-  const adapter = new BilibiliAdapter(
-    video,
-    document.createElement('div'),
-    () => {},
-    onError
-  );
+  const overlay = document.createElement('div');
+  const adapter = new BilibiliAdapter(video, overlay, () => {}, onError);
   const load = () =>
     adapter.load('BV1hf4y1N75G', 1, new AbortController().signal, 120);
   const until = async (done: () => boolean) => {
@@ -227,6 +223,7 @@ function fixture(
   return {
     adapter,
     video,
+    overlay,
     buffers,
     ranges,
     segments,
@@ -243,6 +240,82 @@ function fixture(
     },
   };
 }
+
+test('paused seeks reuse the current danmaku segment and reject replies from an abandoned segment', async () => {
+  const f = fixture(Array<number>(73).fill(1024));
+  Object.defineProperties(f.overlay, {
+    clientWidth: { value: 800 },
+    clientHeight: { value: 304 },
+  });
+  const comments = [1, 4, 5].map((mode) => ({
+    time: 0,
+    mode,
+    color: 0xffffff,
+    text: `Mode ${mode}`,
+  }));
+  const calls: number[] = [];
+  let release: ((value: unknown) => void) | undefined;
+  const bridge = vi.spyOn(HelperBridge.prototype, 'call'),
+    original = bridge.getMockImplementation()!;
+  bridge.mockImplementation((op, args) => {
+    if (op !== 'danmaku') return original(op, args);
+    const segment = Number(args?.segment);
+    calls.push(segment);
+    if (segment === 1) return Promise.resolve({ comments });
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  });
+  const seek = async (time: number) => {
+    const seeking = f.adapter.seek(time * 1000);
+    f.video.dispatchEvent(new Event('seeking'));
+    f.video.dispatchEvent(new Event('seeked'));
+    await seeking;
+    await vi.advanceTimersByTimeAsync(16);
+  };
+  try {
+    await f.load();
+    f.video.currentTime = 1;
+    await vi.advanceTimersByTimeAsync(16);
+    expect(f.overlay.children).toHaveLength(3);
+    await f.adapter.pause();
+    // A pause can correct the native position to the room's frozen timeline.
+    for (const time of [1.15, 0.95]) {
+      await seek(time);
+      expect(f.overlay.textContent).toBe('Mode 1Mode 4Mode 5');
+    }
+    const paused = f.overlay.innerHTML;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.overlay.innerHTML).toBe(paused);
+    expect(calls).toEqual([1]);
+
+    await seek(361);
+    expect(f.overlay.children).toHaveLength(0);
+    await seek(361.2);
+    release!({
+      comments: [{ ...comments[0], time: 360, text: 'Second segment' }],
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(f.overlay.textContent).toBe('Second segment');
+    expect(calls).toEqual([1, 2]);
+
+    await seek(1);
+    await seek(361);
+    await seek(1);
+    release!({
+      comments: [{ ...comments[0], time: 1, text: 'Stale segment' }],
+    });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(f.overlay.textContent).toBe('Mode 1Mode 4Mode 5');
+    f.adapter.reloadDanmaku();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(calls).toEqual([1, 2, 1, 2, 1, 1]);
+    expect(f.overlay.textContent).toBe('Mode 1Mode 4Mode 5');
+    expect(f.onError).not.toHaveBeenCalled();
+  } finally {
+    f.adapter.dispose();
+  }
+});
 
 test.each(['hidden at start', 'hidden during opening', 'opens while hidden'])(
   '%s does not fail deferred media initialization and resumes on return',

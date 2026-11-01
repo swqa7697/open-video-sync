@@ -72,7 +72,8 @@ export class DanmakuRenderer {
   clear(): void {
     this.comments = [];
   }
-  private reset(): void {
+  // Rebuild at the observed media time while retaining the loaded segment.
+  reset(): void {
     this.active = [];
     this.overlay.replaceChildren();
     this.cursor = 0;
