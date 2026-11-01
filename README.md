@@ -133,11 +133,12 @@ Return to OVS and select **Reload page** to activate the installed script. Updat
 Automatic remote code updates remain disabled. A changed OVS origin needs a helper scoped to that origin.
 The bundled `modules/helper/dist/release.json` supplies the helper release version from root `versions.toml` and a fingerprint of the built script. OVS also detects outdated helpers when a development update keeps the same release version. An outdated open application asks for a refresh before recommending a mismatched helper.
 For development with frontend hot reload, install the helper from the Vite page. Vite supplies a helper scoped to that exact development origin.
-After updating an existing development checkout, reinstall the instance helper and reload to use the new episode-list metadata.
+After updating an existing development checkout, update the instance helper and reload so its build matches the frontend.
 
 The helper runs only on the configured OVS origin, never on Bilibili pages or frames. Each profile uses its own platform access.
 Sign in on Bilibili in that profile when required. Access failures leave only that participant unready.
 Provider responses and signed media locations stay in helper memory. The room receives only `{bvid,cid,part,durationMs}`.
+When a track's primary address is unsupported, the helper selects a permitted HTTPS CDN backup from the platform response. If none is supported, OVS reports an incompatible media address.
 The page requests bounded byte ranges through opaque handles. It cannot supply URLs, headers, methods, or cookies.
 
 The player lists the returned playable AVC qualities and requests the selected quality through the helper.

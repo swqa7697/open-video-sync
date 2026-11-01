@@ -55,6 +55,13 @@ test('a player accepts only its exact channel and disposal rejects pending repli
     ['access-expired', 'access_denied', false, 'refused access'],
     ['unsupported-codec', 'unsupported', false, 'cannot decode'],
     ['http-503', 'error', false, 'Could not reach Bilibili'],
+    [
+      'destination-denied',
+      'error',
+      false,
+      'media address this helper cannot use',
+    ],
+    ['redirect-denied', 'error', false, 'media address this helper cannot use'],
     ['helper-incompatible', 'error', true, 'Update the OVS Bilibili helper'],
     ['segment-limit', 'error', false, 'cannot use'],
   ] as const) {

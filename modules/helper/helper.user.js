@@ -70,6 +70,21 @@
       throw Error('destination-denied');
     return u.href;
   }
+  function mediaURL(track) {
+    const backups = track.backupUrl || track.backup_url;
+    for (const raw of [
+      track.baseUrl || track.base_url,
+      ...(Array.isArray(backups) ? backups : []),
+    ]) {
+      if (typeof raw !== 'string') continue;
+      try {
+        return safeURL(raw, true);
+      } catch {
+        // Provider locations must pass the same checks before any request.
+      }
+    }
+    throw Error('destination-denied');
+  }
   function request(
     url,
     { range, binary = false, limit = 1024 * 1024, media = false } = {}
@@ -304,7 +319,7 @@
     )
       throw Error('invalid-media');
     const tracks = [video, audio].map((t) => ({
-      url: safeURL(t.baseUrl || t.base_url, true),
+      url: mediaURL(t),
       id: t.id,
       codec: t.codecs,
       mime: t.mimeType || t.mime_type,

@@ -42,6 +42,7 @@ function fixture(options = {}) {
     mimeType: 'video/mp4',
     baseUrl: `https://cdn.bilivideo.com/upgcxcode/fixture.m4s?deadline=1&upsig=${CANARY}`,
     SegmentBase: { Initialization: '0-31', indexRange: '32-63' },
+    ...options.track,
   };
   const play = {
     timelength: 100000,
@@ -412,6 +413,74 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   });
   assert.equal(unavailable.value.quality, 64);
 });
+test('unapproved primary media locations use reviewed backups without exposing URLs', async () => {
+  const backup = `https://backup.bilivideo.com/upgcxcode/fixture.m4s?upsig=${CANARY}`;
+  const denied = [
+    `https://peer.mcdn.bilivideo.cn:4483/upgcxcode/${CANARY}`,
+    `http://cdn.bilivideo.com/upgcxcode/${CANARY}`,
+    `https://cdn.bilivideo.com:4483/upgcxcode/${CANARY}`,
+    `https://bilivideo.com.evil.invalid/upgcxcode/${CANARY}`,
+    `https://user:${CANARY}@cdn.bilivideo.com/upgcxcode/fixture.m4s`,
+    `https://cdn.bilivideo.com/other/${CANARY}`,
+    `https://cdn.bilivideo.com/upgcxcode/fixture.m4s#${CANARY}`,
+    `not-a-url-${CANARY}`,
+  ];
+  for (const [index, primary] of denied.entries()) {
+    const selected =
+      index % 2
+        ? backup
+        : `https://upos-hz-mirrorakam.akamaized.net/upgcxcode/fixture.m4s?upsig=${CANARY}`;
+    // Both provider naming styles occur in DASH responses.
+    const track =
+      index % 2
+        ? {
+            baseUrl: undefined,
+            base_url: primary,
+            backup_url: [...denied, selected],
+          }
+        : { baseUrl: primary, backupUrl: [...denied, selected] };
+    const f = fixture({ track }),
+      opened = await f.open();
+    assert.equal(opened.ok, true, primary);
+    for (const track of [0, 1]) {
+      const data = await f.call('bytes', {
+        handle: opened.value.handle,
+        track,
+        offset: 0,
+        length: 32,
+        generation: 1,
+      });
+      assert.equal(data.ok, true);
+      assert.equal(atob(data.value.base64).length, 32);
+    }
+    assert.deepEqual(
+      f.requests.filter((r) => r.headers.Range).map((r) => r.url),
+      [selected, selected]
+    );
+    assert(!JSON.stringify(f.replies).includes(CANARY));
+    assert(!JSON.stringify(f.replies).includes('https://'));
+  }
+  const preferred = fixture({ track: { backupUrl: [backup] } });
+  const opened = await preferred.open();
+  await preferred.call('bytes', {
+    handle: opened.value.handle,
+    track: 0,
+    offset: 0,
+    length: 32,
+    generation: 1,
+  });
+  assert.equal(
+    new URL(preferred.requests.at(-1).url).hostname,
+    'cdn.bilivideo.com'
+  );
+  for (const backupUrl of [denied, 'invalid-backup-list', [null, 123, {}]]) {
+    const f = fixture({ track: { baseUrl: denied[0], backupUrl } });
+    const result = await f.open();
+    assert.equal(result.error, 'destination-denied');
+    assert.equal(f.requests.filter((r) => r.headers.Range).length, 0);
+    assert(!JSON.stringify(result).includes(CANARY));
+  }
+});
 test('provider failures and restricted access cannot leak raw canaries', async () => {
   for (const options of [
     { badJSON: true },
@@ -429,7 +498,14 @@ test('provider failures and restricted access cannot leak raw canaries', async (
   assert.equal((await f.call('session')).value.loggedIn, false);
 });
 test('expired ranges refresh once through the same identity and return media bytes', async () => {
-  const f = fixture({ expired: true }),
+  const backup = `https://backup.bilivideo.com/upgcxcode/fixture.m4s?upsig=${CANARY}`;
+  const f = fixture({
+      expired: true,
+      track: {
+        baseUrl: `https://peer.mcdn.bilivideo.cn:4483/upgcxcode/${CANARY}`,
+        backupUrl: [backup],
+      },
+    }),
     open = await f.open();
   const r = await f.call('bytes', {
     handle: open.value.handle,
@@ -440,6 +516,10 @@ test('expired ranges refresh once through the same identity and return media byt
   });
   assert.equal(r.ok, true);
   assert.equal((await f.call('metrics')).value.refreshes, 1);
+  assert.deepEqual(
+    f.requests.filter((r) => r.headers.Range).map((r) => r.url),
+    [backup, backup]
+  );
   assert(!JSON.stringify(f.replies).includes(CANARY));
 });
 test('oversized streams and unapproved final destinations fail without exposing bytes', async () => {

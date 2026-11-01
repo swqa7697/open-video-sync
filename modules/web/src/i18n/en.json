@@ -258,6 +258,7 @@
     "errorRate": "Bilibili or the helper is limiting requests. Wait a minute, then load the video again.",
     "errorUnavailable": "This Bilibili video or part is unavailable to this browser.",
     "errorChanged": "The video changed or loading was interrupted. Load the video again.",
+    "errorDestination": "Bilibili returned a media address this helper cannot use. Try another video, or check for an OVS helper update.",
     "errorNetwork": "Could not reach Bilibili from this browser. Check network access and Tampermonkey permissions for the helper.",
     "errorData": "Bilibili returned data this player cannot use. Load the video again, or try another part or browser."
   },

@@ -65,8 +65,12 @@ const groups: FailureGroup[] = [
     status: 'error',
   },
   {
-    codes:
-      /^(network-or-permission-denied|request-timeout|destination-denied|redirect-denied|http-5[0-9]{2})$/,
+    codes: /^(destination-denied|redirect-denied)$/,
+    message: message('helper.errorDestination'),
+    status: 'error',
+  },
+  {
+    codes: /^(network-or-permission-denied|request-timeout|http-5[0-9]{2})$/,
     message: message('helper.errorNetwork'),
     status: 'error',
   },
