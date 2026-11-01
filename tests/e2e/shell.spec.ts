@@ -4,6 +4,7 @@ import {
   appContext,
   expect,
   test,
+  type Page,
 } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import {
@@ -18,6 +19,44 @@ import {
   settings,
 } from './flows';
 
+async function expectHeaderFits(page: Page): Promise<void> {
+  const header = page.getByRole('banner');
+  const headerBounds = (await header.boundingBox())!;
+  const actions = await header.locator('a, button').evaluateAll((nodes) =>
+    nodes
+      .map((node) => {
+        const bounds = node.getBoundingClientRect();
+        return {
+          left: bounds.left,
+          right: bounds.right,
+          top: bounds.top,
+          bottom: bounds.bottom,
+          width: bounds.width,
+        };
+      })
+      .filter((bounds) => bounds.width > 0)
+  );
+  for (const bounds of actions) {
+    expect(bounds.left).toBeGreaterThanOrEqual(headerBounds.x);
+    expect(bounds.right).toBeLessThanOrEqual(
+      headerBounds.x + headerBounds.width
+    );
+    expect(bounds.top).toBeGreaterThanOrEqual(headerBounds.y);
+    expect(bounds.bottom).toBeLessThanOrEqual(
+      headerBounds.y + headerBounds.height
+    );
+  }
+  for (const [index, bounds] of actions.entries()) {
+    for (const previous of actions.slice(0, index)) {
+      expect(
+        bounds.left >= previous.right ||
+          bounds.top >= previous.bottom ||
+          previous.top >= bounds.bottom
+      ).toBe(true);
+    }
+  }
+}
+
 test('independent identities manage a private room over direct HTTP', async ({
   page,
   browser,
@@ -25,43 +64,6 @@ test('independent identities manage a private room over direct HTTP', async ({
 }, testInfo) => {
   test.setTimeout(60000);
   if (!baseURL) throw new Error('Browser base URL required.');
-  const expectHeaderFits = async () => {
-    const header = page.getByRole('banner');
-    const headerBounds = (await header.boundingBox())!;
-    const actions = await header.locator('a, button').evaluateAll((nodes) =>
-      nodes
-        .map((node) => {
-          const bounds = node.getBoundingClientRect();
-          return {
-            left: bounds.left,
-            right: bounds.right,
-            top: bounds.top,
-            bottom: bounds.bottom,
-            width: bounds.width,
-          };
-        })
-        .filter((bounds) => bounds.width > 0)
-    );
-    for (const bounds of actions) {
-      expect(bounds.left).toBeGreaterThanOrEqual(headerBounds.x);
-      expect(bounds.right).toBeLessThanOrEqual(
-        headerBounds.x + headerBounds.width
-      );
-      expect(bounds.top).toBeGreaterThanOrEqual(headerBounds.y);
-      expect(bounds.bottom).toBeLessThanOrEqual(
-        headerBounds.y + headerBounds.height
-      );
-    }
-    for (const [index, bounds] of actions.entries()) {
-      for (const previous of actions.slice(0, index)) {
-        expect(
-          bounds.left >= previous.right ||
-            bounds.top >= previous.bottom ||
-            previous.top >= bounds.bottom
-        ).toBe(true);
-      }
-    }
-  };
   const failures: string[] = [];
   page.on('pageerror', (error) => failures.push(error.message));
   // Hold acknowledgements, rather than relying on a fast network to test pending focus.
@@ -130,33 +132,11 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.getByLabel('Display name (optional)')).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.locator('.profile-button')).toBeFocused();
-    for (const [width, height] of [
-      [1440, 900],
-      [1024, 768],
-      [390, 844],
-      [320, 844],
-    ]) {
-      await page.setViewportSize({ width: width!, height: height! });
-      await expect(page.locator('.repo-star-count')).toBeVisible();
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth)
-      ).toBeLessThanOrEqual(width!);
-      await expectHeaderFits();
-      for (const colorScheme of ['light', 'dark'] as const) {
-        await openAppPanel(page, 'Appearance');
-        await page
-          .getByRole('radio', {
-            name: colorScheme === 'light' ? 'Light' : 'Dark',
-            exact: true,
-          })
-          .check();
-        await page.keyboard.press('Escape');
-        await page.screenshot({
-          path: testInfo.outputPath(`home-${colorScheme}-${width}.png`),
-          fullPage: true,
-        });
-      }
-    }
+    // Local appearance must survive forgetting an identity later in this journey.
+    await openAppPanel(page, 'Appearance');
+    await page.getByRole('radio', { name: 'Light', exact: true }).check();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).check();
+    await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 1440, height: 900 });
     await createLocalRoom(page, file, 'Friday watch party');
     await expect(
@@ -614,104 +594,6 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(guestIdentity.identity.identityId).not.toBe(
       firstIdentity.identity.identityId
     );
-    await other.locator('.profile-button').click();
-    await other.getByLabel('Display name (optional)').fill('W'.repeat(48));
-    await other.getByRole('button', { name: 'Save name', exact: true }).click();
-    await other.keyboard.press('Escape');
-    await expect(page.locator('.roster')).toContainText('W'.repeat(48));
-    const playerColors = () =>
-      page.locator('.player-controls').evaluate((node) => ({
-        text: getComputedStyle(node).color,
-        button: getComputedStyle(node.querySelector('button')!).color,
-      }));
-    const darkPlayerColors = await playerColors();
-    for (const [width, height] of [
-      [3440, 1145],
-      [1966, 654],
-      [2560, 1080],
-      [1440, 900],
-      [1024, 768],
-      [900, 500],
-      [390, 844],
-    ]) {
-      await page.setViewportSize({ width: width!, height: height! });
-      for (const colorScheme of ['light', 'dark'] as const) {
-        await openAppPanel(page, 'Appearance');
-        await page
-          .getByRole('radio', {
-            name: colorScheme === 'light' ? 'Light' : 'Dark',
-            exact: true,
-          })
-          .check();
-        await page.keyboard.press('Escape');
-        expect(await playerColors()).toEqual(darkPlayerColors);
-        expect(
-          (await page.locator('.room').boundingBox())!.width
-        ).toBeLessThanOrEqual(1600);
-        if (width! > 760) {
-          const stage = (await page.locator('.video-stage').boundingBox())!;
-          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1
-          );
-        }
-        await page.screenshot({
-          path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
-          fullPage: true,
-        });
-      }
-      if (width! > 760) {
-        const members = page.locator('.room-actions button[aria-expanded]');
-        for (const expanded of [false, true]) {
-          await members.click();
-          await expect(members).toHaveAttribute(
-            'aria-expanded',
-            String(expanded)
-          );
-          const stage = (await page.locator('.video-stage').boundingBox())!;
-          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1
-          );
-          const toolbar = (await page.locator('.room-actions').boundingBox())!;
-          const room = (await page.locator('.room').boundingBox())!;
-          expect(toolbar.x).toBeGreaterThanOrEqual(room.x);
-          expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
-            room.x + room.width
-          );
-          if (width === 1966 && !expanded)
-            await page.screenshot({
-              path: testInfo.outputPath('room-short-without-sidebar.png'),
-            });
-        }
-      }
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth
-        )
-      ).toBe(true);
-      for (const control of [
-        page.locator('.video-stage'),
-        page.getByRole('button', { name: 'Fullscreen locally', exact: true }),
-      ]) {
-        const bounds = await control.boundingBox();
-        expect(bounds).not.toBeNull();
-        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
-      }
-    }
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.evaluate(
-      () => (document.documentElement.style.fontSize = '200%')
-    );
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth
-      )
-    ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath('room-200-percent.png'),
-      fullPage: true,
-    });
-    await expectHeaderFits();
-    await page.evaluate(() => (document.documentElement.style.fontSize = ''));
     await settings(page, 'everyone', false);
     // Real pointer seeking inside the custom player changes the observed media position.
     const player = page.locator('.video-stage');
@@ -984,8 +866,180 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(failures).toEqual([]);
   } finally {
     releaseResults();
+    await Promise.all([guest.close(), outsider.close()]);
+  }
+});
+
+// Layout/appearance have their own budget instead of sharing the identity journey's deadline.
+test('responsive room layouts preserve controls and contrast at enlarged text sizes', async ({
+  page,
+  browser,
+}, testInfo) => {
+  test.setTimeout(60000);
+  const failures: string[] = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  const guest = await appContext(browser);
+  const file = {
+    name: 'synthetic-layout.webm',
+    mimeType: 'video/webm',
+    buffer: await generatedVideo(browser, 12),
+  };
+  try {
+    await page.goto('/');
+    await expect(page.locator('header [role="status"]')).toHaveText(
+      'Server: ready'
+    );
+    await dismissHelper(page);
+    await page.locator('.profile-button').click();
+    await page.getByLabel('Display name (optional)').fill('<b>Alice 😀</b>');
+    await page.getByRole('button', { name: 'Save name', exact: true }).click();
+    await page.keyboard.press('Escape');
+    for (const [width, height] of [
+      [1440, 900],
+      [1024, 768],
+      [390, 844],
+      [320, 844],
+    ]) {
+      await page.setViewportSize({ width: width!, height: height! });
+      await expect(page.locator('.repo-star-count')).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth)
+      ).toBeLessThanOrEqual(width!);
+      await expectHeaderFits(page);
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await openAppPanel(page, 'Appearance');
+        await page
+          .getByRole('radio', {
+            name: colorScheme === 'light' ? 'Light' : 'Dark',
+            exact: true,
+          })
+          .check();
+        await page.keyboard.press('Escape');
+        await page.screenshot({
+          path: testInfo.outputPath(`home-${colorScheme}-${width}.png`),
+          fullPage: true,
+        });
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await createLocalRoom(page, file, 'Responsive watch party');
+    const other = await guest.newPage();
+    other.on('pageerror', (error) => failures.push(error.message));
+    await other.goto(await invitationLink(page));
+    await dismissHelper(other);
+    await expect(
+      other.getByRole('heading', {
+        name: 'Responsive watch party',
+        exact: true,
+      })
+    ).toBeVisible();
+    await other.locator('#local-video').setInputFiles(file);
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready'
+    );
+    await other.locator('.profile-button').click();
+    await other.getByLabel('Display name (optional)').fill('W'.repeat(48));
+    await other.getByRole('button', { name: 'Save name', exact: true }).click();
+    await other.keyboard.press('Escape');
+    await expect(page.locator('.roster')).toContainText('W'.repeat(48));
+    const playerColors = () =>
+      page.locator('.player-controls').evaluate((node) => ({
+        text: getComputedStyle(node).color,
+        button: getComputedStyle(node.querySelector('button')!).color,
+      }));
+    const darkPlayerColors = await playerColors();
+    for (const [width, height] of [
+      [3440, 1145],
+      [1966, 654],
+      [2560, 1080],
+      [1440, 900],
+      [1024, 768],
+      [900, 500],
+      [390, 844],
+    ]) {
+      await page.setViewportSize({ width: width!, height: height! });
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await openAppPanel(page, 'Appearance');
+        await page
+          .getByRole('radio', {
+            name: colorScheme === 'light' ? 'Light' : 'Dark',
+            exact: true,
+          })
+          .check();
+        await page.keyboard.press('Escape');
+        expect(await playerColors()).toEqual(darkPlayerColors);
+        expect(
+          (await page.locator('.room').boundingBox())!.width
+        ).toBeLessThanOrEqual(1600);
+        if (width! > 760) {
+          const stage = (await page.locator('.video-stage').boundingBox())!;
+          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
+            1
+          );
+        }
+        await page.screenshot({
+          path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
+          fullPage: true,
+        });
+      }
+      if (width! > 760) {
+        const members = page.locator('.room-actions button[aria-expanded]');
+        for (const expanded of [false, true]) {
+          await members.click();
+          await expect(members).toHaveAttribute(
+            'aria-expanded',
+            String(expanded)
+          );
+          const stage = (await page.locator('.video-stage').boundingBox())!;
+          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
+            1
+          );
+          const toolbar = (await page.locator('.room-actions').boundingBox())!;
+          const room = (await page.locator('.room').boundingBox())!;
+          expect(toolbar.x).toBeGreaterThanOrEqual(room.x);
+          expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+            room.x + room.width
+          );
+          if (width === 1966 && !expanded)
+            await page.screenshot({
+              path: testInfo.outputPath('room-short-without-sidebar.png'),
+            });
+        }
+      }
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        )
+      ).toBe(true);
+      for (const control of [
+        page.locator('.video-stage'),
+        page.getByRole('button', { name: 'Fullscreen locally', exact: true }),
+      ]) {
+        const bounds = await control.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(
+      () => (document.documentElement.style.fontSize = '200%')
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth
+      )
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath('room-200-percent.png'),
+      fullPage: true,
+    });
+    await expectHeaderFits(page);
+    await page.evaluate(() => (document.documentElement.style.fontSize = ''));
+    await closeRoom(page);
+    expect(failures).toEqual([]);
+  } finally {
     await guest.close();
-    await outsider.close();
   }
 });
 
