@@ -10,7 +10,7 @@ import {
 
 import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { HelperBridge } from '../../player/bilibili/bridge';
-import { decodeInfo, parseSelection } from '../../player/bilibili/media';
+import { decodePreview, parseSelection } from '../../player/bilibili/media';
 import { LocalAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
@@ -32,7 +32,7 @@ let controller = new AbortController();
 function invalidate(): void {
   controller.abort();
   controller = new AbortController();
-  bridge?.close(2);
+  bridge?.close(2, false);
   bridge = undefined;
   prepared = undefined;
   summary.value = '';
@@ -72,6 +72,7 @@ async function prepare(): Promise<
   error.value = '';
   const signal = controller.signal;
   let local: LocalAdapter | undefined;
+  let inspection: HelperBridge | undefined;
   try {
     let media: MediaDescriptor;
     if (source.value === 'local') {
@@ -99,10 +100,11 @@ async function prepare(): Promise<
       });
     } else {
       const selected = parseSelection(url.value, part.value);
-      bridge = new HelperBridge();
-      await bridge.hello();
-      const info = decodeInfo(
-        await bridge.call('open', { ...selected, generation: 1 }),
+      inspection = new HelperBridge();
+      bridge = inspection;
+      await inspection.hello(true);
+      const info = decodePreview(
+        await inspection.call('preview', selected),
         selected.bvid,
         selected.part
       );
@@ -127,14 +129,14 @@ async function prepare(): Promise<
       error.value = errorMessage(reason, 'media.prepareFailed');
   } finally {
     local?.dispose();
-    bridge?.close(2);
-    bridge = undefined;
+    inspection?.close(2, false);
+    if (bridge === inspection) bridge = undefined;
     if (!signal.aborted) working.value = false;
   }
 }
 onUnmounted(() => {
   controller.abort();
-  bridge?.close(2);
+  bridge?.close(2, false);
   file = undefined;
 });
 async function selectBilibili(

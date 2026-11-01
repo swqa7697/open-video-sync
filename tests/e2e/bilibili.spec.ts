@@ -2,6 +2,192 @@ import { expect, test } from '../../modules/web/playwright-fixtures';
 import { generatedVideo } from './media';
 import { closeRoom, invitationLink } from './flows';
 import release from '../../modules/helper/dist/release.json';
+
+test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
+  page,
+  browser,
+}) => {
+  const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
+  expect(response.ok()).toBe(true);
+  const script = await response.text();
+  // Run the distributed helper against synthetic metadata and delayed media reads.
+  // Playback remains a real local video; the opaque helper handle represents an active stream.
+  await page.addInitScript({
+    content: `(() => {
+    const unsafeWindow = window;
+    const GM_xmlhttpRequest = (details) => {
+      let cancelled = false;
+      const media = new URL(details.url).pathname.startsWith('/upgcxcode/');
+      const timer = setTimeout(() => {
+        if (cancelled) return;
+        if (media) {
+          const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
+          const bytes = new Uint8Array(Number(range[2]) - Number(range[1]) + 1).fill(42);
+          details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer });
+          return;
+        }
+        const url = new URL(details.url);
+        let data;
+        if (url.pathname.endsWith('/view')) data = {
+          title: 'Replacement preview', pages: [{ page: 1, cid: 2 }]
+        };
+        else if (url.pathname.endsWith('/nav')) data = { isLogin: false };
+        else if (url.pathname.endsWith('/playurl')) {
+          const track = { id: 32, codecs: 'avc1.64001E', mimeType: 'video/mp4',
+            baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY',
+            SegmentBase: { Initialization: '0-31', indexRange: '32-63' }
+          };
+          data = { timelength: 5000, dash: { video: [track], audio: [
+            { ...track, id: 30216, codecs: 'mp4a.40.2', mimeType: 'audio/mp4' }
+          ] } };
+        } else throw Error('Unexpected platform request');
+        details.onload({ status: 200, finalUrl: details.url,
+          responseText: JSON.stringify({ code: sessionStorage.getItem('deny-preview') ? -404 : 0, data }) });
+      }, media ? 1000 : 0);
+      return { abort() { cancelled = true; clearTimeout(timer); details.onabort?.(); } };
+    };
+    ${script}
+  })();`,
+  });
+  const helper = (op: string, args: Record<string, unknown> = {}) =>
+    page.evaluate(
+      ({ op, args }) =>
+        new Promise<{
+          ok: boolean;
+          value?: { handle?: string };
+          error?: string;
+        }>((resolve, reject) => {
+          const id = Math.floor(Math.random() * 1000000) + 1;
+          const client = 'a'.repeat(32);
+          const receive = (event: MessageEvent) => {
+            if (
+              event.source !== window ||
+              event.origin !== location.origin ||
+              typeof event.data !== 'string'
+            )
+              return;
+            const reply = JSON.parse(event.data);
+            if (
+              reply.channel !== 'ovs-bilibili-response' ||
+              reply.client !== client ||
+              reply.id !== id
+            )
+              return;
+            clearTimeout(timer);
+            window.removeEventListener('message', receive);
+            resolve(reply);
+          };
+          const timer = setTimeout(() => {
+            window.removeEventListener('message', receive);
+            reject(new Error('Synthetic helper call timed out'));
+          }, 5000);
+          window.addEventListener('message', receive);
+          window.postMessage(
+            JSON.stringify({
+              channel: 'ovs-bilibili-request',
+              client,
+              id,
+              op,
+              ...args,
+            }),
+            location.origin
+          );
+        }),
+      { op, args }
+    );
+  await page.goto('/');
+  const file = {
+    name: 'original.webm',
+    mimeType: 'video/webm',
+    buffer: await generatedVideo(browser, 5),
+  };
+  await page.getByRole('button', { name: 'Local file', exact: true }).click();
+  await page.locator('#create-local-video').setInputFiles(file);
+  await page
+    .getByLabel('Room name', { exact: false })
+    .fill('Media replacement');
+  await page.getByRole('button', { name: 'Create room', exact: true }).click();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready'
+  );
+  expect((await helper('hello', { version: 1 })).ok).toBe(true);
+  const opened = await helper('open', {
+    bvid: 'BV1hf4y1N75G',
+    part: 1,
+    generation: 1,
+  });
+  expect(opened.ok).toBe(true);
+  const read = {
+    handle: opened.value!.handle,
+    track: 0,
+    offset: 0,
+    length: 32,
+    generation: 1,
+  };
+  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const before = await (await page.request.get(roomPath)).json();
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await page
+    .getByLabel('Video URL or BV identifier')
+    .fill('https://www.bilibili.com/video/BV17Jx76CEje');
+  const reading = helper('bytes', read);
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-preview')).toHaveText(
+    'Replacement preview'
+  );
+  expect((await reading).ok).toBe(true);
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  const after = await (await page.request.get(roomPath)).json();
+  expect(after.media).toEqual(before.media);
+  expect(after.mediaGeneration).toBe(before.mediaGeneration);
+  expect((await helper('bytes', read)).ok).toBe(true);
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready'
+  );
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await page.evaluate(() => sessionStorage.setItem('deny-preview', '1'));
+  await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-picker [role="alert"]')).toContainText(
+    'unavailable'
+  );
+  expect((await helper('bytes', read)).ok).toBe(true);
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  expect(await page.locator('body').innerText()).not.toContain(
+    'SYNTHETIC_REPLACEMENT_CANARY'
+  );
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await page.getByRole('button', { name: 'Local file', exact: true }).click();
+  await page.locator('#create-local-video').setInputFiles({
+    ...file,
+    name: 'replacement.webm',
+    buffer: await generatedVideo(browser, 6),
+  });
+  await page
+    .getByRole('dialog', { name: 'Change the video', exact: true })
+    .press('Enter');
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.durationMs
+    )
+    .toBe(6000);
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready'
+  );
+  await expect(
+    page.getByRole('button', { name: 'Change video', exact: true })
+  ).toBeEnabled();
+  await closeRoom(page);
+});
+
 test('Bilibili helper failures preserve local playback and dispose closed rooms', async ({
   page,
   browser,

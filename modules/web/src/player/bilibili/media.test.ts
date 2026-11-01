@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vite-plus/test';
 import {
   decodeInfo,
   decodePlaylist,
+  decodePreview,
   parseIndex,
   parseSelection,
 } from './media';
@@ -61,6 +62,45 @@ test('helper metadata and display comments reject foreign payload fields and scr
       title: '<script>Second</script>',
     },
     playlist = { title: 'Collection', episodes: [first, second] };
+  const preview = {
+    bvid: first.bvid,
+    cid: '1',
+    part: 1,
+    duration: 10,
+    title: 'First',
+    parts: 1,
+    quality: 32,
+    qualities: [32],
+    tracks: [
+      {
+        id: 32,
+        codec: 'avc1.64001E',
+        mime: 'video/mp4',
+        init: [0, 31],
+        index: [32, 63],
+      },
+      {
+        id: 30216,
+        codec: 'mp4a.40.2',
+        mime: 'audio/mp4',
+        init: [0, 31],
+        index: [32, 63],
+      },
+    ],
+  };
+  expect(decodePreview(preview, first.bvid, 1)).toEqual(preview);
+  expect(decodeInfo({ ...preview, handle: 'h1-1234' }, first.bvid, 1)).toEqual({
+    ...preview,
+    handle: 'h1-1234',
+  });
+  for (const invalid of [
+    { ...preview, handle: 'h1-1234' },
+    { ...preview, signedURL: 'synthetic' },
+    { ...preview, cid: '0' },
+    { ...preview, duration: 0 },
+    { ...preview, part: 2 },
+  ])
+    expect(() => decodePreview(invalid, first.bvid, 1)).toThrow();
   expect(decodePlaylist(playlist, first.bvid, 1)).toEqual(playlist);
   for (const episodes of [
     [first, first],

@@ -16,18 +16,20 @@ export interface Playlist {
   title: string;
   episodes: Episode[];
 }
-export interface MediaInfo {
+export interface MediaPreview {
   bvid: string;
   cid: string;
   part: number;
   duration: number;
   title: string;
   parts: number;
-  handle: string;
   tracks: TrackInfo[];
   quality: number;
   qualities: number[];
   playlist?: Playlist;
+}
+export interface MediaInfo extends MediaPreview {
+  handle: string;
 }
 export function decodePlaylist(
   value: unknown,
@@ -107,6 +109,16 @@ export function decodeInfo(
   bvid: string,
   part: number
 ): MediaInfo {
+  const { handle: rawHandle, ...preview } = object(value);
+  const handle = boundedText(rawHandle, 100);
+  if (!/^h[0-9]+-[0-9-]+$/.test(handle)) throw new HelperError('invalid-reply');
+  return { ...decodePreview(preview, bvid, part), handle };
+}
+export function decodePreview(
+  value: unknown,
+  bvid: string,
+  part: number
+): MediaPreview {
   const v = object(value);
   exact(v, [
     'bvid',
@@ -115,7 +127,6 @@ export function decodeInfo(
     'duration',
     'title',
     'parts',
-    'handle',
     'tracks',
     'quality',
     'qualities',
@@ -160,8 +171,6 @@ export function decodeInfo(
       index: range(t.index),
     };
   });
-  const handle = boundedText(v.handle, 100);
-  if (!/^h[0-9]+-[0-9-]+$/.test(handle)) throw new HelperError('invalid-reply');
   const quality = integer(v.quality, 1, 127);
   if (
     !Array.isArray(v.qualities) ||
@@ -184,7 +193,6 @@ export function decodeInfo(
     duration: v.duration,
     title: boundedText(v.title, 160),
     parts: integer(v.parts, part, 10000),
-    handle,
     tracks,
     ...(Object.hasOwn(v, 'playlist')
       ? { playlist: decodePlaylist(v.playlist, bvid, part) }

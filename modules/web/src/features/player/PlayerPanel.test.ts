@@ -5,6 +5,7 @@ import { decodeSnapshot } from '../../transport/api';
 import { FakeSocket, roomFixture } from '../../test-support/room';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
 import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
+import { decodeReadiness } from '../../transport/protocol-values';
 
 vi.mock('../../player/fingerprint', () => ({
   localFingerprint: async () => 'f'.repeat(64),
@@ -389,6 +390,86 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toBeUndefined();
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+test('a failed Bilibili player keeps readiness valid and video replacement available', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  const snapshot = decodeSnapshot({
+    ...roomFixture,
+    mediaGeneration: 1,
+    media: {
+      kind: 'bilibili',
+      bvid: 'BV1hf4y1N75G',
+      cid: '1',
+      part: 1,
+      durationMs: 10000,
+    },
+    playback: { ...roomFixture.playback, phase: 'paused' },
+  });
+  let fail: (() => void) | undefined;
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(function (
+    this: BilibiliAdapter
+  ) {
+    fail = () => {
+      this.dispose();
+      vi.spyOn(this, 'getState').mockReturnValue({
+        status: 'error',
+        positionMs: 0,
+        durationMs: 0,
+        paused: true,
+        seeking: false,
+      });
+    };
+    return Promise.resolve(snapshot.media!);
+  });
+  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
+    status: 'ready',
+    positionMs: 0,
+    durationMs: 10000,
+    paused: true,
+    seeking: false,
+  });
+  const wrapper = mount(PlayerPanel, {
+    props: { room: snapshot },
+    attachTo: document.body,
+  });
+  try {
+    fakeMedia(wrapper.get('video').element);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.readyState = 1;
+    socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
+    await flushPromises();
+    for (const raw of socket.sent) {
+      const ping = JSON.parse(raw);
+      if (ping.type !== 'clock.ping') continue;
+      socket.onmessage?.({
+        data: JSON.stringify({
+          v: 2,
+          type: 'clock.pong',
+          requestId: ping.requestId,
+          payload: {
+            ...ping.payload,
+            serverReceiveMs: ping.payload.clientSendMs,
+            serverSendMs: ping.payload.clientSendMs,
+          },
+        }),
+      });
+    }
+    await vi.advanceTimersByTimeAsync(250);
+    fail?.();
+    socket.frame('room.snapshot', snapshot);
+    await flushPromises();
+    const reports = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'member.readiness');
+    const report = reports.at(-1).payload;
+    expect(() => decodeReadiness(report)).not.toThrow();
+    expect(report).toMatchObject({ positionMs: null, durationMs: null });
+    expect(wrapper.get('.change-media').attributes('disabled')).toBeUndefined();
   } finally {
     wrapper.unmount();
   }

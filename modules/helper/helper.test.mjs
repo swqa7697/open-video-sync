@@ -288,6 +288,37 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     f.replies.find((r) => r.id === 999).value.helper,
     release.version
   );
+  const preview = await f.call('preview', {
+    client: inspection.client,
+    bvid: 'BV17Jx76CEje',
+    part: 1,
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.value.bvid, 'BV17Jx76CEje');
+  assert.equal(preview.value.handle, undefined);
+  assert.equal(f.aborted, 0);
+  assert(!JSON.stringify(preview).includes(CANARY));
+  assert(!JSON.stringify(preview).includes('https://'));
+  assert.equal(
+    (
+      await f.call('preview', {
+        client: inspection.client,
+        bvid: 'invalid',
+        part: 1,
+      })
+    ).error,
+    'invalid-media'
+  );
+  assert.equal(
+    (
+      await f.call('preview', {
+        client: inspection.client,
+        bvid: 'BV17Jx76CEje',
+        part: 2,
+      })
+    ).error,
+    'part-unavailable'
+  );
   assert(!JSON.stringify(open).includes(CANARY));
   assert(!JSON.stringify(open).includes('https://'));
   assert.equal(open.value.playlist, undefined);
@@ -563,11 +594,31 @@ test('bounded concurrency, flood rejection, disposal, and late callbacks preserv
 });
 
 test('a replacement player channel cancels old work and refuses stale owners', async () => {
-  const f = fixture(),
+  const options = {},
+    f = fixture(options),
     opened = await f.open();
+  options.hold = true;
+  const reading = f.call('bytes', {
+    handle: opened.value.handle,
+    track: 0,
+    offset: 0,
+    length: 32,
+    generation: 1,
+  });
+  await Promise.resolve();
+  options.hold = false;
+  const preview = await f.call('preview', {
+    bvid: 'BV17Jx76CEje',
+    part: 1,
+    client: 'c'.repeat(32),
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(f.aborted, 0);
   const client = 'b'.repeat(32);
   const hello = await f.call('hello', { version: 1, client });
   assert.equal(hello.ok, true);
+  assert.equal((await reading).error, 'cancelled');
+  assert.equal(f.aborted, 1);
   const stale = await f.call('bytes', {
     handle: opened.value.handle,
     track: 0,

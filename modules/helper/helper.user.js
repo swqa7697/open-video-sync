@@ -278,6 +278,13 @@
     if (episodes.length > 1) return { title, episodes };
   }
   async function resolve(bvid, part, selectedQuality = 0) {
+    if (
+      !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
+      !Number.isInteger(part) ||
+      part < 1 ||
+      part > 10000
+    )
+      throw Error('invalid-media');
     const view = await api('/x/web-interface/view', { bvid });
     if (!Array.isArray(view?.pages) || view.pages.length > 10000)
       throw Error('invalid-media');
@@ -364,6 +371,18 @@
       tracks,
     };
   }
+  function describe(media) {
+    return {
+      ...media,
+      tracks: media.tracks.map((t) => ({
+        id: t.id,
+        codec: t.codec,
+        mime: t.mime,
+        init: t.init,
+        index: t.index,
+      })),
+    };
+  }
   function protobuf(bytes, maxFields = 30000) {
     let at = 0;
     const end = bytes.length;
@@ -405,6 +424,7 @@
     const allowed = {
       hello: ['version'],
       probe: ['version'],
+      preview: ['bvid', 'part'],
       session: [],
       open: [
         'bvid',
@@ -440,6 +460,8 @@
         build: '{{HELPER_BUILD}}',
       };
     }
+    // Inspect a candidate without taking ownership, cancelling playback, or creating a handle.
+    if (q.op === 'preview') return describe(await resolve(q.bvid, q.part));
     if (q.client !== client) throw Error('stale-generation');
     if (q.op === 'metrics') return metrics;
     if (q.op === 'session') {
@@ -459,13 +481,6 @@
       handles.clear();
       if (q.op === 'dispose') return { disposed: true };
       if (
-        !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(q.bvid) ||
-        !Number.isInteger(q.part) ||
-        q.part < 1 ||
-        q.part > 10000
-      )
-        throw Error('invalid-media');
-      if (
         Object.hasOwn(q, 'quality') &&
         (!Number.isSafeInteger(q.quality) || q.quality < 1 || q.quality > 127)
       )
@@ -476,15 +491,8 @@
       const handle = `h${++serial}-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
       handles.set(handle, media);
       return {
-        ...media,
+        ...describe(media),
         handle,
-        tracks: media.tracks.map((t) => ({
-          id: t.id,
-          codec: t.codec,
-          mime: t.mime,
-          init: t.init,
-          index: t.index,
-        })),
       };
     }
     if (q.generation !== generation) throw Error('stale-generation');

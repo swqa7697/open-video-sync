@@ -1045,6 +1045,12 @@ async function sample(): Promise<void> {
   )
     return;
   const observation = local.getState();
+  // Failed/disposed players can lose native metadata. Unknown timing must stay null on the wire.
+  const timed =
+    matched &&
+    Number.isSafeInteger(observation.durationMs) &&
+    observation.durationMs >= 1 &&
+    observation.durationMs <= 604800000;
   const readiness = reportedReadiness({
     pending: loading.value && !descriptor.value,
     matched,
@@ -1057,8 +1063,14 @@ async function sample(): Promise<void> {
     mediaGeneration: snapshot.mediaGeneration,
     barrierId: snapshot.barrier?.barrierId ?? null,
     sampledAtClientMs: Math.round(performance.now()),
-    positionMs: matched ? observation.positionMs : null,
-    durationMs: matched ? observation.durationMs : null,
+    positionMs:
+      timed &&
+      Number.isSafeInteger(observation.positionMs) &&
+      observation.positionMs >= 0 &&
+      observation.positionMs <= (snapshot.media?.durationMs ?? 0)
+        ? observation.positionMs
+        : null,
+    durationMs: timed ? observation.durationMs : null,
     capabilities: local.capabilities,
   };
   publish(report, now);
