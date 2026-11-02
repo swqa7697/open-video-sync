@@ -1,0 +1,387 @@
+[
+  {
+    "name": "clear optional name",
+    "contract": "profile",
+    "valid": true,
+    "input": {
+      "displayName": ""
+    }
+  },
+  {
+    "name": "Unicode name at scalar and byte limit",
+    "contract": "profile",
+    "valid": true,
+    "input": {
+      "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+    }
+  },
+  {
+    "name": "name too long",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "displayName": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+    }
+  },
+  {
+    "name": "name is required",
+    "contract": "profile",
+    "valid": false,
+    "input": {}
+  },
+  {
+    "name": "null is not a name",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "displayName": null
+    }
+  },
+  {
+    "name": "case-sensitive field names",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "DisplayName": "Guest"
+    }
+  },
+  {
+    "name": "no client-supplied authority",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "displayName": "Guest",
+      "role": "host"
+    }
+  },
+  {
+    "name": "control characters in text",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "displayName": "Guest\nHost"
+    }
+  },
+  {
+    "name": "unpaired surrogate",
+    "contract": "profile",
+    "valid": false,
+    "input": {
+      "displayName": "\ud800"
+    }
+  },
+  {
+    "name": "local matching metadata",
+    "contract": "media",
+    "valid": true,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "local descriptor without optional label",
+    "contract": "media",
+    "valid": true,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "local metadata maximum bounds",
+    "contract": "media",
+    "valid": true,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 17592186044416,
+      "durationMs": 604800000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "browser-only local path",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern",
+      "path": "/synthetic/private/video.webm"
+    }
+  },
+  {
+    "name": "future fingerprint version",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 2,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "invalid digest encoding",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "digest newline",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "fractional duration",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 1.5,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "unsafe byte count",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 9007199254740992,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "unbounded duration",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 604800001,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "zero size",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 0,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "stable Bilibili IDs preserve decimal cid",
+    "contract": "media",
+    "valid": true,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": "12345678901234567890",
+      "part": 2,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "credential-bearing URL excluded",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": "12345678901234567890",
+      "part": 2,
+      "durationMs": 125000,
+      "url": "https://synthetic.invalid/video?token=CANARY"
+    }
+  },
+  {
+    "name": "mixed descriptor variants",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "local",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern",
+      "bvid": "BV17x411w7KC"
+    }
+  },
+  {
+    "name": "cid is a string",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": 12345,
+      "part": 2,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "cid leading zero",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": "012345",
+      "part": 2,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "cid newline",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": "123\n",
+      "part": 2,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "invalid bvid",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV0000000000",
+      "cid": "12345678901234567890",
+      "part": 2,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "part bounds",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV17x411w7KC",
+      "cid": "12345678901234567890",
+      "part": 10001,
+      "durationMs": 125000
+    }
+  },
+  {
+    "name": "unsupported media kind",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "url",
+      "fingerprintVersion": 1,
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "sizeBytes": 10485760,
+      "durationMs": 125000,
+      "label": "Test pattern"
+    }
+  },
+  {
+    "name": "two room preferences",
+    "contract": "settings",
+    "valid": true,
+    "input": {
+      "controllers": "host",
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "everyone without waiting",
+    "contract": "settings",
+    "valid": true,
+    "input": {
+      "controllers": "everyone",
+      "waitForAll": false
+    }
+  },
+  {
+    "name": "reject unsupported settings",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host",
+      "syncMode": "adaptive",
+      "waitMode": "all",
+      "waitOnBuffering": true,
+      "waitTimeoutMs": 30000,
+      "lateJoin": "catch_up",
+      "softDriftMs": 100,
+      "hardDriftMs": 750
+    }
+  },
+  {
+    "name": "reject missing waiting preference",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host"
+    }
+  },
+  {
+    "name": "reject nonboolean waiting",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "host",
+      "waitForAll": "true"
+    }
+  },
+  {
+    "name": "reject unknown controller",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "guest",
+      "waitForAll": true
+    }
+  }
+]

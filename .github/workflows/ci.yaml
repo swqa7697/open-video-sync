@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          check-latest: true
+          cache-dependency-path: |
+            modules/sync/go.sum
+            scripts/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: make install
+      - run: make check
+      - run: make test test-race
+      - run: pnpm --dir modules/web exec playwright install --with-deps chromium firefox
+      - run: make test-e2e
+      - run: make image image-smoke proxy-smoke
+      - run: git diff --exit-code

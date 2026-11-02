@@ -217,3 +217,12 @@ dist
 # Dev artifacts
 .misc/
 .tmp/
+
+# Generated application output and local state
+/modules/sync/build/
+/modules/sync/internal/web/dist/
+/modules/sync/internal/helper/dist/
+/modules/web/dist/
+/modules/helper/dist/
+/data/
+/modules/web/.vitest/

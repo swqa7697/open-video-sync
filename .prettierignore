@@ -1,0 +1,14 @@
+# Dependencies, generated files, and local state.
+node_modules/
+pnpm-lock.yaml
+build/
+dist/
+data/
+coverage/
+vendor/
+
+# The shell plugin also recognizes these files; keep their existing syntax.
+Dockerfile
+*.dockerignore
+.gitignore
+.prettierignore

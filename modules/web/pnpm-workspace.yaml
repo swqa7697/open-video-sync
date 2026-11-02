@@ -1,0 +1,22 @@
+packages:
+  - .
+overrides:
+  vite@*: 'catalog:'
+# Vite+ core uses its release number while providing the Vite 8 API.
+peerDependencyRules:
+  allowedVersions:
+    vite: '*'
+  allowAny:
+    - vite
+saveExact: false
+savePrefix: ^
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
+minimumReleaseAgeExclude:
+  - eslint@10.14.0
+  - '@intlify/core-base@11.4.17'
+  - '@intlify/devtools-types@11.4.17'
+  - '@intlify/message-compiler@11.4.17'
+  - '@intlify/shared@11.4.17'
+  - vue-i18n@11.4.17

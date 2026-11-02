@@ -2,9 +2,9 @@
 
 ## Scope and sources of truth
 
-- OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for proposed technical contracts.
-- The repository currently contains design documents, not a working application. Do not describe proposed packages, commands, dependencies, or performance targets as implemented or verified.
-- Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with recorded schema migrations; WebSocket for the initial release.
+- OVS is a private, self-hosted application for synchronized viewing. Read [PRD](specs/PRD.md) for requirements and [DESIGN](specs/DESIGN.md) for technical contracts.
+- The initial release is in development. Keep requirements and design independent of development history. Retain implementation status and validation evidence under `.misc/`; report only checks actually run.
+- Preserve the selected stack: Go; Vue 3, TypeScript, Vite, and Pinia; SQLite with one complete, current schema definition; WebSocket for the initial release.
 - Ship one OVS application container with the frontend embedded in Go. Store persistent application state in `/data`. An optional external Caddy installation owns TLS.
 - Keep these shared guidelines in root `AGENTS.md`. If another agent entry file is needed, make it point here instead of maintaining duplicate instructions.
 - Keep retained development artifacts and validation evidence under ignored `.misc/`. Do not create or modify developer-managed `.tmp/` content.
@@ -17,24 +17,35 @@
 - Each participant uses their own platform access. Do not add shared credentials, access bypasses, backend media resolution, or CORS proxies.
 - Bilibili playback, state reporting, danmaku, and session isolation require a separate proof of concept before finalizing the adapter. A playable iframe alone does not satisfy the requirement.
 - Do not declare first-release scope complete with only local playback. Bilibili and danmaku remain required release gates.
+- Carry accepted live-platform and network validation forward from the previous release PR. Repeat only checks affected by changed integration contracts or an identified regression; a version increase alone does not reopen them. Record explicit user confirmation as user-confirmed acceptance in the PR. Artifacts under `.misc/` are volatile; missing artifacts do not invalidate accepted results.
 - Keep direct HTTP functional. Core features must not depend on certificate provisioning or browser APIs available only in secure contexts without a working HTTP-compatible path.
+- Keep room settings to controller permission and wait for everyone. Do not add technical tuning, alternative late-join policies, per-member exclusions, backup/invalidation commands, metric services, or automatic database recovery.
 
 ## Architecture and ownership
 
-| Proposed location | Responsibility |
-| --- | --- |
-| `cmd/ovs` | Composition, configuration, process lifecycle |
-| `internal/identity` | Anonymous identity, OVS sessions, profile lifecycle |
-| `internal/rooms` | Membership, host rules, media, policies, timelines, room coordinators |
-| `internal/transport/http`, `internal/transport/ws` | Transport authentication, decoding, framing, connection bounds |
-| `internal/contracts`, `internal/storage` | Wire validation; SQLite setup, migrations, transaction support |
-| `internal/web`, `web` | Embedded assets; Vue UI, browser adapters, synchronization engine |
-| `migrations`, `tests`, `scripts`, `deploy` | Recorded DDL, integration harnesses, automation, deployment examples |
+| Location                                                           | Responsibility                                                                               |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `modules/sync/cmd/ovs`                                             | Composition, configuration, process lifecycle                                                |
+| `modules/sync/internal/identity`                                   | Anonymous identity, OVS sessions, profile lifecycle                                          |
+| `modules/sync/internal/rooms`                                      | Membership, host rules, media, policies, timelines, room coordinators                        |
+| `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds                                |
+| `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                                          |
+| `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                                        |
+| `modules/sync/sql`                                                 | Complete, current database definition and Go embedding                                       |
+| `modules/sync/sql/migrations`                                      | Version-to-version schema changes for historical reference only                              |
+| `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling                           |
+| `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests                                   |
+| `scripts`                                                          | Independent Go automation module, cross-module builds, releases, deployment and smoke checks |
+| `tests`, `specs`                                                   | Application journeys and shared contracts                                                    |
+| `versions.toml`                                                    | Sole release-version source for sync, web, and helper                                        |
+| `deploy`                                                           | Complete application image build, deployment examples, Compose and Caddy configuration       |
 
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
 - One coordinator serializes mutations for each room. HTTP and WebSocket entry points must use the same authorization and mutation path.
-- Persist accepted durable changes before acknowledging or broadcasting them. Never let participant telemetry replace the authoritative room timeline.
+- Load persistent application data into memory at startup. Ordinary reads, authorization, playback, readiness, waiting, heartbeats, and timers must perform no SQLite queries or writes.
+- Persist only low-frequency identity/session, room/settings, membership, invitation, and selected-media changes. Commit each durable change before installing it in memory and acknowledging success; failed writes leave memory unchanged.
+- Room coordinators own authoritative playback in memory. Playback acknowledgements mean applied runtime state, not durable storage. Keep revisions, media generations, short-lived command receipts, and wait state in memory only.
 - Keep clocks, random sources, storage, and connection sinks injectable. Prefer concrete functions and small interfaces over generic repositories, plugin frameworks, and speculative abstractions.
 - Separate Vue rendering, shared Pinia state, synchronization logic, and player adapters. Keep player instances, files, provider responses, and timer ownership outside serializable stores.
 - Make ownership, cancellation, and disposal explicit for goroutines, sockets, timers, workers, object URLs, and player instances. Bound queues and concurrency.
@@ -45,22 +56,31 @@
 - Carry epoch, media generation, expected revision, and command identity through control handling. Reject stale state and deduplicate uncertain retries as specified in DESIGN.
 - Cancel asynchronous work on media/adapter changes. Late callbacks must not affect a newer player or readiness barrier.
 - Distinguish user intent from events produced by applying remote state. Prevent feedback loops without discarding genuine user actions.
-- Enforce host permissions, active-tab leases, room isolation, and waiting rules on the server. Hidden or disabled UI controls are not authorization.
+- Enforce host permissions, current connection ownership, room isolation, and waiting rules in server memory. Revocation and removal must update authorization and sockets immediately; do not poll SQLite.
 - Declare adapter capabilities explicitly. Play, pause, seek, and position reporting are mandatory; rate control and buffering detection require defined fallback behavior.
 - Keep local volume, mute, quality, and danmaku preferences separate from shared playback state.
 - Measure control-response latency and playback skew separately. A server acknowledgement or a client's predicted target is not evidence of actual synchronized playback.
-- Retain WebSocket initially. Consider a datagram alternative only after evidence identifies TCP head-of-line blocking as the unmet-target cause.
+- Retain WebSocket. Do not add alternative-transport research as a first-release gate.
+- Restart or recreate playback runtimes paused at zero with fresh epochs. Do not save playback progress on controls, timers, eviction, or shutdown.
 
 ## Go, TypeScript, and shell conventions
 
 - Use `gofmt` for Go. Follow idiomatic Go naming, document exported contracts, return errors for operational failures, and wrap errors when callers need their cause.
 - Propagate `context.Context` through blocking operations. Every goroutine needs an owner and a termination path. Do not panic on malformed user input.
-- Prefer standard-library primitives where suitable. Pin third-party libraries and tools in manifests/lockfiles; do not use floating dependency versions in builds.
+- Prefer standard-library primitives where suitable. Record resolved third-party versions in the ecosystem's dependency files. Select container images and CI actions by tags. Use the latest stable Go compiler in CI and Docker; keep only the minimum Go version in `go.mod`.
 - Use Vue Composition API with `<script setup lang="ts">`, strict TypeScript, typed adapter boundaries, and runtime validation for network/platform data. Do not use `any` to bypass contract checking.
-- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Keep one package-manager declaration and lockfile.
-- Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select and pin the formatter during scaffolding; avoid competing tools for the same rule.
-- Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep reusable automation under `scripts/`.
+- Group JavaScript and TypeScript imports, including Vue script blocks, in this order: external dependencies (including Node built-ins), project modules (relative paths and `@ovs/*` workspace packages), then bare side-effect imports. Separate nonempty groups with one blank line.
+- Leave one blank line after the final import, including side-effect imports, before code or comments attached to that code. Enforce this with Oxlint's `import/newline-after-import` rule.
+- Keep type imports in their source group. Place new imports in the matching group manually; the existing Prettier organize-imports plugin sorts within groups and removes unused imports. Do not add another import sorter.
+- Preserve the relative order of side-effect imports. Keep order-sensitive initialization imports in place with a short comment; use `// organize-imports-ignore` when required.
+- During frontend scaffolding, evaluate Vite+ with the required Vue/Vite setup. If compatibility requires plain Vite with pnpm, record the reason. Use pnpm with the frontend lockfile and Vite+ pnpm configuration under `modules/web/`; do not pin or require a specific pnpm version.
+- Use pnpm for all frontend package operations: `pnpm add`, `pnpm remove`, and `pnpm update` for dependencies; `pnpm pkg` for package scripts and metadata. Do not mix npm or npx commands or create competing lockfiles. Never edit `package.json` manually.
+- Use pnpm's default `^` ranges for frontend dependencies. Exception: let official `vp create` or `vp migrate` commands pin Vite+ toolchain catalog entries and generate matching aliases, overrides, and peer rules. Do not hand-edit that pairing. Let pnpm generate and maintain `modules/web/pnpm-lock.yaml` for reproducible installs.
+- Review skipped migration rules before removing lint tools. Keep required Vue template checks when Vite+ cannot replace them.
+- Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select one formatter during scaffolding; avoid competing tools for the same rule.
+- Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep cross-module automation under `scripts/` and module automation under its module directory.
 - Prefer Go for standalone repository automation when no existing tool fits. Keep native frontend tests in the frontend test framework.
+- Keep repository Go automation in the independent `scripts` module. Smoke clients use the public wire contract and must not import server internal packages.
 - Keep changes focused. Remove dead code and share helpers only when they represent the same responsibility. Do not add unrelated cleanup or future-source abstractions.
 
 ## Security, storage, and deployment
@@ -70,19 +90,22 @@
 - Trust proxy headers only from configured proxies. Derive public URLs and cookie policy from validated deployment configuration, not arbitrary request headers.
 - Render untrusted names, titles, danmaku, and errors as text. Validate platform messages by exact origin and source window as well as payload shape.
 - Never serialize arbitrary player SDK objects or log raw requests/provider errors. Use synthetic secrets in boundary tests and sanitize retained traces.
-- Record every SQLite DDL change as a new migration. Never edit an applied migration, silently reset a database, or remove data to hide migration failures.
-- Keep related state and command outcomes in one transaction. Use real SQLite tests for constraints, rollback, upgrades, and crash recovery.
-- Run one OVS process per data directory. Preserve `/data` across container replacement and include SQLite sidecars in the storage/backup contract.
+- Keep `modules/sync/sql/schema.sql` as the complete, current SQLite schema and update it whenever the schema changes. Numbered files in `modules/sync/sql/migrations/` record changes between versions for historical reference only; application startup must not execute them. Never silently reset a database or remove data to hide schema failures.
+- Keep related persistent changes in one short transaction and update only affected records. Do not persist playback or HTTP retry receipts, storage probes, or runtime counters. Use real SQLite tests for initialization, constraints, rollback, and persistent metadata across restart.
+- A failed durable write must not mutate memory or stop unrelated existing playback. Report persistence unavailable; fix storage and restart instead of running automatic probes or recovery transitions.
+- Run one OVS process per data directory and preserve `/data` across container replacement. A manual copy requires stopped OVS and the whole directory, including SQLite sidecars. Do not build backup/restore commands.
 - Build frontend assets before the Go embedding step. Verify the final image serves UI, API, and WebSocket without Node or a separate database service.
 - Support direct HTTP and optional host/container/existing Caddy. Do not overwrite an operator's existing proxy configuration or manage certificates inside OVS.
 
 ## Development commands and validation
 
-There is no `go.mod`, frontend manifest, Makefile, or CI configuration yet. Do not invent working setup commands. Add verified commands here when scaffolding lands.
+Use `make help` for the command list. Run `make install` to install locked dependencies and build the template. Run `make dev` for Go and `make dev-web` for frontend hot reload. See [CONTRIBUTING.md](CONTRIBUTING.md) for tool prerequisites.
+
+Run `make check`, `make test test-race`, and `make build` in that order. Run `make browser-install` before `make test-e2e`. Use `make image image-smoke` for container checks. Direct server Go commands require `make web-build` first because frontend assets are embedded at compile time. CI is configured; hosted success requires an actual successful run.
 
 - For documentation-only changes, check references and contract consistency, then run `git diff --check`. Do not add application tests for documentation text.
 - Use Make as the common developer entry point once implemented. Separate mutation-only formatting from read-only format/lint checks; avoid targets that silently stage or commit.
-- Once the Go module exists, use `go vet ./...`, `go test ./...`, and `go test -race ./...` for concurrent code. Run the configured frontend format/lint, type checks, and tests from the frontend package.
+- Use `go -C modules/sync vet ./...`, `go -C modules/sync test ./...`, and `go -C modules/sync test -race ./...` for concurrent code. Run the same Go checks with `-C scripts` for repository automation. Run the configured frontend format/lint, type checks, and tests from the frontend package.
 - Validate in order: formatting/static checks, relevant tests, then production build. The production build must generate embedded assets before compiling Go.
 - Add browser, storage, deployment, and network checks when the changed contract needs them. Keep live platform validation explicit and separate from the ordinary offline suite.
 - Report checks actually run, their results, and missing prerequisites. A skipped check is unverified; claim hosted CI success only after a successful hosted run.
@@ -108,17 +131,19 @@ Before adding a test, read the regressions that own the affected behavior and st
 ## Performance evidence
 
 - Measure before/after with the same machine, toolchain, browser/adapter, media, cache state, and network profile. Separate setup/build time from the measured operation.
-- Choose at least three independent trials dynamically, capped at five minutes per before/after phase. Report insufficient evidence when both constraints cannot be met.
-- Report sample count, mean, median, standard deviation, min/max, and p95/p99; label sparse tail estimates. Use Welch's t-test at alpha 0.05 on independent trial summaries.
-- Label statistical confidence by degrees of freedom: high ≥29, moderate 10–28, low <10. Do not treat correlated playback samples as independent trials.
-- Record commands, revision, environment, measurements, and limitations in `.misc/` for performance work. Keep release soak tests distinct from bounded comparison trials.
+- Use repeated independent trials for performance claims. Report sample counts, relevant measurements, uncertainty, and limitations; do not treat correlated playback samples as independent trials.
+- Keep actual playback skew separate from command acknowledgement and application latency. Reduced SQL calls alone do not prove faster playback.
+- Do not require capacity certification, physical-display lab tests, universal timing thresholds, or statistical-significance tests for ordinary releases. Use representative network and simultaneous-room checks.
+- Record commands, revision, environment, measurements, and limitations in `.misc/` for performance work. Keep optional long-running studies outside routine development checks.
 
 ## Git, review, and documentation
 
 - Preserve unrelated staged and working-tree changes. Never run `git add`, `git commit`, or `git push` without an explicit user request; ask before planning those actions. This also applies to wrappers that perform them.
+- Use a focused topic branch or `dev` branch. Never commit directly to `main`.
 - Write English Conventional Commit subjects: `type(scope): imperative summary`, lowercase, no trailing period. Use concise bullet points for any body. Add an optional short summary above the bullets only when it really helps.
+- Release preparation is the exception: `make release-commit` uses `release open-video-sync: <module> X.Y.Z | <module> X.Y.Z`, listing only modules whose versions increase relative to HEAD, in `versions.toml` order, without a body or `v` prefix. Sync, web, and helper have independent versions; any module can increase alone. Use the same subject as the final release PR title. Review version coverage across the full PR separately from the versions changed by this commit.
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Example subjects: `feat(rooms): add readiness barriers`; `fix(sync): reject stale media events`.
 - PR descriptions explain the problem, resulting behavior, validation, and material limitations. Distinguish implementation from proposals and verified behavior from assumptions.
 - Keep PRD focused on requirements and DESIGN on durable contracts. Add README usage/setup guidance when commands exist. Update affected documentation when behavior changes.
-- When CHANGELOG exists, follow Keep a Changelog with user-visible entries under `[Unreleased]`. Preserve existing spacing and omit internal-only formatting/refactoring entries.
+- When CHANGELOG exists, follow Keep a Changelog with user-visible entries under `[Unreleased]`. Use date-only release headings, `## [YYYY-MM-DD]`, and matching `vYYYY-MM-DD` release tags, without module versions. Keep independent numeric module versions in `versions.toml` and the release PR. Preserve existing spacing and omit internal-only formatting/refactoring entries.
 - Keep documentation clear and consistent. Use short, active sentences and stable terms for identities, members, connections, media generations, and room revisions.

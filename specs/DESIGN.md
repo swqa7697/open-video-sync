@@ -1,701 +1,444 @@
 # Open Video Sync — Technical Design
 
-## 1. Status, scope, and requirements
+## 1. Scope and requirements
 
-This document defines the proposed first-release architecture for Open Video Sync (OVS). The [PRD](PRD.md) is the product source of truth. [AGENTS.md](../AGENTS.md) defines development guidelines.
+The [PRD](PRD.md) defines the product. This document defines the architecture and technical contracts for the initial release.
+[AGENTS.md](../AGENTS.md) defines development rules. [Application protocol](WIRE.md) defines HTTP and WebSocket messages.
+Implementation status and validation evidence belong under `.misc/`, separate from these contracts.
 
-The repository currently has no application implementation. Package names, API contracts, defaults, deployment examples, and performance targets below are design decisions, not claims of implemented or verified behavior. Exact dependency versions belong in manifests and lockfiles when implementation begins.
+### 1.1 Core product
 
-OVS is a private, self-hosted web application for synchronized viewing. Each participant obtains and plays their own media. The Go server coordinates rooms and playback; it never carries video content or platform credentials.
+OVS is a private, self-hosted tool for watching together. A participant selects media, creates a room, shares an invitation, and plays with others.
+Keep anonymous persistent identities, multiple private rooms, host permissions, basic waiting, local files, and Bilibili with danmaku.
+Each participant obtains media independently. OVS carries control messages and bounded matching metadata only.
 
-### 1.1 First-release scope
+Use Go, Vue 3, TypeScript, Vite, Pinia, SQLite, and WebSocket. Embed the frontend in one application container.
+Keep persistent application data in `/data`. Direct HTTP works; an optional external reverse proxy owns HTTPS.
+Desktop Chromium and Firefox are required. Safari is outside the roadmap; mobile support requires separate evidence.
 
-| PRD requirement | Design response | Acceptance evidence |
-| --- | --- | --- |
-| Independent self-hosting | One Go application container, embedded web UI, SQLite volume | Fresh deployment without a hosted OVS service |
-| Control only | Typed control protocol; no media upload, download, proxy, or relay routes | Browser/server traffic inspection and rejection tests |
-| Multiple rooms | Independent room coordinators, membership, policies, and timelines | Concurrent rooms with no cross-room events or permissions |
-| Optional HTTPS | HTTP and WebSocket work directly; optional external Caddy | Direct HTTP, host Caddy, and container Caddy journeys |
-| Anonymous persistent identity | Automatically issued OVS session cookie and persistent identity | Return visit retains identity without registration |
-| Room sharing | Revocable invitation links and human-entered codes | Create, redeem, expire, rotate, and reject invalid invites |
-| Host preferences | Server-enforced controller policy, drift correction, and waiting rules | Host and participant authorization scenarios |
-| Browser player | Common adapter contract with explicit capability reporting | Real-browser local and platform adapter journeys |
-| Synchronized playback | Server-owned timeline, clock estimation, reconciliation | Separate control-response and playback-skew measurements |
-| Bilibili and danmaku | Browser-only adapter selected after a separate proof of concept | Passing Bilibili gate in section 8 |
-| Local files | Browser file selection, local playback, metadata matching | Matching, mismatch, reselection, and unsupported-codec cases |
-| Browser-only platform sessions | Platform login remains in platform/browser context | Synthetic credential-canary inspection at the OVS boundary |
-| Existing access rights | Each participant resolves and plays media independently | Access failure affects that participant without credential sharing |
-| Go, Vue 3, TypeScript, Vite, Pinia | Backend and frontend boundaries in section 2 | Build and embedded-asset smoke checks |
-| SQLite and recorded DDL migrations | Ordered, checked migrations and bounded transactions | Upgrade, failed migration, and restore scenarios |
-| Persistent `/data` | Mount the directory containing SQLite and its sidecars | Container replacement preserves application state |
-| WebSocket first, measured across regions | Versioned protocol, bounded queues, impairment tests | Network matrix and transport decision in section 13 |
+### 1.2 Scope limits
 
-### 1.2 Scope limits and proposed defaults
-
-The first release has one selected video per room. It does not include playlists, chat, uploads, transcoding, screen sharing, media caching, public room discovery, registered accounts, or federation. YouTube and alternative transports are later work.
-
-The initial Bilibili validation target is ordinary on-demand video, including multipart selection and danmaku. Live streams, paid episodic formats, and other content classes need separate compatibility evidence before being advertised. This is a proposed support boundary to confirm through the proof of concept, not an exemption from the PRD's Bilibili requirement.
-
-Run one OVS process per data directory. Horizontal replicas and a distributed coordinator are outside this release. Multiple independent installations may run with separate data directories and origins.
-
-Numeric defaults are initial engineering choices. Change them with measured evidence and update the affected contracts. A failed Bilibili gate blocks declaring the PRD complete; a local-file-only build is an intermediate milestone.
+Do not add playlists, chat, public discovery, registered accounts, account recovery, federation, horizontal replicas, or media transfer.
+Do not add backup/restore commands, post-restore invalidation, online backup, automatic database repair/recovery, operational metric services, or diagnostic playback telemetry.
+Do not expose synchronization thresholds, late-join modes, per-member waiting exclusions, or retention tuning.
+Invitation expiry, periodic playback checkpoints, and durable playback-command receipts are outside the product scope.
+YouTube and alternative transports are outside first-release work. Keep WebSocket without a separate transport research gate.
 
 ## 2. Architecture and ownership
 
 ```mermaid
 flowchart LR
-    A[Participant A browser] <-->|HTTP API and WebSocket control| P[Optional external Caddy]
-    B[Participant B browser] <-->|HTTP API and WebSocket control| P
-    P <--> S[Go application: embedded UI, API, rooms]
-    S <--> D[(SQLite in /data)]
-    A -->|Read local file| LA[Participant A file]
-    B -->|Read local file| LB[Participant B file]
-    A <-->|Direct playback and platform session| V[Bilibili]
-    B <-->|Direct playback and platform session| V
+    A[Participant browsers] <-->|Control and matching metadata| R[Go room coordinators in memory]
+    R -->|Persistent changes only| D[(SQLite in /data)]
+    D -->|Startup load| R
+    A --> L[Each participant's local file]
+    A <--> H[Each participant's Bilibili helper]
+    H <--> B[Bilibili API and media CDN]
 ```
 
-Browsers connect directly to Go when Caddy is absent. There is deliberately no server-to-platform media path and no browser-to-browser media path.
+An optional reverse proxy sits before Go. There is no server-to-platform media path and no participant-to-participant media path.
 
-### 2.1 Backend structure
+### 2.1 Backend ownership
 
-Use domain-driven boundaries around identity and rooms. Keep domain rules independent of HTTP, WebSocket, SQLite, and browser implementations. Application services orchestrate transactions and adapters. Create layers only where code needs them.
+Organize identity, rooms, transport, contracts, storage, and process composition in separate packages.
+Use small consumer-owned interfaces at actual I/O boundaries. Do not add generic caches, repositories, event buses, or empty architecture layers.
 
-| Proposed location | Responsibility |
-| --- | --- |
-| `cmd/ovs/` | Process composition, configuration, startup, shutdown, version output |
-| `internal/identity/domain/` | Anonymous identity and session validity rules |
-| `internal/identity/application/` | Session bootstrap, profile changes, identity reset |
-| `internal/identity/infrastructure/` | SQLite identity/session persistence |
-| `internal/rooms/domain/` | Membership, host authority, media descriptors, policies, timeline transitions |
-| `internal/rooms/application/` | Room coordinators, command ordering, readiness, persistence orchestration |
-| `internal/rooms/infrastructure/` | Room and invitation persistence |
-| `internal/transport/http/` | HTTP routing, session middleware, strict decoding, safe errors |
-| `internal/transport/ws/` | WebSocket lifecycle, framing, heartbeat, per-connection queues |
-| `internal/contracts/` | Versioned wire types and validation; no business authorization |
-| `internal/storage/` | SQLite connection setup, migration runner, transaction support |
-| `internal/web/` | Embedded frontend assets and SPA serving |
-| `migrations/` | Ordered SQL migrations and migration manifest/checksums |
-| `web/` | Vue application, adapter implementations, frontend tests |
-| `tests/e2e/`, `tests/network/` | Browser journeys and network impairment harness |
-| `scripts/`, `deploy/` | Build automation and deployment examples |
+The process loads persistent identities, unexpired sessions, rooms, settings, memberships, invitations, and selected-media descriptors into memory before readiness.
+The application owns that state for its lifetime. There is no database polling or read-through lookup on ordinary application requests.
+Lists, snapshots, authorization, invitation lookup, and connected-session expiry checks read application memory.
+Keep server-side expiry checks and immediate revocation; moving data into memory does not weaken authorization.
 
-One room coordinator serializes all mutations for its room, including HTTP management requests and WebSocket commands. A registry creates coordinators once and removes them after the last connection leaves and state is saved. An empty room is saved paused before eviction. Activation creates a fresh room epoch.
+One coordinator serializes operations for each active room. Identity/session ownership has an explicit synchronized boundary.
+Durable mutations commit before replacing the relevant memory state and publishing success. Publish the complete change without yielding to the next room operation.
+Failed writes leave both authorization and room state unchanged. Coordinate identity revocation with socket closure before reporting success.
+Do not hold a process-wide lock while waiting for SQLite. A room's management transaction may delay that room, not unrelated rooms.
 
-Room coordinators use bounded input queues. SQLite has one bounded write queue shared across rooms; transactions remain short. A slow write blocks publication of that room's proposed mutation, not socket reads or unrelated room computation. Queue saturation returns a retryable error instead of creating unbounded goroutines.
+Real-time commands, readiness, waiting timers, snapshots, heartbeats, and synchronization do not call storage.
+Playback acknowledgement means the coordinator accepted and applied the command in memory. It does not promise survival across process restart.
 
-Interfaces belong at real seams: clock, random source, repository/transaction boundary, and connection sink. Do not introduce generic repositories, an event bus, or a plugin runtime for hypothetical future sources.
+Bound active rooms, connections, messages, and queues with internal defaults. Keep timer, goroutine, socket, and coordinator disposal explicit.
+Inactive playback coordinators may be released. Their persistent metadata remains in application memory; reactivation starts paused at zero.
 
-### 2.2 Frontend structure
+### 2.2 Frontend ownership
 
-Use Vue 3 single-file components with Composition API and `<script setup lang="ts">`. Vite builds static assets; Pinia holds shared application state.
-
-| Proposed location | Responsibility |
-| --- | --- |
-| `web/src/features/identity/` | Bootstrap, optional display name, identity reset |
-| `web/src/features/rooms/` | Create/join, roster, host controls, invitation management |
-| `web/src/features/player/` | Player shell, media selection, readiness and error presentation |
-| `web/src/player/adapters/` | Local-file and validated Bilibili adapters |
-| `web/src/sync/` | Clock estimator, timeline projection, drift controller, event suppression |
-| `web/src/transport/` | HTTP client, WebSocket state machine, wire decoding |
-| `web/src/stores/` | Identity, authoritative room snapshot, connection status, local preferences |
-
-Pinia stores sanitized descriptors and UI state. Keep `File` objects, object URLs, player instances, platform responses, timers, and credentials out of persisted stores and debug exports. Adapter instances own those runtime resources and dispose them on room/media changes.
-
-The client sync engine runs outside Vue components. Components dispatch user intent; the engine applies accepted room state to the active adapter. This separates rendering from timing and makes deterministic tests possible.
+Vue renders views and dispatches user intent. Pinia holds sanitized room and identity state.
+The synchronization engine owns clock estimation and drift correction. Adapters own video elements, files, object URLs, helper handles, and playback resources.
+Do not put player instances, provider responses, files, timers, or signed URLs in serializable stores.
+Cancel pending work on room, media, connection-owner, or adapter changes.
 
 ## 3. Trust boundaries and data ownership
 
-| Data | Browser | OVS memory/SQLite | Other room participants |
-| --- | --- | --- | --- |
-| Local video bytes and file path | Local file/player only | Never | Never |
-| Platform cookies, login tokens, signed playback URLs | Platform context or adapter memory only | Never | Never |
-| Platform media bytes and danmaku payloads | Loaded directly from platform | Never | Never through OVS |
-| Bilibili stable video/part identifiers | Yes | Current descriptor | Yes |
-| Local sampled fingerprint, size, duration | Yes | Current descriptor and readiness metadata | Yes, within room |
-| Display name and generated identity ID | Yes | Yes | Display name and room-scoped member ID |
-| OVS session bearer token | HttpOnly cookie | Hash only | Never |
-| Invitation secret | Creator/redeemer briefly | Hash only | Only through deliberate sharing |
-| Playback state and sanitized readiness | Yes | Snapshot; live telemetry stays in memory | Yes, within room |
-| Volume, mute, danmaku style, quality selection | Local preference | No | No |
+| Data                                                          | Browser                                 | OVS memory / SQLite                                       |
+| ------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
+| Local video bytes, filename, path, file handle, object URL    | Local player only                       | Never                                                     |
+| Platform cookies and login tokens                             | Browser/manager session only            | Never                                                     |
+| Signed media URLs and provider responses                      | Helper memory only                      | Never                                                     |
+| Media bytes and danmaku payloads                              | Browser-local delivery and rendering    | Never                                                     |
+| Local fingerprint, size, duration                             | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Bilibili BV ID, CID, part, duration                           | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Identity, display name, room settings and membership          | Authorized views                        | Persistent; also loaded in memory                         |
+| OVS session bearer token                                      | HttpOnly cookie                         | Hash and session metadata only                            |
+| Invitation link secret and code                               | Host sharing and participant redemption | Private persistent invitation record; host-only retrieval |
+| Playback position, phase, waiting, presence, command receipts | Current room                            | Memory only                                               |
+| Volume, mute, quality, danmaku preferences                    | Local preference                        | Never                                                     |
 
-OVS identity credentials are distinct from video-platform credentials. The server needs the former to preserve room ownership. The server must never receive the latter, including in error messages, telemetry, copied URLs, or debug bundles.
-
-Use allowlisted wire fields rather than removing known secret names from arbitrary objects. Do not serialize player SDK objects. Do not implement a generic URL fetcher, CORS bypass, media proxy, cookie-import form, or platform-login callback on the OVS server.
+Invitation secrets are recoverable to support repeated sharing. Treat `/data` as private credential-bearing storage.
+OVS session bearer tokens are stored only as hashes.
+Use allowlisted DTOs. Never serialize arbitrary SDK objects, provider failures, or raw media inputs.
 
 ## 4. Anonymous identity, rooms, and invitations
 
 ### 4.1 Identity lifecycle
 
-1. The page calls `POST /api/v1/session` automatically on first use.
-2. A valid cookie resumes the existing identity. Otherwise, the server generates an identity ID and a 256-bit random session token.
-3. Store a SHA-256 hash of that high-entropy token, the identity ID, and expiry in SQLite. Return the raw token only as an HttpOnly cookie.
-4. Use a host-only cookie named `ovs_session`, `Path=/`, `SameSite=Lax`, and a rolling 365-day maximum age. Set `Secure` for the configured HTTPS public origin.
-5. Return the public identity profile and a session-bound CSRF token in the JSON response. Keep the CSRF token in browser memory.
+Bootstrap an identity automatically using a random 256-bit session token in a host-only HttpOnly `ovs_session` cookie.
+Use `Path=/`, `SameSite=Lax`, and `Secure` only for configured HTTPS. Keep a rolling 365-day lifetime with renewal at most daily.
+Load session hashes, expiry, identity, and CSRF metadata into memory. Check expiry there on every authenticated operation.
+Create, renew, rename, and revoke through low-frequency persistent operations. Use exact-origin and session-bound CSRF checks for HTTP mutations.
+Keep CSRF tokens in frontend memory. Never accept an identity ID as authentication.
 
-Renew expiry at most once per day to avoid a write on every request. The server enforces expiry even if a browser retains a cookie. Never accept an identity ID supplied by the client as authentication.
-
-Display names are optional, at most 48 Unicode code points and 192 UTF-8 bytes. Render them as text. A generated guest label is the fallback. Names need not be unique and do not confer host authority.
-
-Identity continuity is per browser profile and OVS origin. Clearing cookies, private browsing, expiry, or switching devices may create a new identity. There is no account recovery or cross-device identity merge in the first release. Warn before “Forget this identity”: revoke the session, close its sockets, and explain that owned rooms may become inaccessible. Losing a host identity does not transfer ownership to another guest.
-
-Cookie attributes and browser expiry behavior follow the browser's cookie implementation; `Secure` cannot be required for ordinary HTTP deployments. See [MDN Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
+Display names are optional, bounded to 48 Unicode scalar values and 192 UTF-8 bytes, and rendered as text.
+There are no accounts, cross-device merging, or account recovery. Explain identity-loss consequences before forgetting a session.
+Revocation immediately invalidates in-memory authorization and closes its sockets. Identity loss never transfers room ownership.
 
 ### 4.2 Room lifecycle
 
-A room has an opaque random ID, title, host identity, settings, current media descriptor, and checkpoint. Creation adds the creator as host and creates the initial invitation atomically.
+A persistent room contains its ID, title, host, two settings, membership, invitation, and optional selected media.
+Rooms are private, with no public directory. Knowing a room ID does not authorize access.
+The host selects media, changes settings, removes members, resets invitations, and closes the room. A non-host can leave.
+Membership survives short disconnects and restart. Explicit final departure closes immediately; final connection loss starts a 30-second grace. Returning connections cancel closure. Restored empty rooms have 60 seconds to reconnect after startup. Visibility changes and atomic tab replacement are not departures.
 
-Rooms are private capabilities, with no public listing. An authenticated user can list their owned/joined rooms. Knowing a room ID does not grant membership. Access checks bind every request and connection to its room.
+A host may leave without closing for others. Persist Everyone controls before acknowledging host departure. Keep host membership for authorized return; do not elect a host or grant management rights. Keep Everyone on return until the host deliberately changes it. A disconnected host receives the same 30-second departure grace.
 
-The host can change settings, choose media, rotate invitations, remove participants, and close the room. Media selection is host-only in the first release. Playback control can be host-only or shared with current participants.
-
-Membership persists across ordinary disconnects. A removed participant loses membership and all sockets immediately. Removal also rotates the invitation so the old code cannot immediately readmit that identity. It cannot stop a person receiving a new invitation under a new anonymous identity.
-
-Room closure invalidates invitations, removes memberships, stops its coordinator, and deletes its current media/checkpoint records. Connected clients receive `room.closed`. Default expiry is 30 days without an authenticated room visit; cleanup only expires rooms with no active connections. Limits and retention are operator-configurable.
+Automatic or explicit closure deletes persistent records before disposing runtime resources. Failed lifecycle writes leave memory unchanged, publish a safe error to remaining connections, and disable further automatic lifecycle writes until restart. Existing playback continues.
+Bound stored rooms and membership with internal resource limits. Do not turn those limits into capacity promises or a retention feature.
 
 ### 4.3 Invitations
 
-Generate 128-bit random link secrets. The link form is `/join#invite=<secret>`. The frontend reads and removes the fragment with `history.replaceState`, then submits the secret in a JSON request body. Never put it in query parameters or access logs.
+Keep a random 128-bit link secret and an independent 16-character Crockford Base32 code.
+Use `/join#invite=<secret>`; remove the fragment before loading provider components, then redeem through a JSON body. Retain the validated pending secret in the current history entry across helper installation and reloads. Clear it when joining succeeds or the page leaves the join route. Do not put it in local storage or a shared frontend store.
+Normalize only documented Crockford aliases, ASCII spaces, and hyphens. Do not use short numeric room IDs as secrets.
 
-Also issue an independently random 16-character Crockford Base32 code, displayed in groups of four. This gives 80 bits before formatting. Codes are case-insensitive; normalize only the documented Crockford aliases and separators. Do not use short numeric room IDs as secrets.
+Invitations remain valid until the host explicitly resets them or the room closes. While the room remains open, failed joins, helper installation, reloads, departure, removal, and elapsed time never invalidate them. Invitations have no expiry. The host can retrieve the same invitation again without invalidating earlier shares.
+Only the host may retrieve raw invitation values. Never include them in room snapshots, lists, logs, or other participants' responses.
+Store the values in the private invitation record, with indexed hashes for redemption. Do not introduce encryption-key management for this purpose.
 
-Store hashes of both secrets. Both resolve to one invitation generation, expire after seven days by default, and rotate together. Return raw secrets only when creating/rotating an invitation; later requests create replacements rather than recovering stored secrets.
+Joining persists membership once. Redeeming again as an existing member does not duplicate membership.
+Removal atomically removes membership, then disconnects the removed member. Joining, leaving, removal, and sharing do not replace the invitation; only host rotation or room closure invalidates it. A removed participant can rejoin with the current invitation. Hosts can return through the room URL or redeem the current invitation without changing membership or losing management rights.
+Return one safe error for unknown, revoked, or closed-room invitations. Rate-limit redemption in memory.
 
-Redeeming an invitation atomically checks expiry, room state, capacity, and rate limits before creating membership. Repeated redemption by an existing member succeeds without duplicating membership. Return the same public error for unknown, expired, revoked, and closed-room invitations.
+### 4.4 Connections and multiple tabs
 
-### 4.4 Presence and multiple tabs
+Use one playback connection per identity per room. A new authenticated connection replaces the previous connection automatically.
+The previous page pauses, disposes its player, and shows that the room is open elsewhere. It does not reconnect automatically after replacement.
+Reloading that page can take ownership again. Do not add a lease-management control to the normal interface.
+Server-side connection identity still rejects messages from replaced sockets. Different rooms remain independent.
 
-Identity, membership, and connection are separate concepts. Each room membership has a room-scoped member ID. Each socket has a random connection ID and connection generation.
-
-Only one connection per member per room may be the active playback connection. The first connection receives the lease when no live lease exists. Other tabs show an inactive-player state. “Use this tab” explicitly transfers the playback lease and pauses the previous tab. Readiness counts active playback connections, not tabs. The same identity may participate independently in different rooms.
-
-A disconnected playback lease has a 15-second reconnect grace. Reconnecting with the same authenticated membership replaces the stale connection. A stale socket cannot submit commands or readiness after replacement.
-
-If the host disconnects, preserve host ownership. After 15 seconds without a host playback connection, pause the room and clear pending play intent. Do not elect a new host. A returning host must explicitly resume. Non-host controllers may act during the grace period when shared controls are enabled; after host loss, only the returning host can restart playback. That explicit resume clears the host-loss restriction and restores the configured controller policy.
+A disconnected member has a fixed 15-second grace in an existing wait. Remove the member from that wait after the grace.
+Host departure after its separate 30-second grace changes persisted `controllers` to Everyone, preserving playback. The 15-second waiting grace remains independent.
+Never elect or transfer a host automatically.
 
 ## 5. Room state and policies
 
-### 5.1 Authoritative snapshot
+### 5.1 Runtime room
 
-| Field | Meaning |
-| --- | --- |
-| `roomId` | Stable room identity |
-| `epoch` | Random coordinator incarnation; changes on activation/restart |
-| `revision` | Durable, increasing room mutation counter |
-| `mediaGeneration` | Increases when the selected media changes, even to the same video |
-| `hostMemberId` | Host's room-scoped member ID |
-| `settings` | Permission, synchronization, and waiting policy |
-| `media` | Validated local or Bilibili descriptor, or absent |
-| `playback` | Phase, position anchor, server time anchor, base rate, desired playback |
-| `barrier` | Readiness barrier ID, required members, reason, deadline, if present |
-| `members` | Bounded roster with roles, presence, and sanitized readiness |
-| `serverNowMs` | Server monotonic time in this process's clock domain |
+A room runtime owns its epoch, revision, media generation, playback timeline, connections, readiness, waiting state, and bounded recent command results.
+These fields are memory-only. An epoch changes on process restart or coordinator recreation; revisions and media generations are scoped to that epoch.
+Persistent settings and media are loaded into the runtime from application memory, not queried from SQLite per operation.
 
-Use integer milliseconds on the wire. Reject nonfinite, negative, or out-of-range numeric fields and integer values outside JavaScript's safe range. Internal arithmetic may use finer precision. Wall-clock timestamps are reserved for expiry and audit metadata.
+The server owns the timeline. Participant observations cannot replace it or grant authority.
+Snapshots contain the caller's room-scoped membership, sanitized roster, media, settings, playback, and current wait.
+A full snapshot is sufficient for reconnect. There is no persistent event log or replay history.
 
-The server owns the intended timeline. Participant observations never replace it directly. A participant cannot become host by claiming a role or reporting a position.
+### 5.2 Settings
 
-### 5.2 Proposed settings
+| Setting       | Values             | Default |
+| ------------- | ------------------ | ------- |
+| `controllers` | `host`, `everyone` | `host`  |
+| `waitForAll`  | Boolean            | `true`  |
 
-| Setting | Values | Default and behavior |
-| --- | --- | --- |
-| `controllers` | `host`, `everyone` | `host`; applies to play, pause, seek |
-| `syncMode` | `seek`, `adaptive` | `adaptive`; use rate correction only when supported |
-| `waitMode` | `none`, `all` | `all`; wait for the selected playback cohort |
-| `waitOnBuffering` | Boolean | `true`; applies only with `waitMode=all` |
-| `waitTimeoutMs` | 5,000–120,000 | 30,000; timeout keeps room paused for host action |
-| `lateJoin` | `catch_up`, `wait_at_next_play` | `catch_up`; never interrupt current playback merely for joining |
-| `softDriftMs` | 50–500 | 100; begin correction after sustained error |
-| `hardDriftMs` | 250–2,000 and greater than soft threshold | 750; seek when exceeded |
+`waitForAll` covers startup and sustained buffering. Synchronization thresholds and timing constants are implementation defaults, not room preferences.
+All participants use base rate 1.0; small temporary rate corrections are automatic. Volume, mute, fullscreen, quality, and danmaku remain local.
 
-The base playback rate is 1.0 in the first release. Temporary adapter rate changes correct drift; they are not shared user speed controls. Volume, mute, fullscreen, quality, captions where supported, and danmaku display remain participant-local.
+Changing media persists only the new descriptor, then resets runtime position to zero and pauses the room.
+Changing `waitForAll` cancels an existing wait and pauses the room. Changing controller permissions preserves playback.
 
-Changing media pauses the room, increments `mediaGeneration`, cancels readiness barriers and pending adapter work, and resets position to zero. A settings change is revisioned; a change to waiting rules cancels its barrier and leaves the room paused. Other settings changes retain playback.
+### 5.3 Playback and waiting
 
-### 5.3 State machine
+Use `empty`, `paused`, `waiting`, `playing`, and `ended` phases in memory.
+Play starts immediately when waiting is off. Otherwise, wait for the active playback members to load matching media and permit playback.
+Freeze the required members for each wait. Late joiners never enlarge an existing wait or interrupt playback merely by joining.
+Ready late joiners catch up automatically and participate in subsequent buffering waits. There is no alternative late-join mode or per-member exclusion.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Empty
-    Empty --> Paused: Select media
-    Paused --> Waiting: Play with incomplete required readiness
-    Paused --> Playing: Play when ready or waiting disabled
-    Waiting --> Playing: Required cohort ready
-    Waiting --> Paused: Pause, timeout, host loss, or policy change
-    Playing --> Waiting: Sustained buffering with wait policy
-    Playing --> Paused: Pause, host loss, or empty room
-    Playing --> Ended: Timeline reaches duration
-    Ended --> Paused: Seek before end
-    Ended --> Waiting: Replay with readiness barrier
-    Playing --> Paused: Change media
-    Waiting --> Paused: Change media
-```
+Keep fixed internal defaults: 30-second wait timeout, 750-ms sustained buffering before a room pause, and one second of stable readiness before resuming.
+A timeout leaves the room paused and clears automatic resume. Any controller allowed by `controllers` can retry or pause.
+Only the host changes settings or removes a member. Show who is blocking the wait without exposing policy machinery.
 
-An adapter failure is participant-local readiness, not an authoritative room phase. Seeking while playing rebases the playing timeline. Seeking while paused remains paused. Seeking during waiting updates the target, replaces the barrier, and preserves play intent. Replay starts from zero. The server's duration timer moves the timeline to ended; one client's early `ended` event cannot end the room.
-
-### 5.4 Readiness and waiting
-
-Report one of `no_media`, `loading`, `ready`, `buffering`, `gesture_required`, `mismatch`, `access_denied`, `unsupported`, or `error`. Include media generation, barrier ID when applicable, adapter capabilities, sample time, and bounded position/duration metadata. Do not include platform errors verbatim.
-
-On play with `waitMode=all`, freeze the required cohort from active, non-excluded playback members. Include the host. Each must confirm the current media generation, matching media, and a playable position within the target tolerance. A report from an older generation or barrier cannot release it.
-
-Late joiners do not enlarge an existing barrier. Under `catch_up`, they load and join the current timeline when ready. Under `wait_at_next_play`, they remain paused until the next explicit play. After a catch-up participant is ready, include that participant in future buffering barriers.
-
-If buffering persists for 750 ms, pause at the authoritative timeline position and create a barrier for the current playback cohort. Short buffer events do not pause everyone. Preserve desired playback while waiting so recovery can resume automatically. A manual pause always clears that intent.
-
-Disconnected required members remain in the barrier for the 15-second grace, then are excluded. A host disconnect instead invokes the host-loss rule. The host may exclude an unavailable member from waiting; exclusion does not grant that member media access. Exclusion lasts for the current media generation and is visible to everyone.
-
-At the wait deadline, remain paused and clear automatic resume. Show the blocking members to the host, who can retry, exclude them, or change the wait policy. Never silently turn “wait for all” into “continue after timeout.” New barriers prevent oscillation by requiring one second of stable ready state after buffering before release.
+Use current media generation and wait ID to reject stale readiness. Never let an old load completion release a newer wait.
+Manual pause cancels pending play intent. Seek during waiting changes the target and creates a new wait while preserving play intent.
+An empty room pauses. Ended playback is derived from the server timeline; a single client's early ended event cannot end the room.
 
 ## 6. Synchronization model
 
 ### 6.1 Timeline and command ordering
 
-Represent the intended timeline by position `p0`, server monotonic anchor `t0`, and playback phase. For server time `t`:
+Project playback from an in-memory position anchor and monotonic server time:
 
 ```text
-playing: target(t) = clamp(p0 + (t - t0) * rate, 0, duration)
-otherwise: target(t) = p0
+playing: target(t) = clamp(position + (t - anchorTime), 0, duration)
+otherwise: target(t) = position
 ```
 
-Each authorized command is handled serially: validate membership and lease, compare epoch/media generation/revision, compute the next state, persist it, then publish it. An acknowledgement means the transaction committed. Never broadcast success before persistence.
+Commands carry epoch, media generation, expected runtime revision, and command ID.
+The room coordinator validates in-memory authorization and connection ownership, rejects stale intent, applies the command, then acknowledges and broadcasts.
+Concurrent stale commands receive a fresh snapshot. Do not replay stale play or seek automatically.
 
-Commands carry `commandId`, `epoch`, `mediaGeneration`, and `expectedRevision`. The first valid command at a revision wins; concurrent stale commands receive `stale_state` and a fresh snapshot. Clients show the conflict and do not automatically replay stale play or seek intent.
+Keep one pending command per page and preserve focused controls while awaiting its result.
+Normal acknowledgement waits do not change the player layout or dim controls. Show an additional recovery overlay only when the matching result remains missing for more than three seconds.
+Measure this interval from command dispatch to its matching result, independently of media loading, buffering, and readiness waits. A received result ends the interval even when media preparation continues.
+The overlay never replaces the existing player status. Retrying uses the original command ID and input; a result, new epoch, terminal room connection, or page disposal clears the pending feedback.
 
-Store accepted command IDs and results in the same transaction as the mutation. Deduplicate by room, identity, and command ID for 24 hours, including reconnects. After checking current authorization and epoch, look up duplicate commands before comparing their expected revision: a successful retry naturally carries the older revision. A repeated ID with different payload is invalid. Old-epoch commands are rejected; a new epoch always requires fresh user intent. Never queue controls for offline replay.
+Keep at most 256 recent accepted command results per active room for up to 60 seconds, in memory only.
+Check current authorization before returning a duplicate result. Reject the same ID with changed input.
+After eviction, expected revision prevents reapplying an accepted command; return stale state and reconcile instead of promising an old receipt.
+A new epoch requires new user intent. Never persist command receipts or queue controls for offline replay.
 
-Use the command's committed timeline anchor for pause and seek. For play, anchor at application time before the commit; clients extrapolate elapsed time after receiving the update. This first-release approach favors simplicity over scheduled future execution. It accepts transport delay before a pause takes effect; measure that as control latency, not steady-state skew.
+### 6.2 Clock and drift correction
 
-### 6.2 Clock estimation
+Use browser `performance.now()` and server monotonic time. Use a four-timestamp clock exchange and bounded low-RTT sample window.
+Reset estimates on reconnect, epoch change, and resume from suspension. Track uncertainty without claiming it bounds actual playback skew.
+A client may show the room while calibrating, but reports loading until it has a usable clock estimate. While seeking, report buffering when playable data is missing; otherwise report loading. Neither status is ready, but buffering lets sustained seek delays trigger the room's buffering wait.
+Sample player position locally every 250 ms while visible and playing. No diagnostic observation message goes to the server.
 
-The browser uses `performance.now()`, not the wall clock. The server uses a monotonic duration from process startup. For a four-timestamp exchange:
+Use internal defaults: 100-ms soft drift, 750-ms hard drift, sustained-error filtering, and rate correction between 0.95 and 1.05 when supported.
+Seek for large errors. Bound repeated corrective seeks and allow settling. Explicit user seeks apply immediately.
+Suspend correction while buffering, seeking, missing media, or awaiting a browser gesture.
+Degraded clock estimates disable small corrections while keeping explicit controls and safe reconciliation available.
 
-```text
-c0 = client send time         s1 = server receive time
-s2 = server send time         c3 = client receive time
-network RTT = (c3 - c0) - (s2 - s1)
-server offset = ((s1 - c0) + (s2 - c3)) / 2
-estimated server time = client monotonic time + server offset
-```
+### 6.3 Events and reconnect
 
-Take five initial samples, then one every five seconds. Maintain a bounded 20-sample window, reject malformed/negative-delay samples, and estimate offset from the lowest-RTT subset. Smooth updates without moving the applied playback target backward solely because the estimate changed. Track uncertainty separately; asymmetric paths cannot be corrected exactly by this exchange.
+Keep user intent separate from programmatic player events. Correlate asynchronous apply operations and cancel stale media work.
+Send liveness/clock messages independently of SQLite. Pause locally after five seconds without server liveness; expire server connections after 15 seconds.
+Reconnect with bounded exponential backoff, reauthenticate in memory, fetch a snapshot, recalibrate, and reconcile.
+A replaced tab does not enter this reconnect loop.
 
-Reset the estimator on reconnect, epoch change, and visibility resume after suspension. A client may show the room while calibrating, but must not report synchronized readiness without a usable estimate. If estimated clock uncertainty exceeds 250 ms, show degraded synchronization and suspend small rate corrections; explicit controls and hard reconciliation remain available.
-
-### 6.3 Drift controller
-
-Sample local position every 250 ms while visible and playing. Compare it with the projected target at the same estimated server time. Let `error = target - observedPosition`.
-
-| Condition | Action |
-| --- | --- |
-| Paused snapshot | Pause and seek to anchor if outside 100 ms tolerance |
-| Explicit accepted seek or new media | Apply target immediately; do not wait for drift threshold |
-| Absolute error below soft threshold | Restore base rate and observe |
-| Error above soft threshold for three samples | If supported, apply `clamp(1 + errorSeconds / 5, 0.95, 1.05)` |
-| Absolute error exceeds hard threshold | Seek to current projected target |
-| Rate change unavailable | Seek after sustained soft error; limit corrective seeks to one per three seconds |
-| Buffering, seeking, gesture block, or missing media | Suspend correction and report readiness |
-
-Apply a two-second settling period after a corrective seek. Suppress redundant seeks while one is in flight. Recompute the target after asynchronous completion. Do not repeatedly seek a platform adapter whose position resolution cannot meet the configured threshold; report degraded capability and use measured tolerances.
-
-Hard corrections for explicit user commands bypass the corrective-seek cooldown. On visibility return, recalibrate and hard reconcile if required. Background tabs and suspended mobile devices do not receive a synchronization guarantee.
-
-### 6.4 Preventing event feedback
-
-An adapter emits both user actions and effects of programmatic commands. Track an apply generation, expected target/state, and completion deadline. Correlate events with the in-flight application operation instead of assuming every `pause` or `seeked` event is user intent.
-
-Prefer OVS controls. If native platform controls remain visible, require the proof of concept to show that their events can be distinguished and reconciled. Unauthorized local changes return to room state and show why the control is unavailable. A genuine authorized action during an in-flight operation must not disappear under a blanket suppression flag.
-
-Cancel work by media generation and adapter instance identity. A late `load`, `play`, or platform callback from a disposed adapter must not update readiness or the new player.
-
-### 6.5 Connection loss and recovery
-
-Send an application heartbeat every five seconds. If no server message or heartbeat response arrives for five seconds, mark the connection uncertain and pause local playback. The server expires a connection after 15 seconds without liveness. Heartbeats and clock exchanges may share frames but retain distinct fields.
-
-Reconnect with exponential backoff from 500 ms to 15 seconds plus jitter. On recovery, reauthenticate membership, obtain a full snapshot, reset clock estimation, and reconcile. Discard stale outbound commands. Reuse a command ID only to resolve an uncertain result within the same epoch; never infer that a missing acknowledgement means failure.
-
-Server restart restores the last checkpoint paused, with a new epoch and no readiness cohort. It never advances through downtime. Local files require reselection after browser reload; platform media requires fresh browser-side resolution.
+After restart, persistent room metadata and selected media survive. Playback starts paused at zero with a new epoch and empty readiness.
+Do not save playback position on a timer, control command, idle eviction, or shutdown. Local files still require browser reselection after reload.
 
 ## 7. Player adapter and local media
 
-### 7.1 Adapter contract
+### 7.1 Adapter boundary
 
-The following TypeScript describes the intended boundary, not an existing package:
+Use a small load/play/pause/seek/position/events/dispose boundary.
+Play, pause, seek, and position reporting are mandatory. Declare optional rate and buffering capabilities without a future-provider framework.
+Use seek correction without rate control. If an actual adapter lacks buffering detection, explain that automatic buffering waits are unavailable for it.
+Startup readiness still checks real playable state. Do not add admission exclusions or pretend an unobservable buffer state is ready.
+Current local and Bilibili adapters use an OVS-owned video element; validate their actual behavior.
 
-```typescript
-interface PlayerCapabilities {
-  canPlay: boolean;
-  canPause: boolean;
-  canSeek: boolean;
-  canReadPosition: boolean;
-  canSetPlaybackRate: boolean;
-  canDetectBuffering: boolean;
-  canShowDanmaku: boolean;
-  positionResolutionMs: number;
-}
-
-interface PlayerAdapter {
-  readonly capabilities: PlayerCapabilities;
-  load(input: BrowserMediaInput, signal: AbortSignal): Promise<void>;
-  play(): Promise<void>;
-  pause(): Promise<void>;
-  seek(positionMs: number): Promise<void>;
-  setPlaybackRate?(rate: number): Promise<void>;
-  getState(): PlayerObservation;
-  subscribe(listener: (event: PlayerEvent) => void): () => void;
-  dispose(): Promise<void>;
-}
-```
-
-`BrowserMediaInput` is private to the frontend. It may contain a `File` or platform runtime handle and must never enter a wire serializer. `PlayerObservation` contains bounded playback state and a sampling timestamp, not provider response objects. Events include loaded metadata, play/pause, seeking/seeked, buffering/recovery, ended, capability changes, and sanitized errors.
-
-Mandatory capabilities are play, pause, seek, and position reporting. Loading must establish duration and source identity. An adapter missing any mandatory capability is unsupported for synchronized playback. Optional rate and buffering capabilities select explicit fallback behavior; they are never guessed from provider names.
-
-Without rate control, use the seek-only correction path. Without reliable buffering detection, startup readiness still uses completed load/seek and playable-state observations, but automatic wait-on-buffering cannot cover that participant. Show this limitation before playback. With that policy enabled, require the host to disable it or exclude the affected non-host member from waiting; the host cannot exclude itself. A late joiner lacking the capability remains outside active playback until this choice is resolved, without interrupting the existing cohort. Never fabricate a `ready` report to conceal an unobservable buffer state.
-
-`play()` can fail because the browser requires a user gesture. Show “Enable playback” and keep the participant unready until it succeeds. Do not treat promise resolution as proof of sustained playback. Browser behavior is described in [MDN HTMLMediaElement.play](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/play).
+Handle browser autoplay denial with a local Enable playback action. Keep that participant unready until playback is permitted.
+Cancel loads and remove listeners, source buffers, timers, object URLs, and helper handles on disposal.
 
 ### 7.2 Local files
 
-Use a normal file input and `HTMLVideoElement` with an object URL. The browser reads the file; OVS receives only matching metadata. Revoke object URLs on replacement/disposal. Do not upload thumbnails, file samples, or subtitles as part of matching.
+Use a normal file input and an object URL. The server receives only `{kind, fingerprintVersion, digest, sizeBytes, durationMs}` and an optional user-entered label.
+Do not share filenames automatically. Never upload files, thumbnails, samples, subtitles, paths, or handles.
 
-The host first selects and probes a file. The shared descriptor contains `kind=local`, fingerprint version, sampled digest, byte length, and duration. A user-entered room media label is optional; do not share the local filename automatically. Never include an absolute path, file handle, object URL, or last-modified timestamp.
-
-For fingerprint version 1, sample up to 1 MiB at each of three offsets: zero, `floor((size - sampleLength) / 2)`, and `size - sampleLength`, where `sampleLength = min(size, 1 MiB)`. Hash a versioned, length-prefixed encoding of room ID, size, offsets, lengths, and sample bytes in that order. Use SHA-256 and a pinned, reviewed incremental browser implementation in a worker. The input format must have shared test vectors before shipping.
-
-This costs at most 3 MiB of file reads and works without loading a whole movie into memory. Including the room ID avoids reusing identical fingerprints across rooms. Sampled matching is an accidental-mismatch check, not proof of identical bytes or content authorization. A match requires equal size and digest plus duration within 250 ms. A mismatch blocks synchronized readiness and asks the participant to choose the correct file; there is no silent override.
-
-The implementation must work on ordinary HTTP. Do not make local selection or matching depend on a secure-context-only file API or `SubtleCrypto.digest`; the latter requires a secure context. See [MDN SubtleCrypto.digest](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest). If hashing fails, show an explicit matching error rather than uploading samples or accepting a weak match.
-
-Container extensions do not prove codec support. Probe with the actual player and report unsupported decoding. OVS does not transcode. Release documentation must list combinations tested in real browsers rather than promise every MP4/MKV file works.
+Fingerprint encoding version 1 uses up to three 1-MiB samples at the start, middle, and end; include room ID and size in the versioned SHA-256 encoding.
+The worker and shared vectors define the exact byte encoding. Use incremental hashing for ordinary HTTP.
+Match size and digest, with duration within 250 ms. This detects accidental differences; it is not proof of identical content or access rights.
+Probe codec support using the actual player. Do not transcode or promise untested formats.
 
 ## 8. Bilibili integration and required proof of concept
 
-### 8.1 Evidence and decision boundary
+### 8.1 Selected path
 
-The [official Bilibili external-player documentation](https://player.bilibili.com/) documents stable media identifiers and initial settings, including part selection, initial position, autoplay, and danmaku. That documentation does not establish the complete runtime command/event API required by OVS. An iframe that plays a video is not sufficient evidence of a usable synchronization adapter.
+Use an OVS-page-only Tampermonkey helper and OVS-owned player. Do not use an iframe, platform tab, server resolver, or CORS proxy.
+Each participant installs the helper and uses their own platform access. Support ordinary on-demand video, multipart selection, and text danmaku.
+Implement DASH AV1, HEVC, and AVC video with AAC audio. Require each exact codec string to pass the participant's MediaSource support check before selection. At the remembered playable quality or highest playable quality, prefer AV1, then HEVC (`hvc1` or `hev1`), then AVC (`avc1` or `avc3`). Share the video codec allowlist between helper selection and frontend metadata validation. Keep codec selection browser-local.
+Validate AVC, AV1, and HEVC separately against live platform delivery. Live streams, paid episodic formats, DRM, other codecs, and mobile require separate scope and validation.
 
-Cross-origin iframe internals are not directly accessible to the OVS page. Cross-origin messages require a cooperating receiver and validation of origin and source. These browser boundaries are documented by [MDN same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy) and [MDN postMessage](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage). Inferring an integration contract from query parameters would be unsupported.
+### 8.2 Helper scope and trust
 
-### 8.2 Candidate approaches
+Generate instance-specific rules from validated `OVS_PUBLIC_ORIGIN`. Check exact scheme, host, port, and top-level window at runtime.
+During frontend development, Vite serves the local generated helper and matching release metadata for the explicit `http://127.0.0.1:5173` and `http://localhost:5173` origins. Scope each download to its exact development origin; map only those origins in the API and WebSocket proxies. Production distribution continues to use `OVS_PUBLIC_ORIGIN`.
+Use narrow `@match`, `@noframes`, and reviewed `@connect` destinations. No arbitrary page-supplied URLs, headers, methods, cookies, or remote executable code.
+The versioned helper has explicit missing/incompatible/permission/access errors. Distribute it with OVS and keep updates manual and reviewable.
+Platform cookies stay with the browser/manager. Provider responses and signed URLs stay in helper memory.
+The trusted OVS origin can invoke helper privileges; bridge nonces do not defend against malicious same-origin code. HTTP also trusts the network path.
 
-| Approach | What must be proven | Decision |
-| --- | --- | --- |
-| Official embedded player with supported messaging/SDK | Runtime controls, accurate observations, danmaku, session behavior | Preferred if it passes all required checks |
-| Browser-side platform resolution plus local player | Permitted browser access, CORS, session isolation, direct media loading, danmaku | Consider only with reproducible evidence and maintained interfaces |
-| Browser extension or companion integration | Additional installation and trust model | Requires a separate product decision; not an assumed dependency |
-| OVS backend proxy, credential forwarding, or shared signed URL | Violates PRD boundaries | Rejected |
+### 8.3 Validation boundary
 
-Do not defeat browser security, copy platform cookies into OVS, or add a backend resolver to make a failed browser approach appear to work.
+Validate direct browser media delivery, integrated playback, danmaku, cancellation, and independent sessions on Chromium and Firefox.
+Cover HTTP, HTTPS, and ordinary LAN HTTP. Record tested browser, helper, codec, and platform-access combinations under `.misc/`.
+Repeat the relevant checks when their integration contracts change.
+Routine tests use fixtures. Live checks have finite deadlines and retries; blocked provider access is unverified, not a pass.
 
-### 8.3 Proof-of-concept matrix
+The proof of concept establishes initial integration acceptance. Carry accepted results forward into later releases, repeating only checks affected by changed integration contracts or an identified regression. A version increase alone does not require a new proof of concept.
+Record acceptance in the release PR, identifying explicit user confirmation as user-confirmed validation. Detailed artifacts under `.misc/` are volatile; their absence after cleanup does not reopen accepted validation.
 
-Build an isolated prototype before finalizing the adapter. Keep prototype code and sanitized evidence under ignored `.misc/bilibili-poc/`; promote only the selected adapter and durable contracts into application code and this document.
+#### 8.3.1 Browser-local integration contracts
 
-| Area | Required experiment and result |
-| --- | --- |
-| Playback commands | Repeated play/pause/seek, rapid conflicting actions, and seek near end have observable outcomes |
-| State reporting | Measure position resolution, event latency, duration, ended, and user-control detection |
-| Synchronization | Two independent browser profiles converge under the section 13 network profiles |
-| Danmaku | Loads and displays; follows pause, forward/backward seek, reload, and selected part |
-| Session isolation | Logged-in and logged-out profiles remain independent; OVS receives no session data |
-| Access limitations | Unsupported, deleted, login-required, region-restricted, and unavailable media fail visibly per participant |
-| Browser policy | Test autoplay, third-party cookies blocked, storage partitioning, fullscreen, and background/resume |
-| Transport mode | Direct HTTP OVS and HTTPS OVS work without a server media path |
-| Lifecycle | Disposal, room changes, and late callbacks do not leak state or create duplicate players |
-| Traffic boundary | Inspect requests, messages, storage, and logs with synthetic credential canaries |
+Use these platform interfaces and browser-local boundaries:
 
-Use current stable desktop Chromium, Firefox, and Safari as the initial validation matrix; record exact browser/OS versions in results. Test mobile separately before advertising support. Avoid real credentials in captured traces; sanitize evidence before retention.
+- Resolve BV/part/CID through `api.bilibili.com/x/web-interface/view`, tracks through `/x/player/playurl`, and danmaku through `/x/v2/dm/web/seg.so`.
+- Use the participant's own available session. These observed interfaces are not a maintained public playback contract.
+- Load AV1/HEVC/AVC video and AAC audio through DASH with SegmentBase/SIDX and MediaSource. Bound buffering, seek work, track appends, and eviction.
+- Keep signed locations inside the helper; return opaque media handles and bounded byte ranges to the page.
+- Check the helper release version, protocol, and build fingerprint before opening media. Generate the fingerprint from the bundled helper source and bridge parser. Probe installed helpers without taking playback ownership so onboarding can detect an incompatible build. If the deployed build differs from the open frontend, request a page refresh first.
+- On open, optionally return a browser-local playlist of up to 500 unique `{bvid,part,title}` entries and a title, derived from `pages` or `ugc_season.sections[].episodes`. Omit unsupported or oversized lists without blocking playback. Validate the bounded display metadata at the bridge boundary; never persist or broadcast playlists. The right sidebar offers Members/Episodes tabs, with the same tabs in the narrow-screen dialog. Mark the selected BV/part. Only the host selects an episode through the existing media replacement path; the room receives only the resolved selected-media descriptor and restarts paused at zero. Keep selection immediate and cancel stale adapter work.
+- Permit only reviewed HTTPS API/CDN hosts and paths, including the selected `bilivideo.com` destinations and `upos-hz-mirrorakam.akamaized.net`. Reject unapproved redirects.
+- Select the first permitted location from each DASH track's primary and backup URLs before requesting media. Skip unsupported locations without requesting them. If no location is permitted, report media-address incompatibility separately from network or helper-permission failures.
+- Bound request/response size, concurrency, and deadlines. Permit at most one media-location refresh per operation.
+- Keep no provider payloads or credentials in helper storage, frontend persistence, logs, SQLite, or room messages.
 
-The decision record must name the selected interface, proven capabilities, missing optional capabilities, supported media classes, browser matrix, measured synchronization, and reproducible steps. If no candidate passes, report the integration as blocked and request a product decision. Do not substitute a player without programmatic control or declare a local-only release compliant.
+Report tested versions and limitations when validating changes. A passing browser/codec combination does not establish support for every platform access mode.
 
-### 8.4 Media and danmaku data flow
+### 8.4 Playback and danmaku
 
-Parse pasted Bilibili URLs in the browser. Share only a normalized stable descriptor such as `{kind: "bilibili", bvid, cid, part, durationMs}`. Resolve the exact part in the browser before publishing it. Validate identifier syntax and field bounds again on the server. The server does not fetch the URL to validate access.
+The host supplies a canonical BV URL/ID and part. Each participant independently resolves the same `{bvid,cid,part,durationMs}`.
+Require exact identifiers and duration within 250 ms. Access failure affects that participant only.
+Media comes directly from the platform through the browser-local helper. Never download a whole video before playback or persist media.
+Refresh expired locations locally with bounded retries and current-generation checks. Pin the existing video and audio quality IDs and exact codecs during refresh. Fail with media changed if either representation disappears; never append a different encoding using the existing byte index.
+Browsers can defer opening a new MediaSource in a background tab. Count only visible time toward the source-open deadline, and continue initialization if the source opens while hidden. Preserve immediate cancellation and media-error handling. Keep helper request and SourceBuffer update deadlines unchanged.
 
-Do not send the original URL, query string, redirect target, cookies, or signed stream location to OVS. Short URLs without an independently resolvable canonical ID require the user to open the platform and copy the canonical video URL. Do not introduce a server redirect-expansion endpoint.
+Render bounded scrolling, top, and bottom text comments against observed video time. Follow pause, seek, rate correction, and part changes.
+Reuse loaded comments and pending requests when a seek stays within the current six-minute comment segment, including position corrections after pausing. Rebuild visible comments at the observed time without clearing segment data. On a seek across segments, clear the previous segment and ignore its late replies. Keep explicit comment reload available.
+Visibility, density, text size, and scrolling speed remain local to the room page. Display area is a browser-local preference that persists across reloads and rooms. Offer 0.5×–1.5× comment speed independently of shared playback speed.
+Keep each visible comment in its assigned lane. Use measured text width, font-sized rows, and predicted exit positions to prevent overlap, including faster comments catching slower comments. Share occupied rows with pinned comments only after those rows clear. Offer full screen, the top half (default), or the top quarter of the player as the comment area. Limit only scrolling comments to the selected area. Fixed top and bottom comments use the full overlay, with their current positions and remaining lifetimes preserved when the area changes. Reserve the bottom controls area. Consume crowded timestamps once instead of displaying skipped comments late.
+At 1×, every scrolling comment takes ten seconds from entry until its tail exits. Calculate velocity as `(viewport width + measured text width) / 10`, so longer comments move faster while sharing the same traversal time. Apply the local speed multiplier to velocity; an unchanged setting takes `10 / speed` seconds. Apply speed changes from the current position. Drive only transforms from observed media time, so pause and synchronization rate corrections also apply to comments. Pinned and reduced-motion comments remain stationary for six seconds. Rebuild layout after seeking, resizing, or changing text size, and dispose rendering with its adapter.
+Ignore executable/advanced-script comments. No submission, server persistence, or relay.
+Comment failure is distinct from playback failure and from hiding comments.
 
-Each participant independently loads the descriptor with their own available access. Different quality selections are allowed only when they represent the same timeline and duration. Report incompatible duration or part identity as mismatch. Stream URL refresh stays inside the adapter and must preserve media generation and position.
-
-Prefer danmaku rendering inside the validated platform player. If a separate renderer is required, fetch directly in the browser, bound parsing/rendering work, treat text as text, and index by media time. Rebuild the visible window after seeks. Danmaku visibility, density, and style remain local preferences. OVS does not relay, persist, or submit danmaku.
+The helper returns playable quality IDs from the participant's DASH response and accepts a requested ID on `open`.
+Show the loaded track's AV1, HEVC, or AVC codec beside the Bilibili source label. Derive the badge from browser-local adapter metadata, clear it during media replacement, and update it after quality changes. Keep the badge absent for local files and unknown metadata.
+SIDX parsing accepts the full 31-bit direct-reference size without allocating a whole media fragment. Nested indexes and unsafe offsets remain invalid.
+Read and append at most 256 KiB at a time. Keep one cursor and at most one pending chunk per track; alternate audio/video work within a bounded buffering pass.
+Track completed fragments within each seek generation. Advance even when reordered frames need the next fragment to complete the reported buffered range. A later seek can download evicted fragments again.
+Use the nearby SIDX byte rate to estimate a 32 MiB video / 4 MiB audio buffering budget. Keep 1–12 seconds ahead and bounded history; preserve the current fragment's keyframe during eviction. These estimates do not measure browser allocations.
+On browser quota pressure, evict played data and retry the same chunk once. Retain that chunk while buffered playback can advance; fail if no playable headroom remains.
+On seek, discard stale replies and reset incomplete MediaSource parsers before reading a new fragment. Browser codec and memory limits still apply.
+Only returned tracks are offered. Quality switching opens a new local adapter, retains room playback intent, reports readiness, and converges to the current timeline.
+Never claim a pending/failed quality is active. No adaptive Auto mode is implemented. Validate live quality switching independently from fixed-quality playback.
+Root `versions.toml` is the sole module release-version source. The helper build generates `modules/helper/dist/release.json`; script identity is stable per instance. `probe` is non-owning and never cancels active helper work.
 
 ## 9. HTTP and WebSocket contracts
 
-### 9.1 HTTP API
+[Application protocol](WIRE.md) defines HTTP routes and socket envelopes with protocol identifier 2. Helper protocol and local fingerprint encoding each use identifier 1.
+Version application routes and socket envelopes together; serve the matching frontend in the same binary.
+Use one room engine and reject unsupported settings fields.
+An incompatible client receives an upgrade error and reload guidance without processing its mutation.
 
-All paths below are proposed version-1 contracts. Require JSON bodies and bounded strict decoding for mutations. Reject unknown fields, duplicate keys, unsupported content types, and oversized inputs. Successful mutation responses include the resulting revision where applicable.
+Keep session/profile, room creation/listing, invitation retrieval/reset/redemption, settings, removal/leave, closure, and the room socket.
+Real-time socket messages cover controls, media selection, readiness, snapshots, command results, lifecycle, clock, and heartbeat.
+Use bounded strict decoding, safe errors, and connection sequence checks. Reject unsupported message types.
 
-| Method and path | Purpose and authority |
-| --- | --- |
-| `POST /api/v1/session` | Resume or create anonymous identity; no user login |
-| `GET /api/v1/me` | Current public profile and session bootstrap data |
-| `PATCH /api/v1/me` | Change this identity's display name |
-| `DELETE /api/v1/session` | Forget current identity session and disconnect sockets |
-| `GET /api/v1/rooms` | Paginated rooms owned or joined by this identity |
-| `POST /api/v1/rooms` | Create room, membership, and invitation |
-| `POST /api/v1/invitations/redeem` | Redeem exactly one link secret or code |
-| `GET /api/v1/rooms/{roomId}` | Membership-authorized snapshot |
-| `PATCH /api/v1/rooms/{roomId}/settings` | Host-only settings mutation with expected revision |
-| `POST /api/v1/rooms/{roomId}/invitations` | Host-only invitation rotation |
-| `DELETE /api/v1/rooms/{roomId}/members/{memberId}` | Host removal or non-host self-leave |
-| `DELETE /api/v1/rooms/{roomId}` | Host closes room |
-| `GET /api/v1/rooms/{roomId}/ws` | Membership-authorized WebSocket upgrade |
-| `GET /health/live`, `GET /health/ready` | Minimal process/readiness status |
+Keep short-lived HTTP retry results in bounded application memory. No HTTP idempotency table is required.
+Existing-member redemption is naturally idempotent. On restart or an expired create receipt, GET the known random creation ID and require fresh intent if unavailable. Never retry creation blindly or rely on a room list.
+A reused in-memory request ID with changed input is rejected. Never promise recovery of a command outcome across restart.
 
-The host leaves by disconnecting or closing the room; self-removal cannot orphan the host record. HTTP room mutations enter the same coordinator queue as WebSocket commands. Use an idempotency key for room creation and invitation redemption; retain only the nonsecret outcome, never a cached plaintext invitation. An uncertain invitation-creation response is recovered by explicit rotation.
+## 10. SQLite persistence
 
-Errors use `{code, message, requestId, retryable}` and optional sanitized validation details. Use 400 for malformed input, 401 for missing/expired session, 403 for denied actions by an authorized member, 404 for absent or inaccessible rooms, 409 for stale state, 413 for oversized bodies, and 429 for limits. Never echo arbitrary input or provider exception text.
+### 10.1 Persistent data
 
-### 9.2 WebSocket framing
+| Record         | Persisted information                                    | Write trigger                           |
+| -------------- | -------------------------------------------------------- | --------------------------------------- |
+| Schema version | SQLite `user_version`                                    | Initial database creation               |
+| Identities     | ID, optional display name                                | Create or rename                        |
+| Sessions       | Token hash, identity, CSRF metadata, expiry              | Create, daily renewal if needed, revoke |
+| Rooms          | ID, title, host, two settings                            | Create, change settings, close          |
+| Members        | Room, identity, room-scoped member ID                    | Join, leave, remove                     |
+| Invitations    | Current link/code values and indexed verification hashes | Create or explicit host reset           |
+| Selected media | Allowlisted local or Bilibili descriptor                 | Select or replace media                 |
 
-Use text JSON frames and a versioned envelope. Reject binary frames; do not enable message compression initially. Browser authentication uses the OVS cookie, never a token in the WebSocket URL.
+SQLite is not a runtime state store, queue, authorization polling mechanism, or synchronization clock.
+Do not persist playback checkpoints, command results, HTTP retry receipts, storage probes, connection state, runtime revisions, or media generations.
+Do not write activity timestamps merely because someone watches, sends a heartbeat, or requests a snapshot.
+Session expiry remains enforced; expired sessions may be removed on startup and low-frequency credential maintenance.
+Only empty-room departure cleanup is automatic; do not add invitation/identity retention policies.
 
-```json
-{
-  "v": 1,
-  "type": "playback.command",
-  "commandId": "01JEXAMPLE",
-  "epoch": "opaque-room-epoch",
-  "mediaGeneration": 4,
-  "expectedRevision": 28,
-  "payload": { "action": "seek", "positionMs": 125000 }
-}
-```
+### 10.2 Reads, writes, and failure
 
-IDs above are illustrative. Production command IDs are browser-generated high-entropy identifiers using an HTTP-compatible random source such as `crypto.getRandomValues`. The connection is already bound to its room and identity; client frames cannot override either.
+Read persistent application state on startup. Keep all hot-path reads and writes in memory afterward.
+Durable user actions use short transactions that update only the affected records. Never rewrite room members or invitations for a playback action.
+Keep constraints and foreign keys. Serialize persistent writes through one worker with a queue of at most 128 pending transactions.
+There is no periodic flush of runtime state and no write-behind durability promise.
 
-| Direction | Message | Purpose |
-| --- | --- | --- |
-| Server → client | `session.welcome` | Protocol version, connection ID/generation, epoch, full snapshot |
-| Client → server | `playback.command` | Play, pause, seek, replay |
-| Client → server | `media.select` | Host's sanitized media descriptor |
-| Client → server | `member.readiness` | Readiness for current generation/barrier |
-| Client → server | `member.observation` | Sampled local state for diagnostics; never authority |
-| Client → server | `member.activate` | Explicit active-tab takeover |
-| Client → server | `waiting.exclude` | Host excludes/un-excludes a member for this media |
-| Both | `clock.ping` / `clock.pong`, `heartbeat` | Time estimate and liveness |
-| Server → client | `command.result` | Accepted revision or rejection with safe reason |
-| Server → client | `room.snapshot` | Complete authoritative state after durable mutation/resync |
-| Server → client | `member.status` | Transient presence/readiness update |
-| Server → client | `room.closed`, `session.replaced`, `error` | Lifecycle and failure information |
+A failed persistent operation reports failure and leaves memory unchanged. Existing playback and in-memory permissions remain usable.
+Mark persistent writes unavailable after an operational database failure. Do not run write probes or automatic recovery transitions.
+The operator fixes storage and restarts OVS. Startup must load valid state successfully before readiness.
+A failed revocation must report failure; it must never appear successful while leaving a reusable durable credential.
 
-Every server room event carries epoch and a per-connection monotonic `eventSeq`. Readiness updates do not increment durable revision unless they cause a room transition. Clients replace state on a snapshot, ignore stale generations, and reconnect for a fresh snapshot on an unexpected sequence gap. Clock/heartbeat traffic has its own correlation ID.
+### 10.3 Startup and schema initialization
 
-Full snapshots on state changes keep small rooms simple; there is no event-replay log in version 1. A reconnect always gets a snapshot. An incompatible protocol version returns `upgrade_required`; the UI reloads assets once and then shows an actionable error instead of looping.
+Acquire the data-directory lock before opening SQLite. Only one process owns a data directory.
+Use WAL, foreign keys, a five-second busy timeout, and `synchronous=FULL` for persistent transactions.
+`modules/sync/sql/schema.sql` always defines the complete, current database schema. Update that definition whenever the schema changes.
+Create an empty database from that definition in one transaction and record the supported schema version in SQLite `user_version`.
+Reopen a database with the supported version without rerunning DDL. Reject unsupported versions and nonempty unversioned databases without altering their application data.
+Numbered SQL files in `modules/sync/sql/migrations/` record changes between versions for historical reference only. Application startup does not execute them; keep Go embedding code in `modules/sync/sql/`.
+Never reset a database to hide schema errors. Restart always begins paused at zero.
 
-### 9.3 Bounds and backpressure
+### 10.4 Data directory
 
-Initial limits are 32 playback members per room, 100 active rooms, and 500 active sockets per instance. Limit stored rooms to 1,000 and owned rooms to 20 per identity by default. These are resource controls, not a promised capacity rating.
+Keep `/data` across container replacement. If an operator copies data, stop OVS and copy the whole directory with ownership, modes, and SQLite sidecars.
+Do not copy a live database file alone. Old copies represent old application state, including old credentials.
+OVS supplies no backup/restore or invalidation CLI and no automated downgrade workflow. Use a binary compatible with the saved schema.
 
-Limit HTTP JSON and each WebSocket frame to 64 KiB. Allow at most ten control commands per second per connection with a burst of twenty; coalesce seek dragging in the browser. Observations are at most once per second, with readiness transitions sent immediately. Rate-limit bootstrap, creation, and invitation attempts by identity and effective client address; default invite attempts are ten per minute per address with a burst of ten. Do not trust forwarded addresses from unconfigured proxies.
+## 11. Security and resource limits
 
-Use per-connection output limits of 64 frames and 256 KiB, whichever is reached first. Coalesce replaceable status/snapshot updates before assigning sequence numbers. Never silently drop command results. Disconnect a slow client and require resynchronization instead of blocking a room broadcast. Apply bounded write deadlines and prioritize lifecycle/control frames over diagnostic observations.
+Enforce membership, host policy, current connection, epoch, media generation, and revision in the server's memory-owned state.
+Use high-entropy credentials, HttpOnly cookies, exact Origin/Host checks, CSRF protection, safe text rendering, CSP, and bounded strict JSON decoding.
+Do not expose platform credentials, invitation secrets, session tokens, or raw provider failures in logs or diagnostics.
+Use the configured public origin for links, cookies, and helper scope. Trust forwarding headers only from explicitly configured proxy peers.
 
-## 10. Persistence, migrations, and failure handling
-
-### 10.1 Logical schema
-
-The following is the schema contract. Implementation must provide actual ordered SQL migrations, indexes, and constraints.
-
-| Table | Key fields and constraints |
-| --- | --- |
-| `schema_migrations` | Version primary key, checksum, applied timestamp |
-| `identities` | Random ID primary key, nullable bounded display name, created/last-seen timestamps |
-| `sessions` | Token hash unique, identity FK, CSRF secret, created/expiry timestamps |
-| `rooms` | ID primary key, host identity FK, bounded title, settings, revision, media generation, created/last-active timestamps |
-| `room_members` | Room and identity composite unique key, room-scoped member ID unique within room, joined timestamp |
-| `room_invitations` | Room FK, generation, link/code hashes unique, expiry; one active generation per room |
-| `room_media` | Room primary/FK, kind, allowlisted descriptor fields, descriptor version |
-| `playback_checkpoints` | Room primary/FK, media generation, position, phase, saved wall time |
-| `command_results` | Room/identity/command ID unique, epoch, payload digest, result revision, safe result, expiry |
-| `http_idempotency` | Identity/operation/key unique, request digest, nonsecret resource outcome, expiry |
-
-Use foreign keys and uniqueness constraints in addition to application validation. Enable foreign keys on every connection. Keep settings/descriptors versioned if stored as JSON; validate them on both write and load. Index session expiry, invite hashes, memberships by identity, room activity, and command expiry.
-
-Do not persist individual clock samples, playback observations, connection IDs, local player handles, credential-bearing URLs, or a history of watched media. Presence, leases, readiness, and barriers are ephemeral.
-
-### 10.2 Write and recovery semantics
-
-Use SQLite in WAL mode on a local filesystem, with a bounded connection pool, one application write queue, a five-second busy timeout, and `synchronous=FULL` initially. Measure before relaxing durability. SQLite WAL permits readers alongside a writer but still has write serialization and local shared-memory constraints. See [SQLite WAL](https://sqlite.org/wal.html).
-
-Persist media, settings, membership, accepted playback transitions, and command outcomes transactionally. Save a playback checkpoint every ten seconds while playing and on pause, seek, media change, empty-room eviction, and shutdown. Checkpoints project position at save time; they do not change the public room revision by themselves.
-
-On restart, restore the checkpoint paused without extrapolating wall-clock downtime. A crash can lose playback progress since the last successful checkpoint, normally up to ten seconds. Acknowledged durable mutations remain subject to filesystem/storage durability guarantees.
-
-If a mutation fails to commit, publish no successful state change. Mark storage readiness unhealthy, reject further mutations, and tell connected clients to pause. Retry storage recovery with bounded backoff; recovery requires fresh room snapshots and explicit host play. Do not keep accepting apparently successful in-memory controls during disk failure.
-
-### 10.3 Migrations
-
-Acquire exclusive application ownership of the data directory before opening for normal service. A second OVS process must fail clearly. Do not use SQLite's write lock as the only protection against two independent coordinators.
-
-Run numbered migrations in order before readiness. Verify recorded checksums, reject a database newer than the binary supports, and fail startup on migration errors. Use transactional DDL where supported; explicitly document any migration that cannot be atomic. Never edit an applied migration or reset a database to resolve version mismatch.
-
-Test fresh creation and upgrades from every supported published schema. Take a backup before an upgrade that changes schema. Downgrade means restoring the matching pre-upgrade backup and binary; automatic down migrations are not promised.
-
-### 10.4 Retention and backup
-
-Expire command results and HTTP idempotency records after 24 hours; remove expired invitations and sessions periodically. Update activity timestamps in batches. Delete expired rooms only while inactive. Delete inactive identities after 365 days only when they have no unexpired session, owned room, or membership. Bound each cleanup transaction.
-
-The supported baseline backup procedure is to stop OVS cleanly and copy the entire `/data` directory, preserving ownership and modes. Do not copy only a live database file: its WAL may contain committed state. An optional online backup command must use a consistent SQLite backup API or equivalent supported snapshot. See [SQLite backup API](https://sqlite.org/backup.html).
-
-Restore into an empty data directory while OVS is stopped, then start a compatible binary and check readiness. Backups contain session verifiers and room metadata and need private storage. Old backups may restore previously revoked sessions/invitations; document that operational consequence and provide an explicit post-restore session/invitation invalidation operation during implementation.
-
-## 11. Security and privacy
-
-The threat model covers untrusted guests, guessed invitations, forged room commands, cross-site requests, malformed messages, and accidental credential leakage. A malicious OVS operator controls the served JavaScript; OVS does not claim to hide browser activity from a compromised origin or provide end-to-end encrypted room metadata.
-
-- Enforce membership, active-connection generation, host authority, and expected revision on the server. UI restrictions are presentation only.
-- Validate `Host` and WebSocket `Origin` against the configured public origin. Reject missing/foreign WebSocket origins in the browser endpoint.
-- Require exact-origin checks and a session-bound CSRF token on authenticated HTTP mutations. Bootstrap has no preexisting CSRF token, so require same-origin JSON requests and rate limits. Derive WS authorization from the HttpOnly cookie plus strict origin validation.
-- Trust proxy headers only from configured proxy CIDRs. Use the configured public origin for redirects, cookie security, and invitation URLs.
-- Serve a CSP restricted to OVS assets and the exact platform origins required by the proven adapter. Avoid inline scripts and arbitrary frame/connect origins. Restrict framing of OVS itself with `frame-ancestors 'none'`.
-- Set `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`. Do not let invitation fragments reach provider components or external links.
-- Render titles, names, danmaku, and error details as text. Validate incoming platform messages by exact origin, source window, type, and shape.
-- Do not log cookies, invitation bodies, CSRF tokens, raw media inputs, signed URLs, or raw provider failures. Disable request-body logging at application and documented reverse-proxy boundaries.
-- Use cryptographically secure server randomness for identity/session/invitation secrets. Hash high-entropy secrets with a standard SHA-256 implementation; do not design a custom cryptographic scheme.
-- Do not add outbound server fetches based on media input. This removes the media-resolution SSRF path rather than attempting arbitrary URL filtering.
-- Bound JSON depth, field lengths, frame sizes, connection counts, queue sizes, and request rates. A participant's telemetry is untrusted even after authentication.
-
-Plain HTTP remains supported, including LAN addresses. It provides no transport confidentiality or protection against active network modification, and its cookies cannot use `Secure`. The UI should identify HTTP mode in connection details. HTTPS is recommended for networks outside the operator's trust boundary, but certificate provisioning is never part of core startup.
+Bound frames, room members, sockets, queues, request rates, and slow-client deadlines with internal defaults.
+Drop slow clients and resynchronize instead of blocking a room. Never silently drop command results.
+No administrator-facing tuning dashboard or metrics endpoint is required.
 
 ## 12. User experience, packaging, and operations
 
-### 12.1 Primary journeys
+The main journey is select media on home, create or automatically redeem an invitation, share, and watch.
+Home has inline Bilibili/local selection and invitation input, with no room directory. Room management uses accessible dialogs. The dark player integrates seeking, replay, volume, mute, fullscreen, danmaku, and real playable quality selection. Do not expose playback speed.
+Retain the creator's browser-local file through the in-app transition. Automatically load Bilibili on entry and media changes; local participants choose their own matching file. Helper onboarding uses a non-owning probe, a bottom toast, and a dismissible entry dialog. Installation offers Reload page because userscripts activate on document startup. Use the instance-bundled helper release metadata as the version source. Detect a changed deployed helper requirement before recommending installation. Show names, connection state, readiness, and available controls.
+Video-surface clicks and Space/K use the same authorized shared playback commands. Listen for player shortcuts across the foreground OVS page without requiring player focus. Left/Right seeks; Up/Down changes volume in bounded 10% steps and immediately shows local volume from 0 to 100 without a percent sign over the video for 1.2 seconds, renewing that interval on each press; M toggles mute, D toggles Bilibili danmaku, and F toggles fullscreen. Interactive inputs, menus, and dialogs retain native key behavior, including Space activation on their buttons. Outside these surfaces, prevent native Space activation and toggle playback without moving focus, including on ordinary page buttons and links; Enter keeps native button activation. Ignore composing, modified, or already handled shortcut events. Backgrounding does not pause playback or disable synchronization while the connection remains active. On return, request fresh clock samples without clearing a usable estimate or interrupting playback. Persist only validated volume, mute, quality, and danmaku display area values in browser-local storage, with unmuted 50% volume and half-screen danmaku as the defaults. Quality has a dedicated keyboard-accessible menu. The helper selects the remembered playable tier or the highest returned playable tier when absent/unavailable. The player has no separate settings button. Hovering the danmaku toggle opens its density, text size, scrolling speed, display area, status, and reload panel. Keep click and D as visibility toggles. Down opens the panel and focuses its first slider; Escape restores focus to the toggle. Touch long press opens settings without toggling visibility; ordinary taps still toggle. Keep the panel open while moving into it or interacting with its controls, and close on outside input. Own and cancel hover/hold timers and listeners with the control component. Local videos show no danmaku or player settings control. Change video uses form submission for Enter confirmation, excluding composing Enter. Confirm room departure before mutation. The OVS logo is a button using the same departure confirmation and mutation as Leave, then returns home in the current tab. Cancel preserves the room and restores focus to the initiating control. Use the OVS play mark as the browser tab icon. Include an accessible GitHub Star link with its current count in the header, including narrow screens. Fetch the fixed public GitHub repository endpoint once per page without credentials or a referrer, validate a nonnegative safe-integer `stargazers_count`, and cancel after five seconds or on disposal. Show an em dash while loading or unavailable; never substitute zero for an unavailable count. Keep the link usable on failure. Allow only that endpoint in the production `connect-src` policy. Cap room content at 1600px and further constrain desktop width to keep the player at 16:9 within its viewport-height limit. Account for sidebar visibility and page gutters; wrap room actions when needed. Preserve the mobile player minimum height and viewport-filling fullscreen behavior.
+Player controls appear on pointer entry, movement, focus, and Tab navigation. Player shortcuts preserve the current controls visibility, including when playback state changes after acknowledgement; the numeric volume overlay remains independent. Hide after three seconds without activity while playing; while paused, keep controls visible inside the player. Pointer exit hides controls immediately in either state. Control-bar hover, an open quality or danmaku menu, and seek dragging hold controls visible; when the interaction ends, hide immediately if the pointer is outside or restart the playing idle timer inside. Passive focus in the player must not prevent automatic hiding. Preserve native focus, keyboard access, and timer/listener cleanup.
+The host sees the two settings, sharing/reset, remove-member, and close-room actions. Keep engineering parameters out of the UI.
+Use Vue I18n for English and Simplified Chinese across interface text, accessibility labels, page metadata, and safe public failures. Follow the first browser language by default: Chinese language tags select Simplified Chinese; other tags fall back to English. React to system language changes while following the system. Offer System, 简体中文, and English through Settings → Language. Persist only the allowlisted language preference in browser-local storage, independently of identity, rooms, and appearance. Blocked storage keeps in-page switching usable. Store message keys and named parameters for transient messages so existing notices change language immediately. Keep participant content and media metadata in their original language.
+Show actionable errors such as Choose the same file, Enable playback, Waiting for a participant, and Platform access unavailable.
+Keep keyboard operation, subtle color feedback for focused controls, text labels, responsive layouts, and reduced-motion support. Suppress focus outlines on all focus targets and focus-containing wrappers. Preserve actual focus and focus restoration; do not blur controls to remove focus styling. While playback commands await confirmation, keep buttons and seeking focused with guarded, aria-disabled controls instead of native disabling; repeat actions remain unavailable.
+The top open dialog or menu owns keydown, keypress, and keyup events even when focus remains underneath. Preserve native editing, navigation, and activation inside the surface; consume Escape to dismiss only that surface and restore focus. Keep a closing key's repeats and release isolated after unmount or transfer to another overlay. Request fullscreen keyboard locking and Chromium's Escape-only keyboard lock when available, releasing owned locks on fullscreen exit and player disposal. With locking allowed, the first Escape dismisses the overlay while fullscreen remains active; the next Escape exits fullscreen even from a focused player input. Browser-owned exits remain possible when locking is denied or unavailable, including Chromium on ordinary HTTP; dismiss the top overlay when fullscreen exits rather than leaving it open. Do not require HTTPS or keyboard-lock permission for playback or fullscreen entry.
+Quick actions open through Cmd/Ctrl + K or a header entry beside the brand. Match localized labels, English/Chinese aliases, and `/` commands entirely in browser memory. `$` and direct canonical Bilibili links/BV identifiers use the existing picker parser; pass only BV and part to the picker, then require the normal preview/confirmation flow. Never resolve provider data or publish media while searching. Offer only context-appropriate actions, retain disabled playback reasons, and reuse the existing player and room authorization paths. Keep search input focused while using arrows, ignore composing Enter events, close instantly, and restore focus before opening a destination. Do not persist search text or add a room directory.
+Keep server status, settings, and user identity on the right of the header. The settings menu groups appearance, language, notifications, and About, with native outside-click and Escape dismissal, keyboard navigation, and focus restoration. About reads the uncached public `GET /api/v2/version` response (`sync`, `web`, `helper`, `commit`, `dirty`, `tag`). The service uses its linked build version; frontend and helper versions come from their embedded release metadata. Capture the full Git commit, dirty state (including untracked source files), and an exact current-commit tag during the frontend build and embed them in the application. Container builds receive the same snapshot from the source checkout. Runtime metadata never depends on Git or the deployment directory. About displays a 12-character commit with the full hash in its title, a dirty badge only for modified builds, and a tag only when present. Without Git metadata, use an empty commit/tag and `dirty: false`, and hide these rows. Never use the browser-installed helper version for About.
+Appearance is browser-local: use a muted Slate blue default, selectable Soft iris, Graphite, Quiet teal, Sage green, Dusty rose, Warm amber, Ocean blue, and Soft clay accents, and manual light/dark modes with dark as the default. Ignore system theme changes; unsupported mode preferences fall back to dark. Persist only the allowlisted mode and accent in local storage; storage failure leaves in-page switching usable. Apply saved appearance before the first styled paint with a same-origin, revalidated bootstrap. Keep the video surface dark in either mode. Dialog motion uses opacity and scale, with a brief opacity-only reduced-motion path; keyboard interaction stays immediate.
 
-The landing page automatically restores identity and offers create room, join by code, and recent authorized rooms. Display-name entry is optional.
+Application messages and helper reminders use dismissible fixed bottom toasts without changing layout height. Persist an allowlisted left/center/right position in browser-local storage, defaulting to right. Success messages expire after six seconds, pausing while hovered or focused. Errors and helper reminders remain until dismissed or resolved.
 
-The room page shows the player, room title, connection/sync status, participant readiness, and controls available to the current role. Host settings and invitation management are separate from ordinary playback controls. Show concrete states such as “Choose the same file,” “Enable playback,” “Waiting for two participants,” or “Platform access unavailable.”
+Build the frontend before Go embedding. Ship one non-root application container with writable `/data`, without Node or an external database.
+Configure the process with `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN`, and `OVS_LOG_LEVEL`. Optional trusted-proxy CIDRs (`OVS_TRUSTED_PROXIES`) affect only proxy address handling.
+Use internal room/socket limits. Do not expose retention, synchronization, or recovery settings.
 
-Keep media access errors separate from transport failure and drift. A connected participant can still lack access to a video. A paused waiting room is not a disconnected room. Show degraded synchronization without claiming precision the adapter cannot measure.
+Keep direct HTTP and concise host/container/existing Caddy examples. OVS does not manage certificates or alter an operator's proxy installation.
+The deployment tooling may provision a separate Caddy container over SSH. It builds and transfers images locally, prepares Compose when absent, and keeps persistent volumes stable across single-instance replacements. Public IP HTTPS uses explicitly configured short-lived ACME certificates. Public TLS verification must not fall back to internal certificates. Existing proxy installations require explicit external mode and remain operator-owned. Failed preparation leaves the running application intact; startup failures preserve data without an automatic downgrade.
+Use bounded shutdown to stop admission and close sockets, workers, and SQLite. There is no playback checkpoint to save.
+Keep structured error logs and minimal liveness/readiness checks using in-memory startup, shutdown, and write-failure flags, without SQLite polling.
+Readiness may report failed persistence without stopping an already running playback loop.
+Do not add metric collection, backup operators, or automatic database repair.
 
-All controls need keyboard operation, visible focus, text labels, and status announcements that do not repeat every clock sample. Do not use color alone for readiness. Respect reduced motion. Provide a responsive layout, while documenting the browser/device support actually validated.
+## 13. Validation
 
-### 12.2 Build and distribution
+Validate core behavior on desktop Chromium and Firefox, including one mixed-browser room and ordinary LAN HTTP.
+Keep unit/integration coverage for authorization, stale commands, waiting, cancellation, isolation, schema initialization, and failed durable writes.
+Verify actual player behavior in browsers: local selection, codecs, autoplay, play/pause/seek, buffering, reconnect, tab replacement, Bilibili, and danmaku.
+Use a representative external HTTPS proxy journey and verify WebSocket reconnect. Reuse the same application checks across equivalent Caddy arrangements.
 
-Build the Vue application first, copy its distribution into `internal/web/dist/`, and then compile the Go executable with embedded assets. Go embedding requires assets to exist at compile time; see [Go embed](https://pkg.go.dev/embed). Production must not require Node, a frontend dev server, a CDN for OVS scripts, or an external database.
+Prove the persistence boundary after initialization: ordinary reads, playback controls, readiness, and timer ticks perform zero SQL operations.
+Exercise real SQLite for schema initialization, rollback, constraints, and durable changes. After restart, identities/rooms/settings/members/media survive; position, waits, and receipts do not.
+Test a failed settings/member transaction without corrupting memory, and verify existing playback can continue without database access.
 
-Use a multi-stage Docker build with pinned toolchains and dependencies. The final image contains the Go application, required runtime trust material, and license notices. Run as a non-root UID with writable `/data`; keep the root filesystem read-only where practical. Do not include `.misc`, `.tmp`, source credentials, tests, or build caches in the image.
+Measure control-response latency separately from actual playback skew. Use decoded-frame observations and declare their uncertainty and limits.
+Exercise representative cross-region latency, jitter, packet loss, asymmetric paths, and recovery. Record conditions and observed results.
+Carry accepted network validation forward in the release PR. Repeat the affected checks when synchronization or network contracts change or a regression is identified; a version increase or deletion of volatile `.misc/` artifacts alone does not reopen acceptance.
+There is no fixed 20-room capacity gate, mandatory physical-display lab, universal p95/p99 SLA, or statistical-significance gate for ordinary releases.
+For a performance claim, compare repeated trials in a matched environment and state sample counts and limitations. Do not infer faster playback from fewer SQL calls alone.
 
-Choose and pin the SQLite driver and WebSocket library during scaffolding after checking maintenance, license, cancellation, and deployment requirements. Verify the SQLite engine version bundled by the driver, not just its Go module version. If the driver needs cgo, declare the compiler/runtime requirements and test the resulting image. Do not claim a static binary without verifying it.
-
-The SPA serves hashed assets with long immutable caching and the HTML entry with revalidation. API, health, and WS paths must never fall through to `index.html`. An old frontend receives a protocol-version error and a controlled reload path.
-
-### 12.3 Configuration
-
-Use a small environment/CLI surface; validate it before startup. Proposed variables:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OVS_LISTEN_ADDR` | `:8080` in the container | HTTP listener |
-| `OVS_DATA_DIR` | `/data` | SQLite, ownership lock, supported backup output |
-| `OVS_PUBLIC_ORIGIN` | Required | Exact `http://` or `https://` browser origin, no path/query |
-| `OVS_TRUSTED_PROXY_CIDRS` | Empty | Proxy sources allowed to supply forwarding information |
-| `OVS_LOG_LEVEL` | `info` | Structured log level |
-| `OVS_MAX_ACTIVE_ROOMS` | `100` | Active coordinator cap |
-| `OVS_MAX_CONNECTIONS` | `500` | Instance socket cap |
-| `OVS_MAX_ROOM_MEMBERS` | `32` | Room membership/playback cap |
-| `OVS_ROOM_IDLE_TTL` | `720h` | Inactive-room retention |
-
-Remaining internal defaults stay in one validated configuration structure; expose more knobs only when operators need them. Changing the public origin can change browser identity scope. Serving OVS under a URL subpath is outside the initial deployment contract.
-
-### 12.4 Deployment topologies
-
-**Direct HTTP.** Publish the application port on the chosen host interface, set `OVS_PUBLIC_ORIGIN` to the actual HTTP origin, and mount a persistent local volume at `/data`. A loopback publication serves local use; LAN use requires an explicitly reachable interface. No proxy is required.
-
-**Caddy on the host.** Publish OVS at `127.0.0.1:8080`, set its public origin to the HTTPS domain, and add a site to the operator's Caddy configuration:
-
-```caddyfile
-watch.example.com {
-    reverse_proxy 127.0.0.1:8080
-}
-```
-
-**Caddy in a separate container.** Put Caddy and OVS on a shared private Docker network. Publish only Caddy's intended public ports. Use `reverse_proxy ovs:8080`, mount `/data` only into OVS, and give Caddy separate certificate/config volumes. Configure only the actual proxy network as trusted.
-
-**Existing Caddy.** Add the same site/upstream to the existing deployment. Do not replace global configuration or install a second Caddy instance. Document DNS and network prerequisites in the eventual deployment guide.
-
-Caddy supports WebSocket reverse proxying and can manage HTTPS independently of OVS. See [Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) and [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https). Proxy reloads and connection closures must be tolerated by the normal reconnect path.
-
-The single-container requirement applies to OVS itself. Optional external Caddy does not turn the application into a mandatory multi-service deployment.
-
-### 12.5 Startup, shutdown, and observability
-
-Startup validates config, acquires data-directory ownership, opens SQLite, applies migrations, loads storage metadata, and starts serving. `/health/ready` becomes successful only after those steps. Instantiate room coordinators lazily.
-
-On termination, mark unready, stop admission, notify clients, pause/checkpoint active rooms, close sockets, and close SQLite within a ten-second application deadline. Configure the container stop timeout longer than that deadline. Shutdown failure must be visible in logs; crash recovery remains the fallback.
-
-Use structured logs with safe request IDs and event/error codes. Measure active rooms/connections, command queue delay, persistence time, commit-to-send delay, reconnects, rejected messages, and slow-client disconnects. Keep metric dimensions bounded; never label by invitation, display name, or media URL. Operational metrics stay local to the installation; no hosted analytics service is required.
-
-Readiness should fail on sustained storage failure. Liveness should only report whether the process can serve its health handler. Neither endpoint exposes room or identity details. Upgrade by backing up, replacing the image, and verifying migration/readiness plus a two-browser room journey.
-
-## 13. Validation and performance acceptance
-
-### 13.1 Validation layers
-
-| Layer | Important contracts |
-| --- | --- |
-| Go domain/application tests | Authorization, command ordering/deduplication, timeline math, waiting, host loss, generation cancellation |
-| SQLite integration tests | Real constraints/transactions, migration upgrades, rollback, checkpoint recovery, ownership exclusion |
-| HTTP/WS integration tests | Cookie/CSRF/origin checks, cross-room isolation, bounded decoding, stale leases, slow clients, reconnect |
-| TypeScript tests with fake clock/player | Offset estimation, hysteresis, capability fallback, event feedback, canceled loads |
-| Real-browser tests | File selection and codec handling, autoplay, multiple tabs, room journeys, direct HTTP and HTTPS |
-| Bilibili live validation | Section 8 matrix with independent browser profiles; required release gate |
-| Packaging/operations tests | Embedded assets, non-root volume writes, restart, backup/restore, all Caddy topologies |
-| Network/load harness | Control latency, actual playback skew, failure recovery, room isolation under load |
-
-Prefer deterministic fake clocks and controlled connections over sleeps in logic tests. Use synthetic local media with rights to redistribute as fixtures. Ordinary tests must not require platform credentials, internet access, or a live user deployment. Explicit Bilibili validation complements fixtures; mocks cannot establish platform compatibility.
-
-Use the regression-first ladder in AGENTS.md before adding tests. Extend an existing scenario when it owns the behavior. Do not test documentation strings or implementation layout as a substitute for behavioral validation.
-
-### 13.2 Separate measurements
-
-**Control-response latency** is elapsed time from user intent to observed application of the accepted action at the target player. Record server acknowledgement separately; a fast acknowledgement does not prove the player responded. Include both the issuing browser and remote participants.
-
-**Playback skew** is the maximum pairwise difference in displayed media position at a common real instant among ready, playing participants. Also report deviation from the authoritative timeline. Shared wrong clock estimates can make reported drift look small while real skew is large.
-
-Use timecoded synthetic video and independent frame capture/measurement for local-file acceptance. Use external observation or a validated platform measurement mechanism for Bilibili. An iframe without independently measurable position cannot pass by reporting its own estimated target. Record clock/calibration uncertainty with cross-host results.
-
-Measure convergence time after seek/reconnect, buffering recovery, correction frequency, and unsupported/degraded intervals. Exclude startup/buffering from steady-state skew only if their durations and causes are reported separately.
-
-### 13.3 Initial target matrix
-
-RTT below means browser-to-OVS round-trip time. Impair both directions independently; include asymmetric paths and combinations where participants have different RTTs. Packet loss is random per direction unless a burst is specified.
-
-| Profile | Impairment | Initial acceptance target |
-| --- | --- | --- |
-| Nearby | RTT ≤40 ms, jitter ≤10 ms, no injected loss | Control p95 ≤250 ms; steady-state skew p95 ≤150 ms |
-| Cross-region | RTT ≤250 ms, jitter ≤50 ms, 0.5% loss | Control p95 ≤800 ms; skew p95 ≤300 ms; convergence ≤3 s |
-| Adverse | RTT ≤400 ms, jitter ≤100 ms, 2% loss plus 1 s bursts | Control p95 ≤1.5 s; skew p95 ≤750 ms while ready; recovery ≤5 s after path restoration and media readiness |
-
-These are proposed targets, not published guarantees. Apply them to mandatory-capability adapters and visible foreground players. Report failures by adapter/browser and impairment profile. High uncertainty cannot be hidden by relaxing measurement precision.
-
-Run at least three independent trials per profile with stable media and declared sample counts. Collect sufficient observations for meaningful p95/p99; report sparse tails as inconclusive. Test at least two participants for timing, then a provisional capacity scenario of 20 rooms with ten synthetic participants each on a declared 2-vCPU/2-GiB reference host. Include real browsers separately; synthetic sockets do not prove decoding performance.
-
-For performance changes, compare before/after under the same environment, dynamically choosing trials with at least three per phase and a five-minute cap per phase. Report mean, median, standard deviation, min/max, p95/p99, and uncertainty. Use Welch's t-test at alpha 0.05 for independent trial summaries, not correlated samples from one run. Label degrees-of-freedom confidence high at ≥29, moderate at 10–28, and low below 10. If minimum trials do not fit, state insufficient evidence. Longer release soak tests are separate from this comparison budget.
-
-### 13.4 WebSocket decision gate
-
-First isolate browser scheduling, player response, clock uncertainty, server queueing, and database latency. Then correlate WebSocket stalls with packet-loss/retransmission evidence. Small frames, bounded queues, and status coalescing reduce application queueing but do not eliminate TCP head-of-line blocking.
-
-If cross-region targets still fail because of transport blocking, record the failing profile and prototype a datagram-capable transport separately. Preserve authoritative ordering and reliable command outcomes; disposable position telemetry may use different delivery semantics. Evaluate browser support, HTTPS requirements, proxy compatibility, and deployment cost before changing the PRD's initial transport choice. Do not ship a second transport preemptively.
-
-## 14. Implementation sequence and open decisions
-
-| Milestone | Deliverable | Exit condition |
-| --- | --- | --- |
-| 0. Bilibili feasibility | Isolated proof of concept and decision record | Runtime control, observations, danmaku, sessions, and transport modes proven |
-| 1. Foundation | Go/Vue scaffolding, embedded build, SQLite migrations, identity, room/invite lifecycle | Fresh container and persistence/authorization scenarios pass |
-| 2. Local synchronization | Local adapter, matching, room coordinator, WS, clocks, drift correction | Two independent browsers synchronize and reconnect safely |
-| 3. Policies and platform | Waiting, permissions, lifecycle edges, proven Bilibili adapter and danmaku | Complete room journeys and credential-boundary checks pass |
-| 4. Deployment and acceptance | Caddy examples, backup/restore, impairment/load tests, user documentation | PRD matrix passes with recorded browser/network limitations |
-
-Foundation and local-media implementation can proceed while feasibility work is unresolved. Production Bilibili architecture must not be finalized before milestone 0 passes.
-
-Resolve these before first-release acceptance:
-
-- Which Bilibili integration contract passes the proof of concept, and which media classes and browser modes does it actually support?
-- Which SQLite driver, WebSocket library, browser hash implementation, and dependency versions meet deployment and maintenance needs?
-- Do the measured adapters meet the proposed timing targets, especially without rate control or reliable buffering events?
-- Which browser/OS/codec combinations and image architectures are supported based on actual validation?
-- Are the proposed room limits, invite lifetimes, identity expiry, and host-loss behavior appropriate after user testing?
-
-Keep durable decisions and changed contracts here. Keep implementation plans, raw measurements, prototype traces, and review notes in ignored `.misc/`. Promote setup commands to README only when those commands exist and have been verified.
+Routine tests stay offline. Live Bilibili checks remain explicit and bounded; missing live validation remains unverified.
+Follow the regression-first ladder in AGENTS.md. Keep relevant evidence under `.misc/` and do not claim hosted CI success from local checks.

@@ -1,0 +1,23 @@
+services:
+  ovs:
+    image: ${IMAGE:?Set IMAGE from the combined sync/web/helper versions in versions.toml}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      pull: true
+    environment:
+      OVS_PUBLIC_ORIGIN: ${OVS_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+      OVS_LOG_LEVEL: ${OVS_LOG_LEVEL:-info}
+      OVS_TRUSTED_PROXIES: ${OVS_TRUSTED_PROXIES:-}
+    ports:
+      - '${OVS_BIND_ADDR:-127.0.0.1}:8080:8080'
+    volumes:
+      - ovs-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  ovs-data:

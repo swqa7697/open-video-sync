@@ -1,0 +1,4 @@
+[versions]
+sync = "1.0.0"
+web = "1.0.0"
+helper = "1.0.0"

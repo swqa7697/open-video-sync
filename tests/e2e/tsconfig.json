@@ -1,0 +1,8 @@
+{
+  "extends": "../../modules/web/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "typeRoots": ["../../modules/web/node_modules/@types"]
+  },
+  "include": ["./**/*.ts"]
+}
