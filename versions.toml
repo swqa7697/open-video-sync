@@ -1,4 +1,4 @@
 [versions]
-sync = "0.0.0"
-web = "0.0.0"
-helper = "0.0.0"
+sync = "1.0.0"
+web = "1.0.0"
+helper = "1.0.0"
