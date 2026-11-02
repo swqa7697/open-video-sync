@@ -16,8 +16,8 @@ the version bump. CI diagnosis, repair, and verification are self-contained belo
 other skills are required.
 
 Creating and updating the release PR follows the user's authorization. If PR creation
-is not yet authorized, present the preliminary title/body, source/base, and draft status
-before asking. **Explicit authorization is required before planning or executing staging,
+is not yet authorized, present the preliminary title/body and source/base before asking.
+**Explicit authorization is required before planning or executing staging,
 committing, or pushing**, including CI repair commits and `make release-commit YES=1`.
 Invoking `release-pr` alone does not approve Git writes. Reuse authorization already given
 in the session, including an explicitly approved CI repair commit/push loop on the named
@@ -39,7 +39,7 @@ base_sha=$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')
 head_sha=$(git rev-parse --verify "refs/remotes/origin/${release_branch}^{commit}")
 git log "${base_sha}..${head_sha}" --no-merges --format='%h %s'
 git diff --stat "${base_sha}...${head_sha}"
-gh pr list --base main --head "$release_branch" --state open --json number,url,isDraft,headRefOid
+gh pr list --base main --head "$release_branch" --state open --json number,url,headRefOid
 ```
 
 Set `release_branch` to the requested branch before resolving commits. Reject `main`, an
@@ -68,19 +68,17 @@ For a new PR, prepare an English title such as `chore(release): prepare open-vid
 Follow the repository PR template when present. Include the reviewed source/base SHAs,
 implemented changes, known release gates, and actual validation. State that the version
 is not selected and hosted CI is pending. Do not run a bump command or edit release
-metadata yet. Default to a draft during preparation; inspect workflow triggers to ensure
-the selected PR state starts CI.
+metadata yet.
 
 Write the reviewed body with real newlines to a disposable file under `/tmp/codex/`
 and pass it with `--body-file`. Retained evidence belongs under `.misc/`.
 Recheck for an existing PR immediately before creation, then, when authorized, run:
 
 ```bash
-gh pr create --base main --head "$release_branch" --title "$release_title" --body-file "$body_file" --draft
+gh pr create --base main --head "$release_branch" --title "$release_title" --body-file "$body_file"
 ```
 
-Honor an explicitly approved ready PR instead of adding `--draft`. If creation fails or
-times out, query for an existing PR before retrying. Resolve the cause rather than
+If creation fails or times out, query for an existing PR before retrying. Resolve the cause rather than
 repeating an unchanged network/authentication failure. Remove the body file after use
 when practical. Record the PR number and URL, then continue; do not stop at creation.
 
@@ -94,7 +92,7 @@ Read `.github/workflows/` and applicable required checks to identify the expecte
 Query the PR and its checks, then inspect the linked workflow runs:
 
 ```bash
-gh pr view "$pr_number" --json url,state,headRefName,headRefOid,baseRefName,baseRefOid,isDraft
+gh pr view "$pr_number" --json url,state,headRefName,headRefOid,baseRefName,baseRefOid
 gh pr checks "$pr_number" --json name,state,bucket,workflow,event,link
 gh run view "$run_id" --json headSha,event,status,conclusion,attempt,jobs,url
 ```
@@ -108,8 +106,8 @@ skipped jobs keep the gate closed; a successful job does not hide another failed
 
 Poll while jobs are queued/running or still registering. Use short waits or bounded
 watch calls so progress updates remain possible at least every 60 seconds. Treat pending
-status as waiting, not a repair failure. If CI does not start, inspect triggers, draft
-conditions, workflow permissions, and service availability. Report access, approval,
+status as waiting, not a repair failure. If CI does not start, inspect triggers,
+workflow conditions, permissions, and service availability. Report access, approval,
 runner, or service blockers and leave the gate closed until resolved.
 
 For each failed CI attempt, complete this repair cycle:
@@ -239,7 +237,7 @@ Use isolated data under `.misc/`; never use a live deployment or existing `/data
 Retain requested release evidence under `.misc/`. Distinguish checks for the proposed local
 snapshot from hosted checks for `head_sha`; neither verifies a different snapshot. Report
 passed, failed, pending, and unverified checks. Missing prerequisites and skipped checks
-remain visible. Do not present a known failing release as ready.
+remain visible. Do not describe a known failing release as validated.
 
 Review DESIGN's product gates. Bilibili controls, state reporting, danmaku, and session
 isolation need separate proof; ordinary offline tests do not establish live support or
@@ -247,8 +245,8 @@ latency/skew targets. An infrastructure or local-playback milestone does not com
 first-release PRD. Apply AGENTS.md's acceptance-continuity rule: carry accepted results
 forward from prior release PRs or explicit user confirmation, and repeat only affected
 checks when contracts change or a regression is identified. Missing volatile `.misc/`
-artifacts alone do not reopen acceptance. Use draft status for incomplete release preparation or product gates,
-unless the user explicitly requests a ready intermediate milestone with those limits stated.
+artifacts alone do not reopen acceptance. Report incomplete preparation and unmet
+product gates in the PR body and checklist.
 
 Prepare an English PR title matching the release commit subject:
 `release open-video-sync: <module> X.Y.Z | <module> X.Y.Z`.
@@ -272,11 +270,11 @@ Follow the repository PR template when present; otherwise include these useful p
 - **Commits:** a compact list or collapsed details for the remote PR range.
 
 Show the version rationale, full release-file diff, validation results, PR title/body,
-source/base SHAs, and draft status. State exactly which files `release-commit` will stage
+and source/base SHAs. State exactly which files `release-commit` will stage
 (`versions.toml`, plus tracked `CHANGELOG.md` when present), its commit subject, and push destination.
 If not already explicitly authorized, ask for approval to run `make release-commit YES=1`
 (stage, commit, and push) for the named branch/version, and to update the existing PR
-with the reviewed title/body and draft status. **Stop and wait for the reply.** A timeout,
+with the reviewed title/body. **Stop and wait for the reply.** A timeout,
 missing reply, or generic earlier request to prepare a release is not approval. When the
 bump is already pushed, request only any remaining unauthorized action. Use `YES=1` only
 after explicit approval covers the Git actions.
@@ -330,9 +328,8 @@ change release behavior, refresh the full diff, version rationale, release notes
 affected approval before further Git writes. Verify the final PR head after every push;
 pre-bump green CI does not verify the release commit or later fixes.
 
-After final CI succeeds, update validation links and mark the PR ready only when the
-approved status and product gates permit it. Otherwise retain draft status and report
-the missing gates. Report the PR URL, version change, release commit SHA, final head SHA,
+After final CI succeeds, update validation links. Report any unmet product gates in
+the PR body and checklist. Report the PR URL, version change, release commit SHA, final head SHA,
 successful CI links, remaining product gates, and publication status. Stop after release
 PR preparation and final CI verification. Merging, `make release-tag`, and publication need
 separate user requests; approval for the release PR does not authorize those actions.
