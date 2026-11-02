@@ -33,10 +33,9 @@ jobs:
         with:
           version: latest
       - uses: astral-sh/setup-uv@v10.3.3
-      - run: make deps
+      - run: make install
       - run: make check
       - run: make test test-race
-      - run: make build
       - run: pnpm --dir modules/web exec playwright install --with-deps chromium firefox
       - run: make test-e2e
       - run: make image image-smoke proxy-smoke
