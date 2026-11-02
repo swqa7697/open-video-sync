@@ -17,6 +17,7 @@
 - Each participant uses their own platform access. Do not add shared credentials, access bypasses, backend media resolution, or CORS proxies.
 - Bilibili playback, state reporting, danmaku, and session isolation require a separate proof of concept before finalizing the adapter. A playable iframe alone does not satisfy the requirement.
 - Do not declare first-release scope complete with only local playback. Bilibili and danmaku remain required release gates.
+- Carry accepted live-platform and network validation forward from the previous release PR. Repeat only checks affected by changed integration contracts or an identified regression; a version increase alone does not reopen them. Record explicit user confirmation as user-confirmed acceptance in the PR. Artifacts under `.misc/` are volatile; missing artifacts do not invalidate accepted results.
 - Keep direct HTTP functional. Core features must not depend on certificate provisioning or browser APIs available only in secure contexts without a working HTTP-compatible path.
 - Keep room settings to controller permission and wait for everyone. Do not add technical tuning, alternative late-join policies, per-member exclusions, backup/invalidation commands, metric services, or automatic database recovery.
 
@@ -144,5 +145,5 @@ Before adding a test, read the regressions that own the affected behavior and st
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Example subjects: `feat(rooms): add readiness barriers`; `fix(sync): reject stale media events`.
 - PR descriptions explain the problem, resulting behavior, validation, and material limitations. Distinguish implementation from proposals and verified behavior from assumptions.
 - Keep PRD focused on requirements and DESIGN on durable contracts. Add README usage/setup guidance when commands exist. Update affected documentation when behavior changes.
-- When CHANGELOG exists, follow Keep a Changelog with user-visible entries under `[Unreleased]`. Preserve existing spacing and omit internal-only formatting/refactoring entries.
+- When CHANGELOG exists, follow Keep a Changelog with user-visible entries under `[Unreleased]`. Use date-only release headings, `## [YYYY-MM-DD]`, and matching `vYYYY-MM-DD` release tags, without module versions. Keep independent numeric module versions in `versions.toml` and the release PR. Preserve existing spacing and omit internal-only formatting/refactoring entries.
 - Keep documentation clear and consistent. Use short, active sentences and stable terms for identities, members, connections, media generations, and room revisions.

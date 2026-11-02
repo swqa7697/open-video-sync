@@ -163,7 +163,9 @@ CI-green range, including repair commits, for the version decision and release n
 
 Root `versions.toml` is the sole module release-version source. Sync, web, and helper have
 independent versions; do not require a sync bump for a web-only or helper-only change.
-`versions.sync` remains the application version used for changelog sections and release tags.
+Changelog sections and release tags use the release date independently of numeric
+module versions. Use `## [YYYY-MM-DD]` for changelog headings and `vYYYY-MM-DD`
+for release tags.
 Private package manifests omit versions; helper release metadata is generated during the build. Use numeric `MAJOR.MINOR.PATCH`
 comparison, not string ordering. If a release branch name contains a version, reconcile it
 with the proposed version rather than renaming the branch silently.
@@ -213,7 +215,7 @@ another release commit. Verify CI after the push before completing the release P
 If no modules require bumps and all versions are unchanged, continue without a version
 commit. Use a descriptive final PR title `release open-video-sync: <summary>` for that case.
 
-If CHANGELOG.md exists, prepare its matching release section with final user-visible behavior
+If CHANGELOG.md exists, prepare a date-only `## [YYYY-MM-DD]` release section with final user-visible behavior
 relative to the previous published release. Fold refinements of newly added features into
 their Added entry. Preserve spacing and retain an empty `[Unreleased]` section according to
 the existing format. Keep development-only migration notes separate. Do not introduce a
@@ -242,7 +244,10 @@ remain visible. Do not present a known failing release as ready.
 Review DESIGN's product gates. Bilibili controls, state reporting, danmaku, and session
 isolation need separate proof; ordinary offline tests do not establish live support or
 latency/skew targets. An infrastructure or local-playback milestone does not complete the
-first-release PRD. Use draft status for incomplete release preparation or product gates,
+first-release PRD. Apply AGENTS.md's acceptance-continuity rule: carry accepted results
+forward from prior release PRs or explicit user confirmation, and repeat only affected
+checks when contracts change or a regression is identified. Missing volatile `.misc/`
+artifacts alone do not reopen acceptance. Use draft status for incomplete release preparation or product gates,
 unless the user explicitly requests a ready intermediate milestone with those limits stated.
 
 Prepare an English PR title matching the release commit subject:

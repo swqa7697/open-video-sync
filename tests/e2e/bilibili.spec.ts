@@ -476,7 +476,20 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   expect(await panelKeys.evaluate((state) => state.events)).toEqual([]);
   await panelKeys.evaluate((state) => state.stop());
   await panelKeys.dispose();
-  await clickPlayerControl(page, 'Fullscreen locally');
+  // Wait for fullscreen layout before opening menus that close on resize.
+  await Promise.all([
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          document.addEventListener(
+            'fullscreenchange',
+            () => requestAnimationFrame(() => resolve()),
+            { once: true },
+          ),
+        ),
+    ),
+    clickPlayerControl(page, 'Fullscreen locally'),
+  ]);
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(true);

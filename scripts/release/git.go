@@ -112,12 +112,8 @@ func (a *app) prepareCommit() (commitPlan, error) {
 	if len(changed) == 0 {
 		return plan, errors.New("at least one module version must increase relative to HEAD")
 	}
-	v, err := parseVersion(current["sync"])
-	if err != nil {
-		return plan, err
-	}
 	files := []string{"versions.toml"}
-	_, changelogExists, err := a.notes(v)
+	_, changelogExists, err := a.notes()
 	if err != nil {
 		return plan, err
 	}
@@ -213,18 +209,14 @@ func (a *app) prepareTag() (tagPlan, error) {
 	if remote == "" || strings.Fields(remote)[0] != head {
 		return plan, errors.New("HEAD must equal current origin/main")
 	}
-	v, err := a.version()
+	notes, exists, err := a.notes()
 	if err != nil {
 		return plan, err
 	}
-	if v == (version{}) {
-		return plan, errors.New("bump the initial 0.0.0 version before tagging a release")
+	if !exists {
+		return plan, errors.New("CHANGELOG.md needs a dated release section before tagging")
 	}
-	notes, _, err := a.notes(v)
-	if err != nil {
-		return plan, err
-	}
-	name := "v" + v.String()
+	name := "v" + notes.date
 	local, err := a.git("tag", "--list", name)
 	if err != nil {
 		return plan, err
@@ -242,7 +234,7 @@ func (a *app) prepareTag() (tagPlan, error) {
 			continue
 		}
 		tag := strings.TrimSuffix(strings.TrimPrefix(fields[1], "refs/tags/"), "^{}")
-		if tag == name || (strings.HasPrefix(tag, "v") && stableVersion.MatchString(tag[1:]) && fields[0] == head) {
+		if tag == name || (strings.HasPrefix(tag, "v") && validReleaseDate(tag[1:]) && fields[0] == head) {
 			return plan, fmt.Errorf("release tag %s already exists on origin", tag)
 		}
 	}
@@ -251,14 +243,12 @@ func (a *app) prepareTag() (tagPlan, error) {
 		return plan, err
 	}
 	for tag := range strings.FieldsSeq(local) {
-		if strings.HasPrefix(tag, "v") && stableVersion.MatchString(tag[1:]) {
+		if strings.HasPrefix(tag, "v") && validReleaseDate(tag[1:]) {
 			return plan, fmt.Errorf("HEAD already has release tag %s", tag)
 		}
 	}
 	message := "Release " + name
-	if notes != "" {
-		message += "\n\n" + notes
-	}
+	message += "\n\n" + notes.text
 	return tagPlan{head, name, message}, nil
 }
 

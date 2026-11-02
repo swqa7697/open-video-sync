@@ -272,6 +272,9 @@ Cover HTTP, HTTPS, and ordinary LAN HTTP. Record tested browser, helper, codec, 
 Repeat the relevant checks when their integration contracts change.
 Routine tests use fixtures. Live checks have finite deadlines and retries; blocked provider access is unverified, not a pass.
 
+The proof of concept establishes initial integration acceptance. Carry accepted results forward into later releases, repeating only checks affected by changed integration contracts or an identified regression. A version increase alone does not require a new proof of concept.
+Record acceptance in the release PR, identifying explicit user confirmation as user-confirmed validation. Detailed artifacts under `.misc/` are volatile; their absence after cleanup does not reopen accepted validation.
+
 #### 8.3.1 Browser-local integration contracts
 
 Use these platform interfaces and browser-local boundaries:
@@ -433,6 +436,7 @@ Test a failed settings/member transaction without corrupting memory, and verify 
 
 Measure control-response latency separately from actual playback skew. Use decoded-frame observations and declare their uncertainty and limits.
 Exercise representative cross-region latency, jitter, packet loss, asymmetric paths, and recovery. Record conditions and observed results.
+Carry accepted network validation forward in the release PR. Repeat the affected checks when synchronization or network contracts change or a regression is identified; a version increase or deletion of volatile `.misc/` artifacts alone does not reopen acceptance.
 There is no fixed 20-room capacity gate, mandatory physical-display lab, universal p95/p99 SLA, or statistical-significance gate for ordinary releases.
 For a performance claim, compare repeated trials in a matched environment and state sample counts and limitations. Do not infer faster playback from fewer SQL calls alone.
 

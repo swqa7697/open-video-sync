@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 )
@@ -42,14 +43,6 @@ func (v version) after(old version) bool {
 		}
 	}
 	return false
-}
-
-func (a *app) version() (version, error) {
-	manifest, err := versions.Read(filepath.Join(a.root, "versions.toml"))
-	if err != nil {
-		return version{}, err
-	}
-	return parseVersion(manifest["sync"])
 }
 
 func (a *app) bump(part string, modules ...string) error {
@@ -125,33 +118,53 @@ func (a *app) bump(part string, modules ...string) error {
 	return nil
 }
 
-// notes validates an existing changelog without introducing one into a repository.
-func (a *app) notes(v version) (string, bool, error) {
+type releaseNotes struct {
+	date, text string
+}
+
+func validReleaseDate(date string) bool {
+	_, err := time.Parse(time.DateOnly, date)
+	return err == nil
+}
+
+// notes validates dated release sections and selects the first, newest entry.
+func (a *app) notes() (releaseNotes, bool, error) {
+	var notes releaseNotes
 	raw, err := os.ReadFile(filepath.Join(a.root, "CHANGELOG.md"))
 	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+		return notes, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return notes, false, err
 	}
 	var lines []string
-	var matches int
+	dates := make(map[string]bool)
 	collect := false
 	for _, line := range strings.Split(string(raw), "\n") {
 		if strings.HasPrefix(line, "## ") {
-			heading := "## [" + v.String() + "]"
-			collect = line == heading || strings.HasPrefix(line, heading+" - ")
-			if collect {
-				matches++
+			collect = false
+			if line != "## [Unreleased]" {
+				date := strings.TrimSuffix(strings.TrimPrefix(line, "## ["), "]")
+				if line != "## ["+date+"]" || !validReleaseDate(date) {
+					return notes, true, errors.New("CHANGELOG.md release headings must use only ## [YYYY-MM-DD]")
+				}
+				if dates[date] {
+					return notes, true, fmt.Errorf("CHANGELOG.md has duplicate release date %s", date)
+				}
+				dates[date] = true
+				if notes.date == "" {
+					notes.date = date
+					collect = true
+				}
 			}
 		}
 		if collect {
 			lines = append(lines, line)
 		}
 	}
-	notes := strings.TrimSpace(strings.Join(lines, "\n"))
-	if matches != 1 || !strings.Contains("\n"+notes, "\n- ") {
-		return "", true, fmt.Errorf("CHANGELOG.md needs one nonempty [%s] release section", v)
+	notes.text = strings.TrimSpace(strings.Join(lines, "\n"))
+	if notes.date == "" || !strings.Contains("\n"+notes.text, "\n- ") {
+		return notes, true, errors.New("CHANGELOG.md needs a nonempty latest ## [YYYY-MM-DD] release section")
 	}
 	return notes, true, nil
 }

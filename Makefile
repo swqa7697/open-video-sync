@@ -198,5 +198,5 @@ bump-patch: ## Bump the selected module version in versions.toml; patch (x.y.Z);
 release-commit: ## Preview, commit, and push release files (YES=1 confirms)
 	go -C $(SCRIPTS) run ./release commit $(if $(filter 1 true yes,$(YES)),--yes)
 
-release-tag: ## On clean latest main, confirm and push annotated sync vX.Y.Z (no publication)
+release-tag: ## On clean latest main, confirm and push the changelog's vYYYY-MM-DD tag (no publication)
 	go -C $(SCRIPTS) run ./release tag

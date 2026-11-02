@@ -146,25 +146,26 @@ func TestBumpRejectsInvalidPreparation(t *testing.T) {
 
 func TestReleaseCommitPreviewAndRefusalPreserveCheckout(t *testing.T) {
 	for _, tc := range []struct {
-		name, current, subject, notesVersion string
+		name, current, subject string
+		notes                  bool
 	}{
-		{"sync", manifest("1.10.0"), "release open-video-sync: sync 1.10.0", ""},
-		{"web", "[versions]\nsync = \"1.2.3\"\nweb = \"0.1.0\"\nhelper = \"1.1.0\"\n", "release open-video-sync: web 0.1.0", "1.2.3"},
-		{"helper", "[versions]\nsync = \"1.2.3\"\nweb = \"0.0.0\"\nhelper = \"1.1.1\"\n", "release open-video-sync: helper 1.1.1", ""},
-		{"multiple-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.10.0\"\nweb = \"0.2.0\"\n", "release open-video-sync: helper 1.2.0 | sync 1.10.0 | web 0.2.0", "1.10.0"},
-		{"partial-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.2.3\"\nweb = \"0.1.0\"\n", "release open-video-sync: helper 1.2.0 | web 0.1.0", ""},
+		{"sync", manifest("1.10.0"), "release open-video-sync: sync 1.10.0", false},
+		{"web", "[versions]\nsync = \"1.2.3\"\nweb = \"0.1.0\"\nhelper = \"1.1.0\"\n", "release open-video-sync: web 0.1.0", true},
+		{"helper", "[versions]\nsync = \"1.2.3\"\nweb = \"0.0.0\"\nhelper = \"1.1.1\"\n", "release open-video-sync: helper 1.1.1", false},
+		{"multiple-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.10.0\"\nweb = \"0.2.0\"\n", "release open-video-sync: helper 1.2.0 | sync 1.10.0 | web 0.2.0", true},
+		{"partial-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.2.3\"\nweb = \"0.1.0\"\n", "release open-video-sync: helper 1.2.0 | web 0.1.0", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			notes := ""
-			if tc.notesVersion != "" {
-				notes = "# Changelog\n\n## [1.2.3]\n\n- Previous behavior.\n"
+			if tc.notes {
+				notes = "# Changelog\n\n## [2026-10-26]\n\n- Previous behavior.\n"
 			}
 			a, remote := releaseFixture(t, "1.2.3\n", notes)
 			if err := os.WriteFile(filepath.Join(a.root, "versions.toml"), []byte(tc.current), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if tc.notesVersion != "" {
-				writeFixture(t, a.root, "CHANGELOG.md", fmt.Sprintf("# Changelog\n\n## [Unreleased]\n\n## [%s] - 2026-10-27\n\n- New behavior.\n", tc.notesVersion))
+			if tc.notes {
+				writeFixture(t, a.root, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [2026-10-27]\n\n- New behavior.\n\n## [2026-10-26]\n\n- Previous behavior.\n")
 			}
 			state := fixtureState(t, a)
 			remoteRefs := gitFixtureCommand(t, remote, "", "show-ref")
@@ -172,7 +173,7 @@ func TestReleaseCommitPreviewAndRefusalPreserveCheckout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.branch != "dev" || plan.subject != tc.subject || len(plan.files) != 1+btoi(tc.notesVersion != "") {
+			if plan.branch != "dev" || plan.subject != tc.subject || len(plan.files) != 1+btoi(tc.notes) {
 				t.Fatalf("unexpected release: %+v", plan)
 			}
 			for _, terminal := range []bool{false, true} {
@@ -201,7 +202,7 @@ func btoi(value bool) int {
 }
 
 func TestReleaseCommitRejectsUnsafeContents(t *testing.T) {
-	for _, scenario := range []string{"no-bump", "comment-only", "downgrade", "helper-downgrade", "main", "unrelated-worktree", "unrelated-index", "remote-moved", "missing-notes", "deleted-notes", "untracked-notes"} {
+	for _, scenario := range []string{"no-bump", "comment-only", "downgrade", "helper-downgrade", "main", "unrelated-worktree", "unrelated-index", "remote-moved", "missing-notes", "deleted-notes", "untracked-notes", "invalid-date", "version-notes", "empty-latest-notes", "duplicate-date"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, remote := releaseFixture(t, "1.2.3\n", "")
 			writeFixture(t, a.root, "versions.toml", "1.3.0\n")
@@ -240,7 +241,17 @@ func TestReleaseCommitRejectsUnsafeContents(t *testing.T) {
 					}
 				}
 			case "untracked-notes":
-				writeFixture(t, a.root, "CHANGELOG.md", "## [1.3.0]\n\n- New behavior.\n")
+				writeFixture(t, a.root, "CHANGELOG.md", "## [2026-10-27]\n\n- New behavior.\n")
+			case "invalid-date", "version-notes", "empty-latest-notes", "duplicate-date":
+				a, remote = releaseFixture(t, "1.2.3\n", "## [2026-10-26]\n\n- Previous behavior.\n")
+				writeFixture(t, a.root, "versions.toml", "1.3.0\n")
+				notes := map[string]string{
+					"invalid-date":       "## [2026-02-30]\n\n- New behavior.\n",
+					"version-notes":      "## [1.3.0] - 2026-10-27\n\n- New behavior.\n",
+					"empty-latest-notes": "## [2026-10-27]\n\n## [2026-10-26]\n\n- Previous behavior.\n",
+					"duplicate-date":     "## [2026-10-27]\n\n- New behavior.\n\n## [2026-10-27]\n\n- Previous behavior.\n",
+				}
+				writeFixture(t, a.root, "CHANGELOG.md", notes[scenario])
 			}
 			state := fixtureState(t, a)
 			remoteRefs := gitFixtureCommand(t, remote, "", "show-ref")
@@ -255,13 +266,13 @@ func TestReleaseCommitRejectsUnsafeContents(t *testing.T) {
 }
 
 func TestReleaseTagPreviewAndGuards(t *testing.T) {
-	for _, scenario := range []string{"valid", "dev", "dirty", "untracked", "stale-main", "local-tag", "remote-tag", "tagged-head", "initial-version", "noninteractive"} {
+	for _, scenario := range []string{"valid", "dev", "dirty", "untracked", "stale-main", "local-tag", "remote-tag", "tagged-head", "missing-notes", "noninteractive"} {
 		t.Run(scenario, func(t *testing.T) {
-			v := "1.2.3\n"
-			if scenario == "initial-version" {
-				v = "0.0.0\n"
+			notes := "# Changelog\n\n## [Unreleased]\n\n## [2026-10-27]\n\n- New behavior.\n\n## [2026-10-26]\n\n- Previous behavior.\n"
+			if scenario == "missing-notes" {
+				notes = ""
 			}
-			a, remote := releaseFixture(t, v, "")
+			a, remote := releaseFixture(t, "1.2.3\n", notes)
 			gitFixtureCommand(t, a.root, "", "checkout", "--quiet", "main")
 			head := strings.TrimSpace(gitFixtureCommand(t, a.root, "", "rev-parse", "HEAD"))
 			switch scenario {
@@ -275,17 +286,17 @@ func TestReleaseTagPreviewAndGuards(t *testing.T) {
 				stream := "commit refs/heads/main\ncommitter Release Test <release@example.invalid> 2 +0000\ndata 5\nmoved\nfrom " + head + "\n\ndone\n"
 				gitFixtureCommand(t, remote, stream, "fast-import", "--quiet")
 			case "local-tag":
-				gitFixtureCommand(t, a.root, "", "update-ref", "refs/tags/v1.2.3", head)
+				gitFixtureCommand(t, a.root, "", "update-ref", "refs/tags/v2026-10-27", head)
 			case "remote-tag":
-				gitFixtureCommand(t, remote, "", "update-ref", "refs/tags/v1.2.3", head)
+				gitFixtureCommand(t, remote, "", "update-ref", "refs/tags/v2026-10-27", head)
 			case "tagged-head":
-				gitFixtureCommand(t, remote, "", "update-ref", "refs/tags/v1.2.2", head)
+				gitFixtureCommand(t, remote, "", "update-ref", "refs/tags/v2026-10-26", head)
 			}
 			state := fixtureState(t, a)
 			remoteRefs := gitFixtureCommand(t, remote, "", "show-ref")
 			if scenario == "valid" {
 				plan, err := a.prepareTag()
-				if err != nil || plan.name != "v1.2.3" || plan.head != head {
+				if err != nil || plan.name != "v2026-10-27" || plan.head != head || !strings.Contains(plan.message, "New behavior.") || strings.Contains(plan.message, "Previous behavior.") {
 					t.Fatalf("tag plan: %+v, error: %v", plan, err)
 				}
 			} else if scenario != "noninteractive" {
