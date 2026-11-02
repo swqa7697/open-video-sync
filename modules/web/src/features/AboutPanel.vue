@@ -8,9 +8,10 @@ import { object, request, shape } from '../transport/api';
 const modules = ['sync', 'web', 'helper'] as const;
 const versions = ref<
   Record<(typeof modules)[number], string> & {
+    image: string;
+    release: boolean;
     commit: string;
     dirty: boolean;
-    tag: string;
   }
 >();
 const loading = ref(false);
@@ -35,24 +36,30 @@ async function load(): Promise<void> {
     const value = object(
       await request('/version', 'GET', '', undefined, current.signal),
     );
-    shape(value, [...modules, 'commit', 'dirty', 'tag']);
+    shape(value, [...modules, 'image', 'release', 'commit', 'dirty', 'tag']);
     if (
+      typeof value.image !== 'string' ||
+      !value.image ||
+      value.image.length > 512 ||
+      /[\p{Cc}\s]/u.test(value.image) ||
+      typeof value.release !== 'boolean' ||
       typeof value.commit !== 'string' ||
       !/^(?:[a-f0-9]{40}|[a-f0-9]{64})?$/.test(value.commit) ||
       typeof value.dirty !== 'boolean' ||
       typeof value.tag !== 'string' ||
       value.tag.length > 256 ||
       /[\p{Cc}\s]/u.test(value.tag) ||
-      (!value.commit && (value.dirty || value.tag))
+      (!value.commit && (value.dirty || value.tag || value.release))
     )
       throw new Error('Invalid build metadata.');
     const release = {
       sync: releaseVersion(value.sync),
       web: releaseVersion(value.web),
       helper: releaseVersion(value.helper),
+      image: value.image,
+      release: value.release,
       commit: value.commit,
       dirty: value.dirty,
-      tag: value.tag,
     };
     if (!current.signal.aborted) versions.value = release;
   } catch {
@@ -71,20 +78,16 @@ onUnmounted(() => {
 
 <template>
   <div class="about-panel">
-    <div class="about-brand">
-      <span class="brand-mark"><Icon name="play" :size="18" /></span
-      ><strong>Open Video Sync</strong>
-    </div>
-    <p class="hint">{{ t('about.hint') }}</p>
-    <p v-if="loading" role="status" class="hint">{{ t('about.loading') }}</p>
-    <dl v-else-if="versions" class="about-versions">
-      <div v-for="name in modules" :key="name">
-        <dt>{{ t(`about.${name}`) }}</dt>
-        <dd>{{ versions[name] }}</dd>
+    <header class="about-header">
+      <div class="about-brand">
+        <span class="brand-mark"><Icon name="play" :size="18" /></span
+        ><strong>Open Video Sync</strong>
       </div>
-      <div v-if="versions.commit">
-        <dt>{{ t('about.commit') }}</dt>
-        <dd class="about-commit">
+      <div v-if="versions" class="about-build">
+        <p class="about-build-label">{{ t('about.build') }}</p>
+        <code class="about-image">{{ versions.image }}</code>
+        <div v-if="!versions.release && versions.commit" class="about-commit">
+          <span>{{ t('about.commit') }}</span>
           <code :title="versions.commit">{{
             versions.commit.slice(0, 12)
           }}</code>
@@ -94,11 +97,14 @@ onUnmounted(() => {
             :title="t('about.dirtyHint')"
             >dirty</span
           >
-        </dd>
+        </div>
       </div>
-      <div v-if="versions.tag">
-        <dt>{{ t('about.tag') }}</dt>
-        <dd>{{ versions.tag }}</dd>
+    </header>
+    <p v-if="loading" role="status" class="hint">{{ t('about.loading') }}</p>
+    <dl v-else-if="versions" class="about-versions">
+      <div v-for="name in modules" :key="name">
+        <dt>{{ t(`about.${name}`) }}</dt>
+        <dd>{{ versions[name] }}</dd>
       </div>
     </dl>
     <div v-else class="about-error">

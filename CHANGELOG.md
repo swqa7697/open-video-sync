@@ -6,6 +6,11 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Changed
+
+- Use the exact valid `vYYYY-MM-DD` release tag for application images built on `main`; use `dev` otherwise. Keep local builds and SSH deployment consistent and retain explicit `IMAGE` overrides.
+- Show the full image reference under a shared build-information heading in the About header, above component versions. Hide the separate Git tag and show the Git commit only for development builds.
+
 ## [2026-11-02]
 
 ### Added

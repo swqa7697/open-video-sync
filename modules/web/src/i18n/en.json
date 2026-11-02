@@ -406,12 +406,11 @@
     "controls": "Controls need an active connection and a resolved previous command."
   },
   "about": {
-    "hint": "Versions and source revision in this deployment.",
+    "build": "Build information",
     "sync": "Sync service",
     "web": "Web frontend",
     "helper": "Helper script",
     "commit": "Git commit",
-    "tag": "Git tag",
     "dirtyHint": "Built with uncommitted source changes.",
     "loading": "Loading versions…",
     "unavailable": "Versions are unavailable. Try again.",

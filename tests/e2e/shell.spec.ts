@@ -1047,7 +1047,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
 });
 
 // This distinct shell contract covers menu navigation and deployed release metadata.
-test('settings groups local preferences and shows packaged versions and source revision', async ({
+test('settings groups local preferences and separates build identity from packaged versions', async ({
   page,
 }, testInfo) => {
   await page.goto('/');
@@ -1104,9 +1104,7 @@ test('settings groups local preferences and shows packaged versions and source r
     if (!version) throw new Error(`Missing ${name} release version.`);
     return version;
   });
-  const componentValues = about.locator(
-    '.about-versions > div:nth-child(-n+3) dd',
-  );
+  const componentValues = about.locator('.about-versions dd');
   await expect(componentValues).toHaveText(componentVersions);
   await about.evaluate((node) =>
     Promise.all(node.getAnimations().map((animation) => animation.finished)),
@@ -1118,18 +1116,28 @@ test('settings groups local preferences and shows packaged versions and source r
     execFileSync('node', ['../../scripts/versions.mjs', 'build-info'], {
       encoding: 'utf8',
     }),
-  ) as { commit: string; dirty: boolean; tag: string };
+  ) as {
+    image: string;
+    release: boolean;
+    commit: string;
+    dirty: boolean;
+    tag: string;
+  };
   const deployed = { ...release, ...buildInfo };
   expect(await response.json()).toEqual(deployed);
-  const commit = about.locator('.about-commit code');
+  const image = about.locator('header .about-image');
+  const commit = about.locator('header .about-commit code');
   const dirty = about.locator('.about-dirty');
   const tag = about.locator('dt').filter({ hasText: /^Git tag$/ });
-  if (buildInfo.commit) {
+  await expect(image).toHaveText(buildInfo.image);
+  if (!buildInfo.release && buildInfo.commit) {
     await expect(commit).toHaveText(buildInfo.commit.slice(0, 12));
     await expect(commit).toHaveAttribute('title', buildInfo.commit);
   } else await expect(commit).toHaveCount(0);
-  await expect(dirty).toHaveCount(buildInfo.dirty ? 1 : 0);
-  await expect(tag).toHaveCount(buildInfo.tag ? 1 : 0);
+  await expect(dirty).toHaveCount(
+    !buildInfo.release && buildInfo.dirty ? 1 : 0,
+  );
+  await expect(tag).toHaveCount(0);
   for (const [width, height] of [
     [1440, 900],
     [390, 844],
@@ -1155,28 +1163,53 @@ test('settings groups local preferences and shows packaged versions and source r
   // Build-state visibility is separate from component versions and local helper state.
   for (const info of [
     {
+      image: `registry.example.invalid:5000/${'long-project-name-'.repeat(8)}/ovs:dev`,
+      release: false,
       commit: 'a'.repeat(40),
       dirty: true,
       tag: `v1.2.3-${'long-tag-'.repeat(24)}`,
     },
-    { commit: 'b'.repeat(40), dirty: false, tag: '' },
-    { commit: '', dirty: false, tag: '' },
+    {
+      image: 'ovs:v2026-11-02',
+      release: true,
+      commit: 'b'.repeat(40),
+      dirty: false,
+      tag: 'v2026-11-02',
+    },
+    {
+      image: 'ovs:dev',
+      release: false,
+      commit: 'c'.repeat(40),
+      dirty: false,
+      tag: 'v2026-11-02',
+    },
+    { image: 'ovs:dev', release: false, commit: '', dirty: false, tag: '' },
   ]) {
     await page.route('**/api/v2/version', (route) =>
       route.fulfill({ json: { ...release, ...info } }),
     );
     await openAppPanel(page, 'About');
     await expect(componentValues).toHaveText(componentVersions);
-    if (info.commit) {
+    await expect(image).toHaveText(info.image);
+    await expect(about.locator('.about-build-label')).toHaveText(
+      'Build information',
+    );
+    if (!info.release && info.commit) {
       await expect(commit).toHaveText(info.commit.slice(0, 12));
       await expect(commit).toHaveAttribute('title', info.commit);
     } else await expect(commit).toHaveCount(0);
-    await expect(dirty).toHaveCount(info.dirty ? 1 : 0);
-    await expect(tag).toHaveCount(info.tag ? 1 : 0);
-    if (info.tag) {
-      await expect(tag.locator('..').locator('dd')).toHaveText(info.tag);
+    await expect(dirty).toHaveCount(!info.release && info.dirty ? 1 : 0);
+    await expect(tag).toHaveCount(0);
+    if (info.release || info.dirty) {
+      await about.evaluate((node) =>
+        Promise.all(
+          node.getAnimations().map((animation) => animation.finished),
+        ),
+      );
       await page.screenshot({
-        path: testInfo.outputPath('about-long-tag-390.png'),
+        path: testInfo.outputPath(
+          info.release ? 'about-release-390.png' : 'about-long-image-390.png',
+        ),
         animations: 'disabled',
       });
     }
@@ -1193,6 +1226,8 @@ test('settings groups local preferences and shows packaged versions and source r
     JSON.stringify({ ...deployed, helper: 'invalid' }),
     JSON.stringify({ ...deployed, commit: 'invalid' }),
     JSON.stringify({ ...deployed, dirty: 'false' }),
+    JSON.stringify({ ...deployed, image: 'ovs:dev\nunsafe' }),
+    JSON.stringify({ ...deployed, release: 'false' }),
   ]) {
     await page.route('**/api/v2/version', (route) =>
       route.fulfill({

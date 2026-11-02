@@ -41,12 +41,14 @@ func NewAPI(origin string, service *identity.Service) *API {
 
 // Versions identifies the deployed components and their build-time source checkout.
 type Versions struct {
-	Sync   string `json:"sync"`
-	Web    string `json:"web"`
-	Helper string `json:"helper"`
-	Commit string `json:"commit"`
-	Dirty  bool   `json:"dirty"`
-	Tag    string `json:"tag"`
+	Sync    string `json:"sync"`
+	Web     string `json:"web"`
+	Helper  string `json:"helper"`
+	Image   string `json:"image"`
+	Release bool   `json:"release"`
+	Commit  string `json:"commit"`
+	Dirty   bool   `json:"dirty"`
+	Tag     string `json:"tag"`
 }
 
 // WithVersions exposes the running service and its embedded release metadata.

@@ -31,23 +31,23 @@ Use `/api/v2`, health endpoints under `/health`, and the helper distribution URL
 Bootstrap and authenticated mutations require the configured exact origin. Authenticated mutations also require the session-bound CSRF token.
 Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate expiry and authorization against application memory.
 
-| Method and relative path                    | Input                               | Result                                                            |
-| ------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------- |
-| `GET /version`                              | None                                | Public `{sync,web,helper,commit,dirty,tag}` build metadata        |
-| `POST /session`                             | `{}`                                | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`       |
-| `GET /me`                                   | None                                | Same profile/session shape                                        |
-| `PATCH /me`                                 | `{displayName}`                     | Same profile/session shape                                        |
-| `DELETE /session`                           | `{}`                                | `{forgotten:true}` after persistent revocation and socket closure |
-| `GET /rooms`                                | Optional `cursor` and `limit`       | `{rooms:[{roomId,title,role}],nextCursor}` from memory            |
-| `POST /rooms`                               | `{title,settings,media}`            | `{snapshot,invitation,replayed}`                                  |
-| `POST /invitations/redeem`                  | Exactly `{linkSecret}` or `{code}`  | `{snapshot,replayed}`                                             |
-| `GET /rooms/{roomId}`                       | None                                | Authorized snapshot from memory                                   |
-| `PATCH /rooms/{roomId}/settings`            | `{epoch,expectedRevision,settings}` | `{snapshot}`                                                      |
-| `GET /rooms/{roomId}/invitations`           | None                                | `{invitation}`; host only                                         |
-| `POST /rooms/{roomId}/invitations`          | `{epoch,expectedRevision}`          | `{snapshot,invitation}`; host-only reset                          |
-| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`          | `{roomId,revision,removedMemberId}`                               |
-| `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`          | Committed departure receipt; host membership retained for return  |
-| `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`          | `{roomId,revision,closed:true}`                                   |
+| Method and relative path                    | Input                               | Result                                                                   |
+| ------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| `GET /version`                              | None                                | Public `{sync,web,helper,image,release,commit,dirty,tag}` build metadata |
+| `POST /session`                             | `{}`                                | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`              |
+| `GET /me`                                   | None                                | Same profile/session shape                                               |
+| `PATCH /me`                                 | `{displayName}`                     | Same profile/session shape                                               |
+| `DELETE /session`                           | `{}`                                | `{forgotten:true}` after persistent revocation and socket closure        |
+| `GET /rooms`                                | Optional `cursor` and `limit`       | `{rooms:[{roomId,title,role}],nextCursor}` from memory                   |
+| `POST /rooms`                               | `{title,settings,media}`            | `{snapshot,invitation,replayed}`                                         |
+| `POST /invitations/redeem`                  | Exactly `{linkSecret}` or `{code}`  | `{snapshot,replayed}`                                                    |
+| `GET /rooms/{roomId}`                       | None                                | Authorized snapshot from memory                                          |
+| `PATCH /rooms/{roomId}/settings`            | `{epoch,expectedRevision,settings}` | `{snapshot}`                                                             |
+| `GET /rooms/{roomId}/invitations`           | None                                | `{invitation}`; host only                                                |
+| `POST /rooms/{roomId}/invitations`          | `{epoch,expectedRevision}`          | `{snapshot,invitation}`; host-only reset                                 |
+| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`          | `{roomId,revision,removedMemberId}`                                      |
+| `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`          | Committed departure receipt; host membership retained for return         |
+| `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`          | `{roomId,revision,closed:true}`                                          |
 
 `GET /version` needs no session and performs no storage access. Return the running binary's build version and the release versions of its embedded frontend and helper. Keep this metadata uncached; it does not report the helper installed in the browser.
 

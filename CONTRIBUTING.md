@@ -49,7 +49,12 @@ Repository automation has an independent Go module under [scripts](scripts/READM
 Root Make targets check and test both Go modules. Automation tests do not require frontend assets.
 
 `versions.toml` is the sole release-version source for sync, web, and helper. Private package manifests omit release versions.
-Builds capture Git commit, dirty state, and an exact tag for About. For direct Docker builds, supply `--build-arg OVS_BUILD_INFO="$(node scripts/versions.mjs build-info)"`.
+Builds capture the full image reference, release status, Git commit, dirty state, and exact Git tag. About displays image identity above component versions, with commit details only for development builds. `make image` and `make deploy` capture this metadata automatically, including explicit `IMAGE` overrides. For direct Docker builds, use the same image name for the snapshot and Docker tag:
+
+```bash
+docker build -f deploy/Dockerfile -t my-ovs:testing \
+  --build-arg OVS_BUILD_INFO="$(IMAGE=my-ovs:testing node scripts/versions.mjs build-info)" .
+```
 
 `modules/sync/sql/schema.sql` always defines the complete, current database schema. Update it whenever the schema changes.
 Go embedding stays in `modules/sync/sql/embed.go`. Startup initializes an empty database transactionally from that definition and records the supported schema version with SQLite `user_version`.

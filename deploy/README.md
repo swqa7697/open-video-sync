@@ -38,9 +38,12 @@ transfers the pinned Caddy image. The remote machine does not need a registry
 account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
 needs access to build dependencies, images, and Compose release downloads.
 
-Deployment uses the same `IMAGE` as `make image`: `ovs:s<sync>-w<web>-h<helper>`,
-with versions from `versions.toml`. Set `IMAGE=my-ovs:testing` to build, transfer,
-and run a custom tag.
+Deployment uses the same default `IMAGE` as `make image`. On the checked-out `main`
+branch, a valid `vYYYY-MM-DD` release tag pointing directly at `HEAD` selects
+`ovs:vYYYY-MM-DD`. Otherwise, the image is `ovs:dev`, including detached HEAD and
+checkouts without Git metadata. Dates must be valid calendar dates. If several
+release tags point at `HEAD`, the newest date wins.
+Set `IMAGE=my-ovs:testing` to build, transfer, and run a custom tag.
 
 Deployment shows numbered steps, completion or failure, elapsed time, and remote
 substeps through configuration validation, container replacement, and health checks.
@@ -64,19 +67,19 @@ Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
 
 ### Configuration
 
-| Make variable     | Default                                | Meaning                                                                        |
-| ----------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
-| `HOST`            | Required                               | SSH destination                                                                |
-| `URL`             | Saved value                            | Public origin; required for the first deployment                               |
-| `IMAGE`           | `ovs:s<sync>-w<web>-h<helper>`         | Application image tag built locally and used remotely                          |
-| `DEPLOY_DIR`      | Remote `~/.local/share/ovs`            | Absolute remote configuration directory                                        |
-| `PROXY`           | Saved value, initially `auto`          | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
-| `PROXY_NETWORK`   | Saved value                            | Existing Docker network for an external container proxy                        |
-| `TRUSTED_PROXIES` | Saved value                            | Trusted proxy CIDRs; required for an external container proxy                  |
-| `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps                |
+| Make variable     | Default                                                 | Meaning                                                                        |
+| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `HOST`            | Required                                                | SSH destination                                                                |
+| `URL`             | Saved value                                             | Public origin; required for the first deployment                               |
+| `IMAGE`           | `ovs:vYYYY-MM-DD` on tagged `main`; otherwise `ovs:dev` | Application image tag built locally and used remotely                          |
+| `DEPLOY_DIR`      | Remote `~/.local/share/ovs`                             | Absolute remote configuration directory                                        |
+| `PROXY`           | Saved value, initially `auto`                           | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
+| `PROXY_NETWORK`   | Saved value                                             | Existing Docker network for an external container proxy                        |
+| `TRUSTED_PROXIES` | Saved value                                             | Trusted proxy CIDRs; required for an external container proxy                  |
+| `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24`                  | Dedicated private IPv4 /24; select another range if it overlaps                |
 
 Saved connection and proxy settings are reused when a variable is omitted. `IMAGE`
-uses the current local versions or an explicit override on each deployment.
+uses the current local branch and exact release tag or an explicit override on each deployment.
 Explicitly passing a new `URL` changes the public origin. Choose the final origin before inviting people:
 an origin change affects browser identities, invitation links, and the helper's
 installation scope. Returning to `PROXY=auto` clears external network/trust settings.
@@ -191,8 +194,8 @@ docker compose -f deploy/compose.yaml up -d --wait
 ```
 
 Compose requires `IMAGE` in the shell environment for all manual recipes below.
-The export command combines all three module versions from root `versions.toml` as `ovs:s<sync>-w<web>-h<helper>`, matching the default tag from `make image`.
-Export `IMAGE` again in a new shell or after changing versions. For a custom image name, export that name before `make image`.
+The export command selects the release tag on tagged `main` or `dev`, matching the default tag from `make image`.
+Export `IMAGE` again in a new shell or after changing branches, commits, or tags. For a custom image name, export that name before `make image`.
 
 The default publication is `127.0.0.1:8080`. The named volume preserves `/data` across container replacement.
 The application runs without root privileges and with a read-only root filesystem.

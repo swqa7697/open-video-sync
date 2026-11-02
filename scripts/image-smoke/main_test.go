@@ -11,7 +11,7 @@ import (
 
 // These HTTP boundaries must reject stale embedded versions even when the image starts.
 func TestHTTPReleaseVersions(t *testing.T) {
-	want := releaseVersions{Sync: "1.2.3", Web: "2.3.4", Helper: "3.4.5", Commit: strings.Repeat("b", 40)}
+	want := releaseVersions{Sync: "1.2.3", Web: "2.3.4", Helper: "3.4.5", Image: "ovs:v2026-11-02", Release: true, Commit: strings.Repeat("b", 40)}
 	for _, tc := range []struct {
 		name, path, stale string
 	}{
@@ -21,6 +21,7 @@ func TestHTTPReleaseVersions(t *testing.T) {
 		{"old-sync", "/api/v2/version", "1.2.3"},
 		{"old-web-api", "/api/v2/version", "2.3.4"},
 		{"old-helper-api", "/api/v2/version", "3.4.5"},
+		{"old-image", "/api/v2/version", "ovs:v2026-11-02"},
 		{"old-web-html", "/", "2.3.4"},
 		{"old-userscript", "/userscripts/ovs-bilibili.user.js", "3.4.5"},
 	} {

@@ -130,6 +130,8 @@ func run(image string) error {
 
 type releaseVersions struct {
 	Sync, Web, Helper string
+	Image             string
+	Release           bool
 	Commit            string
 	Dirty             bool
 	Tag               string

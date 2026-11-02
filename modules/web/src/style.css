@@ -2111,10 +2111,27 @@ fieldset select {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
+}
+.about-build {
+  min-width: 0;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--subtle-border);
+}
+.about-build-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.about-image {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 .about-versions {
-  margin: 24px 0 16px;
+  margin: 8px 0 0;
 }
 .about-versions > div {
   display: flex;
@@ -2137,8 +2154,12 @@ fieldset select {
 }
 .about-commit {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 .about-commit code {
   font-size: 0.8125rem;

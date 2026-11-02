@@ -19,6 +19,8 @@ var assets embed.FS
 // ReleaseInfo identifies the embedded frontend and the source checkout used to build it.
 type ReleaseInfo struct {
 	Version string `json:"version"`
+	Image   string `json:"image"`
+	Release bool   `json:"release"`
 	Commit  string `json:"commit"`
 	Dirty   bool   `json:"dirty"`
 	Tag     string `json:"tag"`

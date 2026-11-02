@@ -10,8 +10,9 @@ COPY scripts/versions.mjs scripts/versions.d.mts /src/scripts/
 COPY modules/web/ ./
 COPY modules/helper/ /src/modules/helper/
 ARG OVS_BUILD_INFO
+ARG OVS_IMAGE
 RUN pnpm --dir ../helper run build \
-    && OVS_BUILD_INFO="${OVS_BUILD_INFO}" pnpm run build \
+    && IMAGE="${OVS_IMAGE}" OVS_BUILD_INFO="${OVS_BUILD_INFO}" pnpm run build \
     && node /src/scripts/versions.mjs sync > /src/sync-version \
     && pnpm prune --prod \
     && pnpm licenses list --prod --json > /src/frontend-licenses.json
