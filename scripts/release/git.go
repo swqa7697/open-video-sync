@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -75,10 +76,6 @@ func (a *app) prepareCommit() (commitPlan, error) {
 			return plan, fmt.Errorf("unrelated tracked or staged change: %q", path)
 		}
 	}
-	v, err := a.version()
-	if err != nil {
-		return plan, err
-	}
 	oldRaw, err := a.git("show", "HEAD:versions.toml")
 	if err != nil {
 		return plan, err
@@ -87,12 +84,17 @@ func (a *app) prepareCommit() (commitPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	current, err := versions.Read(filepath.Join(a.root, "versions.toml"))
+	currentRaw, err := os.ReadFile(filepath.Join(a.root, "versions.toml"))
 	if err != nil {
 		return plan, err
 	}
-	for module, raw := range previous {
-		before, err := parseVersion(raw)
+	current, modules, err := versions.ParseOrdered(string(currentRaw))
+	if err != nil {
+		return plan, err
+	}
+	var changed []string
+	for _, module := range modules {
+		before, err := parseVersion(previous[module])
 		if err != nil {
 			return plan, err
 		}
@@ -103,13 +105,16 @@ func (a *app) prepareCommit() (commitPlan, error) {
 		if before.after(after) {
 			return plan, fmt.Errorf("%s version must not decrease", module)
 		}
+		if after.after(before) {
+			changed = append(changed, module+" "+after.String())
+		}
 	}
-	old, err := parseVersion(previous["sync"])
+	if len(changed) == 0 {
+		return plan, errors.New("at least one module version must increase relative to HEAD")
+	}
+	v, err := parseVersion(current["sync"])
 	if err != nil {
 		return plan, err
-	}
-	if !v.after(old) {
-		return plan, errors.New("release version must increase relative to HEAD")
 	}
 	files := []string{"versions.toml"}
 	_, changelogExists, err := a.notes(v)
@@ -143,7 +148,8 @@ func (a *app) prepareCommit() (commitPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	return commitPlan{branch, head, "chore(release): release ovs " + v.String(), diff, files}, nil
+	subject := "release open-video-sync: " + strings.Join(changed, " | ")
+	return commitPlan{branch, head, subject, diff, files}, nil
 }
 
 func (a *app) commit(yes bool) error {

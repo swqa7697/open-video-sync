@@ -145,16 +145,26 @@ func TestBumpRejectsInvalidPreparation(t *testing.T) {
 }
 
 func TestReleaseCommitPreviewAndRefusalPreserveCheckout(t *testing.T) {
-	for _, withNotes := range []bool{false, true} {
-		t.Run(fmt.Sprint(withNotes), func(t *testing.T) {
+	for _, tc := range []struct {
+		name, current, subject, notesVersion string
+	}{
+		{"sync", manifest("1.10.0"), "release open-video-sync: sync 1.10.0", ""},
+		{"web", "[versions]\nsync = \"1.2.3\"\nweb = \"0.1.0\"\nhelper = \"1.1.0\"\n", "release open-video-sync: web 0.1.0", "1.2.3"},
+		{"helper", "[versions]\nsync = \"1.2.3\"\nweb = \"0.0.0\"\nhelper = \"1.1.1\"\n", "release open-video-sync: helper 1.1.1", ""},
+		{"multiple-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.10.0\"\nweb = \"0.2.0\"\n", "release open-video-sync: helper 1.2.0 | sync 1.10.0 | web 0.2.0", "1.10.0"},
+		{"partial-reordered", "[versions]\nhelper = \"1.2.0\"\nsync = \"1.2.3\"\nweb = \"0.1.0\"\n", "release open-video-sync: helper 1.2.0 | web 0.1.0", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			notes := ""
-			if withNotes {
+			if tc.notesVersion != "" {
 				notes = "# Changelog\n\n## [1.2.3]\n\n- Previous behavior.\n"
 			}
 			a, remote := releaseFixture(t, "1.2.3\n", notes)
-			writeFixture(t, a.root, "versions.toml", "1.10.0\n")
-			if withNotes {
-				writeFixture(t, a.root, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [1.10.0] - 2026-10-27\n\n- New behavior.\n")
+			if err := os.WriteFile(filepath.Join(a.root, "versions.toml"), []byte(tc.current), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.notesVersion != "" {
+				writeFixture(t, a.root, "CHANGELOG.md", fmt.Sprintf("# Changelog\n\n## [Unreleased]\n\n## [%s] - 2026-10-27\n\n- New behavior.\n", tc.notesVersion))
 			}
 			state := fixtureState(t, a)
 			remoteRefs := gitFixtureCommand(t, remote, "", "show-ref")
@@ -162,7 +172,7 @@ func TestReleaseCommitPreviewAndRefusalPreserveCheckout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.branch != "dev" || plan.subject != "chore(release): release ovs 1.10.0" || len(plan.files) != 1+btoi(withNotes) {
+			if plan.branch != "dev" || plan.subject != tc.subject || len(plan.files) != 1+btoi(tc.notesVersion != "") {
 				t.Fatalf("unexpected release: %+v", plan)
 			}
 			for _, terminal := range []bool{false, true} {
@@ -173,7 +183,7 @@ func TestReleaseCommitPreviewAndRefusalPreserveCheckout(t *testing.T) {
 				}
 			}
 			preview := a.out.(*bytes.Buffer).String()
-			if !strings.Contains(preview, `+sync = "1.10.0"`) || !strings.Contains(preview, "chore(release): release ovs 1.10.0") {
+			if !strings.Contains(preview, "diff --git a/versions.toml b/versions.toml") || !strings.HasPrefix(preview, tc.subject+"\n") {
 				t.Fatalf("missing version or subject in preview: %s", preview)
 			}
 			if state != fixtureState(t, a) || remoteRefs != gitFixtureCommand(t, remote, "", "show-ref") {
@@ -191,13 +201,17 @@ func btoi(value bool) int {
 }
 
 func TestReleaseCommitRejectsUnsafeContents(t *testing.T) {
-	for _, scenario := range []string{"no-bump", "downgrade", "helper-downgrade", "main", "unrelated-worktree", "unrelated-index", "remote-moved", "missing-notes", "deleted-notes", "untracked-notes"} {
+	for _, scenario := range []string{"no-bump", "comment-only", "downgrade", "helper-downgrade", "main", "unrelated-worktree", "unrelated-index", "remote-moved", "missing-notes", "deleted-notes", "untracked-notes"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, remote := releaseFixture(t, "1.2.3\n", "")
 			writeFixture(t, a.root, "versions.toml", "1.3.0\n")
 			switch scenario {
 			case "no-bump":
 				writeFixture(t, a.root, "versions.toml", "1.2.3\n")
+			case "comment-only":
+				if err := os.WriteFile(filepath.Join(a.root, "versions.toml"), []byte("# No version changes.\n"+manifest("1.2.3")), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			case "downgrade":
 				writeFixture(t, a.root, "versions.toml", "1.1.9\n")
 			case "helper-downgrade":

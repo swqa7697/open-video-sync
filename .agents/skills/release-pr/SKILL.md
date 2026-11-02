@@ -64,7 +64,7 @@ contain proposed behavior that the remote release does not contain.
 
 ## Open or reuse the PR before any version bump
 
-For a new PR, prepare an English title such as `chore(release): prepare ovs release`.
+For a new PR, prepare an English title such as `chore(release): prepare open-video-sync release`.
 Follow the repository PR template when present. Include the reviewed source/base SHAs,
 implemented changes, known release gates, and actual validation. State that the version
 is not selected and hosted CI is pending. Do not run a bump command or edit release
@@ -161,20 +161,33 @@ CI-green range, including repair commits, for the version decision and release n
 
 ## Choose and prepare the version
 
-Root `versions.toml` is the sole module release-version source. `versions.sync` is the application version.
-`versions.web` and `versions.helper` record independently managed frontend and helper releases.
+Root `versions.toml` is the sole module release-version source. Sync, web, and helper have
+independent versions; do not require a sync bump for a web-only or helper-only change.
+`versions.sync` remains the application version used for changelog sections and release tags.
 Private package manifests omit versions; helper release metadata is generated during the build. Use numeric `MAJOR.MINOR.PATCH`
 comparison, not string ordering. If a release branch name contains a version, reconcile it
 with the proposed version rather than renaming the branch silently.
 
-Select the smallest appropriate increase from `origin/main`'s application version:
+Read the full `origin/main...source` diff and identify runtime or observable behavior changes
+for each module. Paths locate changes to inspect; they do not by themselves require bumps.
+Documentation, tests, formatting, behavior-preserving refactors, and tooling-only changes
+require no module bump unless they change shipped runtime behavior. Review shared changes
+for their impact on each module too.
+
+Compare each module's base, committed, and proposed versions. Show a table in manifest order
+with those versions, runtime impact, and the bump rationale. An existing release commit does
+not prove that every affected module is covered. If a partial set of bumps leaves an affected
+module uncovered, identify the gap and request the missing target version rather than
+silently inventing it. Preserve valid committed and pending bumps.
+
+For each affected module, select the smallest appropriate increase from its `origin/main` version:
 
 - **Major:** incompatible changes to a supported application contract, configuration,
   protocol, or upgrade path. Before 1.0, normally use a minor increase for incompatible
   development changes; reserve 1.0.0 for an intentional stable release with required gates met.
 - **Minor:** new user/operator capabilities or a substantial development milestone.
 - **Patch:** backward-compatible fixes, security corrections, or maintenance without new
-  capabilities. Documentation/tooling-only release requests can use patch; explain that scope.
+  capabilities.
 
 Explain the choice with concrete changes in `main...source`. An unversioned base needs an
 explicitly identified initial version: normally 0.1.0 for the infrastructure milestone,
@@ -182,7 +195,8 @@ never an unsupported claim of a finished 1.0 application. Compare with the previ
 tag/release too when it predates `main`; label the PR commit range separately.
 
 When the source still has the base version, run the selected `make bump-major`,
-`make bump-minor`, or `make bump-patch`. These commands edit only `versions.toml` (`MODULE=sync` by default); they do not
+`make bump-minor`, or `make bump-patch`, with `MODULE=sync`, `MODULE=web`, or `MODULE=helper`
+for each affected module. These commands edit only `versions.toml` (`MODULE=sync` by default); they do not
 stage, commit, or push. Review the resulting value against the recommendation.
 For an unversioned base, use the source's existing version as the starting point or edit
 `versions.toml` directly to the justified initial version. Do not invent a base version.
@@ -195,6 +209,9 @@ hosted CI for the current PR, and update the existing PR within the user's autho
 If a prior release commit exists locally after a push failure, inspect origin and request
 any missing approval for only the outstanding push; do not rerun the bump or create
 another release commit. Verify CI after the push before completing the release PR.
+
+If no modules require bumps and all versions are unchanged, continue without a version
+commit. Use a descriptive final PR title `release open-video-sync: <summary>` for that case.
 
 If CHANGELOG.md exists, prepare its matching release section with final user-visible behavior
 relative to the previous published release. Fold refinements of newly added features into
@@ -228,10 +245,16 @@ latency/skew targets. An infrastructure or local-playback milestone does not com
 first-release PRD. Use draft status for incomplete release preparation or product gates,
 unless the user explicitly requests a ready intermediate milestone with those limits stated.
 
-Prepare an English PR title: `chore(release): release ovs X.Y.Z`.
+Prepare an English PR title matching the release commit subject:
+`release open-video-sync: <module> X.Y.Z | <module> X.Y.Z`.
+List only modules changed by that version commit relative to its parent, in `versions.toml`
+order, separated by `|`. For example: `release open-video-sync: sync 0.1.0 | helper 0.2.1`.
+Omit unchanged modules; a single-module release has one entry and no separator.
 Follow the repository PR template when present; otherwise include these useful parts:
 
-- **Version and rationale:** base version, proposed version, selected increase, and reason.
+- **Version and rationale:** a table of all three modules in manifest order, comparing base
+  and proposed versions across the full PR, with the selected increases and reasons. The
+  release commit subject describes only that commit's bumps; the table covers the release.
 - **Highlights and release notes:** final user/operator behavior from the changelog or an
   identified diff summary. Describe implemented scope, not proposed application contracts.
 - **Upgrade and deployment:** changed configuration, dependencies, numbered migrations,
@@ -269,7 +292,10 @@ make release-commit YES=1
 ```
 
 The target previews the diff, rejects unrelated tracked/staged changes, stages only release
-files, commits `chore(release): release ovs X.Y.Z`, and pushes the selected branch to origin.
+files, and commits the single-line message `release open-video-sync: <module> X.Y.Z | ...`
+without a body or `v` prefix. The subject lists only modules increased relative to HEAD,
+in worktree `versions.toml` order. At least one module must increase; all module downgrades
+are rejected. The selected branch is then pushed to origin.
 An existing remote source must match local HEAD before this commit. Do not bypass these
 guards with a broad stage/commit or force push. On failure, inspect local/remote state and
 report the remaining action; a failed push retains the local release commit. Do not retry

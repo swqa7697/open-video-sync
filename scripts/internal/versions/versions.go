@@ -12,7 +12,14 @@ var entry = regexp.MustCompile(`^(sync|web|helper)\s*=\s*"((0|[1-9][0-9]*)\.(0|[
 
 // Parse accepts the single versions table and rejects missing or duplicate modules.
 func Parse(raw string) (map[string]string, error) {
+	result, _, err := ParseOrdered(raw)
+	return result, err
+}
+
+// ParseOrdered also returns module names in their manifest order.
+func ParseOrdered(raw string) (map[string]string, []string, error) {
 	result := make(map[string]string)
+	var modules []string
 	table := false
 	for line := range strings.SplitSeq(raw, "\n") {
 		line, _, _ = strings.Cut(line, "#")
@@ -26,14 +33,15 @@ func Parse(raw string) (map[string]string, error) {
 		}
 		match := entry.FindStringSubmatch(line)
 		if !table || match == nil || result[match[1]] != "" {
-			return nil, fmt.Errorf("invalid versions.toml: expected one stable version per module")
+			return nil, nil, fmt.Errorf("invalid versions.toml: expected one stable version per module")
 		}
 		result[match[1]] = match[2]
+		modules = append(modules, match[1])
 	}
 	if len(result) != 3 {
-		return nil, fmt.Errorf("versions.toml must define sync, web, and helper")
+		return nil, nil, fmt.Errorf("versions.toml must define sync, web, and helper")
 	}
-	return result, nil
+	return result, modules, nil
 }
 
 // Read loads and validates a module release manifest.
