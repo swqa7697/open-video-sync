@@ -3,11 +3,11 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 if [[ "${VERBOSE:-0}" == 1 ]]; then set -x; fi
 
-gofmt_args=(./scripts/gofmt -write)
+gofmt_args=(./gofmt -write)
 prettier_mode=--write
 mbake_args=(format --config .bake.toml)
 if [[ "$#" == 1 && "$1" == --check ]]; then
-  gofmt_args=(./scripts/gofmt)
+  gofmt_args=(./gofmt)
   prettier_mode=--check
   mbake_args+=(--check)
 elif [[ "$#" != 0 ]]; then
@@ -23,7 +23,7 @@ for tool in go pnpm uvx; do
 done
 
 # Go application, tests, and automation.
-go -C modules/sync run "${gofmt_args[@]}" -root ../..
+go -C scripts run "${gofmt_args[@]}" -root ..
 
 # Frontend, browser tests, userscripts, Bash (including this script), docs, and config.
 pnpm --dir modules/web exec prettier --ignore-path ../../.gitignore --ignore-path ../../.prettierignore "$prettier_mode" ../..

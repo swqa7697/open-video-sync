@@ -182,7 +182,7 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	defer os.RemoveAll(scratch)
 	helper := filepath.Join(scratch, "remote")
 	p.begin("Build remote helper")
-	build := exec.CommandContext(ctx, "go", "-C", "modules/sync", "build", "-trimpath", "-o", helper, "./scripts/deploy")
+	build := exec.CommandContext(ctx, "go", "-C", "scripts", "build", "-trimpath", "-o", helper, "./deploy")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {

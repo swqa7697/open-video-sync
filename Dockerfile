@@ -23,7 +23,8 @@ RUN go mod download
 COPY modules/sync/cmd/ cmd/
 COPY modules/sync/internal/ internal/
 COPY modules/sync/sql/ sql/
-COPY modules/sync/scripts/notices/ scripts/notices/
+COPY scripts/go.mod scripts/go.sum /src/scripts/
+COPY scripts/notices/ /src/scripts/notices/
 COPY --from=frontend /src/modules/web/dist/ internal/web/dist/
 COPY --from=frontend /src/modules/helper/dist/ internal/helper/dist/
 COPY --from=frontend /src/modules/web/node_modules/ /src/modules/web/node_modules/
@@ -33,7 +34,7 @@ ARG CHANNEL=dev
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(cat /src/sync-version) -X main.channel=${CHANNEL}" -o /out/ovs ./cmd/ovs \
-    && go run ./scripts/notices -frontend /src/frontend-licenses.json > /out/THIRD_PARTY_NOTICES.txt \
+    && go -C /src/scripts run ./notices -sync /src/modules/sync -frontend /src/frontend-licenses.json > /out/THIRD_PARTY_NOTICES.txt \
     && mkdir -p /out/data \
     && chown 10001:10001 /out/data \
     && chmod 0700 /out/data

@@ -3,6 +3,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 MODULE ?= sync
 SYNC := modules/sync
+SCRIPTS := scripts
 WEB := modules/web
 HELPER := modules/helper
 CHANNEL ?= dev
@@ -23,7 +24,7 @@ ifneq ($(VERBOSE),1)
 .SILENT:
 endif
 
-.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 .PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
 
 help: ## Show available commands
@@ -45,12 +46,14 @@ deps: ## Check tool versions and install locked project dependencies
 	@$(INFO) "Installing locked Go and frontend dependencies..."
 	@./scripts/ensure_deps.sh
 	go -C $(SYNC) mod download
+	go -C $(SCRIPTS) mod download
 	pnpm --dir $(WEB) install --frozen-lockfile
 	@$(SUCCESS) "Dependencies installed."
 
-upgrade: ## Upgrade backend and frontend dependencies
+upgrade: ## Upgrade backend, frontend, and automation dependencies
 	$(MAKE) upgrade-frontend
 	$(MAKE) upgrade-backend
+	$(MAKE) upgrade-tools
 	@$(WARN) "Review dependency changes, then run: make check && make test test-race && make build"
 
 upgrade-backend: web-build ## Upgrade Go modules within their current module paths, including test dependencies
@@ -60,6 +63,14 @@ upgrade-backend: web-build ## Upgrade Go modules within their current module pat
 	go -C $(SYNC) mod tidy
 	go -C $(SYNC) mod edit -toolchain=none
 	@$(SUCCESS) "Updated modules/sync/go.mod and go.sum. Review any change to the minimum Go version."
+
+upgrade-tools: ## Upgrade Go automation dependencies within their current module paths
+	@command -v go >/dev/null 2>&1 || { $(FAIL) "Go is required. See CONTRIBUTING.md."; exit 1; }
+	@$(INFO) "Upgrading Go automation dependencies..."
+	go -C $(SCRIPTS) get -u -t ./...
+	go -C $(SCRIPTS) mod tidy
+	go -C $(SCRIPTS) mod edit -toolchain=none
+	@$(SUCCESS) "Updated scripts/go.mod and go.sum. Review any change to the minimum Go version."
 
 upgrade-frontend: ## Upgrade frontend dependencies within current majors and align the latest Vite+ toolchain
 	@command -v pnpm >/dev/null 2>&1 || { $(FAIL) "pnpm is required. See CONTRIBUTING.md."; exit 1; }
@@ -83,6 +94,7 @@ format-check: ## Check formatting without changing source files
 lint: web-build ## Run Go vet, Bash syntax checks, Oxlint, and Vue template lint
 	@$(INFO) "Checking Go vet, Bash syntax, and frontend lint..."
 	go -C $(SYNC) vet ./...
+	go -C $(SCRIPTS) vet ./...
 	bash -n tidy.sh
 	@for script in scripts/*.sh; do bash -n "$$script"; done
 	pnpm --dir $(WEB) run lint
@@ -94,8 +106,9 @@ check: format-check lint ## Run format checks, frontend/backend lint, and Vue ty
 	@$(SUCCESS) "All static checks passed."
 
 test: web-build ## Run Go and frontend unit/integration tests
-	@$(INFO) "Running Go, frontend, and userscript tests..."
+	@$(INFO) "Running Go application, automation, frontend, and userscript tests..."
 	go -C $(SYNC) test ./...
+	go -C $(SCRIPTS) test ./...
 	pnpm --dir $(WEB) run test
 	pnpm --dir $(HELPER) run test
 	@$(SUCCESS) "All tests passed."
@@ -103,6 +116,7 @@ test: web-build ## Run Go and frontend unit/integration tests
 test-race: web-build ## Run Go tests with the race detector (requires a C compiler)
 	@$(INFO) "Running Go tests with the race detector..."
 	go -C $(SYNC) test -race ./...
+	go -C $(SCRIPTS) test -race ./...
 	@$(SUCCESS) "Race tests passed."
 
 helper-build: ## Build helper distribution and copy it for Go embedding
@@ -142,47 +156,47 @@ image: ## Build the single non-root application image
 
 image-smoke: ## Check image startup, HTTP routing, ownership, and persisted schema
 	@$(INFO) "Checking the application image..."
-	go -C $(SYNC) run ./scripts/image-smoke -image "$(IMAGE)"
+	go -C $(SCRIPTS) run ./image-smoke -image "$(IMAGE)"
 
 proxy-smoke: ## Check HTTPS through containerized Caddy, proxy client addresses, and reconnect after reload
 	@$(INFO) "Checking HTTPS through Caddy..."
-	go -C $(SYNC) run ./scripts/proxy-smoke -image "$(IMAGE)" -caddy "$(CADDY_IMAGE)"
+	go -C $(SCRIPTS) run ./proxy-smoke -image "$(IMAGE)" -caddy "$(CADDY_IMAGE)"
 
 deploy: ## Build and deploy over SSH (HOST required; URL required on first deployment)
 	@$(INFO) "Starting SSH deployment..."
-	go -C $(SYNC) run ./scripts/deploy deploy
+	go -C $(SCRIPTS) run ./deploy deploy
 
 deploy-status: ## Check the remote deployment and public HTTP/HTTPS endpoint
 	@$(INFO) "Checking the remote deployment..."
-	go -C $(SYNC) run ./scripts/deploy status
+	go -C $(SCRIPTS) run ./deploy status
 
 deploy-logs: ## Follow the last 100 log lines from managed remote services
 	@$(INFO) "Following remote service logs..."
-	go -C $(SYNC) run ./scripts/deploy logs
+	go -C $(SCRIPTS) run ./deploy logs
 
 deploy-restart: ## Restart remote OVS without rebuilding or restarting Caddy
 	@$(INFO) "Restarting remote OVS..."
-	go -C $(SYNC) run ./scripts/deploy restart
+	go -C $(SCRIPTS) run ./deploy restart
 
 deploy-stop: ## Stop managed remote services and preserve persistent volumes
 	@$(INFO) "Stopping remote services..."
-	go -C $(SYNC) run ./scripts/deploy stop
+	go -C $(SCRIPTS) run ./deploy stop
 
 deploy-smoke: ## Exercise deployment through isolated SSH and Docker (requires privileged Docker and SSH tools)
 	@$(INFO) "Running the isolated deployment smoke test..."
-	OVS_DEPLOY_SMOKE=1 go -C $(SYNC) test -count=1 -timeout=10m ./scripts/deploy -run TestDeploymentSmoke -v
+	OVS_DEPLOY_SMOKE=1 go -C $(SCRIPTS) test -count=1 -timeout=10m ./deploy -run TestDeploymentSmoke -v
 
 bump-major: ## Bump the selected module version in versions.toml; major (X.0.0); no Git mutations
-	go -C $(SYNC) run ./scripts/release bump major $(MODULE)
+	go -C $(SCRIPTS) run ./release bump major $(MODULE)
 
 bump-minor: ## Bump the selected module version in versions.toml; minor (x.Y.0); no Git mutations
-	go -C $(SYNC) run ./scripts/release bump minor $(MODULE)
+	go -C $(SCRIPTS) run ./release bump minor $(MODULE)
 
 bump-patch: ## Bump the selected module version in versions.toml; patch (x.y.Z); no Git mutations
-	go -C $(SYNC) run ./scripts/release bump patch $(MODULE)
+	go -C $(SCRIPTS) run ./release bump patch $(MODULE)
 
 release-commit: ## Preview, commit, and push release files (YES=1 confirms)
-	go -C $(SYNC) run ./scripts/release commit $(if $(filter 1 true yes,$(YES)),--yes)
+	go -C $(SCRIPTS) run ./release commit $(if $(filter 1 true yes,$(YES)),--yes)
 
 release-tag: ## On clean latest main, confirm and push annotated sync vX.Y.Z (no publication)
-	go -C $(SYNC) run ./scripts/release tag
+	go -C $(SCRIPTS) run ./release tag

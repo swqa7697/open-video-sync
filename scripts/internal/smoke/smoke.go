@@ -17,9 +17,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/versions"
+	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 )
 
 // ApplicationImage returns IMAGE or the application tag from the release manifest.
@@ -113,7 +111,7 @@ func (c *Client) Call(ctx context.Context, method, path string, payload any) (ma
 		}
 	}
 	var value map[string]json.RawMessage
-	decodeErr := json.NewDecoder(io.LimitReader(response.Body, contracts.MaxMessageBytes)).Decode(&value)
+	decodeErr := json.NewDecoder(io.LimitReader(response.Body, MaxMessageBytes)).Decode(&value)
 	if response.StatusCode != 200 {
 		failure := &StatusError{Method: method, Path: path, Status: response.StatusCode}
 		_ = json.Unmarshal(value["code"], &failure.Code)
@@ -162,8 +160,8 @@ func (c *Client) acceptProfile(value map[string]json.RawMessage) (string, error)
 }
 
 // Snapshot reads one authorized room snapshot.
-func (c *Client) Snapshot(ctx context.Context, roomID string) (rooms.Snapshot, error) {
-	var snap rooms.Snapshot
+func (c *Client) Snapshot(ctx context.Context, roomID string) (Snapshot, error) {
+	var snap Snapshot
 	value, err := c.Call(ctx, "GET", "/rooms/"+roomID, nil)
 	if err != nil {
 		return snap, err
@@ -215,25 +213,26 @@ func Next(ctx context.Context, conn *websocket.Conn) (Frame, error) {
 }
 
 // Welcome reads the session.welcome snapshot that starts every admitted connection.
-func Welcome(ctx context.Context, conn *websocket.Conn) (rooms.Snapshot, error) {
+func Welcome(ctx context.Context, conn *websocket.Conn) (Snapshot, error) {
 	f, err := Next(ctx, conn)
 	if err != nil {
-		return rooms.Snapshot{}, err
+		return Snapshot{}, err
 	}
-	var welcome struct{ Snapshot rooms.Snapshot }
+	var welcome struct{ Snapshot Snapshot }
 	if f.Type != "session.welcome" || json.Unmarshal(f.Payload, &welcome) != nil {
-		return rooms.Snapshot{}, fmt.Errorf("first room frame was %q, want session.welcome", f.Type)
+		return Snapshot{}, fmt.Errorf("first room frame was %q, want session.welcome", f.Type)
 	}
 	return welcome.Snapshot, nil
 }
 
 // Command sends a mutation envelope against snap and waits for its command.result.
-func Command(ctx context.Context, conn *websocket.Conn, snap rooms.Snapshot, kind string, payload any) (rooms.CommandResult, error) {
-	var result rooms.CommandResult
-	id, err := contracts.RandomID(rand.Reader)
-	if err != nil {
+func Command(ctx context.Context, conn *websocket.Conn, snap Snapshot, kind string, payload any) (CommandResult, error) {
+	var result CommandResult
+	key := make([]byte, 16)
+	if _, err := rand.Read(key); err != nil {
 		return result, err
 	}
+	id := hex.EncodeToString(key)
 	frame, _ := json.Marshal(map[string]any{"v": 2, "type": kind, "commandId": id, "epoch": snap.Epoch, "expectedRevision": snap.Revision, "mediaGeneration": snap.MediaGeneration, "payload": payload})
 	if err := conn.Write(ctx, websocket.MessageText, frame); err != nil {
 		return result, err

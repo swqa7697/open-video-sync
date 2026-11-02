@@ -22,23 +22,23 @@
 
 ## Architecture and ownership
 
-| Location                                                           | Responsibility                                                          |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `modules/sync/cmd/ovs`                                             | Composition, configuration, process lifecycle                           |
-| `modules/sync/internal/identity`                                   | Anonymous identity, OVS sessions, profile lifecycle                     |
-| `modules/sync/internal/rooms`                                      | Membership, host rules, media, policies, timelines, room coordinators   |
-| `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds           |
-| `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                     |
-| `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                   |
-| `modules/sync/sql`                                                 | Complete, current database definition and Go embedding                  |
-| `modules/sync/sql/migrations`                                      | Version-to-version schema changes for historical reference only         |
-| `modules/sync/scripts`                                             | Go automation, container and proxy checks                               |
-| `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling      |
-| `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests              |
-| `scripts`, `tests`, `specs`                                        | Cross-module orchestration, application journeys, shared contracts      |
-| `versions.toml`                                                    | Sole release-version source for sync, web, and helper                   |
-| `Dockerfile`, `.dockerignore`                                      | Complete application image build across all three modules               |
-| `deploy`                                                           | Shared application deployment examples, Compose and Caddy configuration |
+| Location                                                           | Responsibility                                                                               |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `modules/sync/cmd/ovs`                                             | Composition, configuration, process lifecycle                                                |
+| `modules/sync/internal/identity`                                   | Anonymous identity, OVS sessions, profile lifecycle                                          |
+| `modules/sync/internal/rooms`                                      | Membership, host rules, media, policies, timelines, room coordinators                        |
+| `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds                                |
+| `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                                          |
+| `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                                        |
+| `modules/sync/sql`                                                 | Complete, current database definition and Go embedding                                       |
+| `modules/sync/sql/migrations`                                      | Version-to-version schema changes for historical reference only                              |
+| `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling                           |
+| `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests                                   |
+| `scripts`                                                          | Independent Go automation module, cross-module builds, releases, deployment and smoke checks |
+| `tests`, `specs`                                                   | Application journeys and shared contracts                                                    |
+| `versions.toml`                                                    | Sole release-version source for sync, web, and helper                                        |
+| `Dockerfile`, `.dockerignore`                                      | Complete application image build across all three modules                                    |
+| `deploy`                                                           | Shared application deployment examples, Compose and Caddy configuration                      |
 
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
@@ -76,6 +76,7 @@
 - Use Oxlint for supported frontend rules, retain necessary Vue template checks, and run `vue-tsc --noEmit` independently of bundling. Select one formatter during scaffolding; avoid competing tools for the same rule.
 - Use Bash with `set -euo pipefail`, quoted expansions, and argument arrays for executable automation. Keep cross-module automation under `scripts/` and module automation under its module directory.
 - Prefer Go for standalone repository automation when no existing tool fits. Keep native frontend tests in the frontend test framework.
+- Keep repository Go automation in the independent `scripts` module. Smoke clients use the public wire contract and must not import server internal packages.
 - Keep changes focused. Remove dead code and share helpers only when they represent the same responsibility. Do not add unrelated cleanup or future-source abstractions.
 
 ## Security, storage, and deployment
@@ -96,11 +97,11 @@
 
 Use `make help` for the command list. Run `make install` to install locked dependencies and build the template. Run `make dev` for Go and `make dev-web` for frontend hot reload. See [CONTRIBUTING.md](CONTRIBUTING.md) for tool prerequisites.
 
-Run `make check`, `make test test-race`, and `make build` in that order. Run `make browser-install` before `make test-e2e`. Use `make image image-smoke` for container checks. Direct Go commands require `make web-build` first because frontend assets are embedded at compile time. CI is configured; hosted success requires an actual successful run.
+Run `make check`, `make test test-race`, and `make build` in that order. Run `make browser-install` before `make test-e2e`. Use `make image image-smoke` for container checks. Direct server Go commands require `make web-build` first because frontend assets are embedded at compile time. CI is configured; hosted success requires an actual successful run.
 
 - For documentation-only changes, check references and contract consistency, then run `git diff --check`. Do not add application tests for documentation text.
 - Use Make as the common developer entry point once implemented. Separate mutation-only formatting from read-only format/lint checks; avoid targets that silently stage or commit.
-- Use `go -C modules/sync vet ./...`, `go -C modules/sync test ./...`, and `go -C modules/sync test -race ./...` for concurrent code. Run the configured frontend format/lint, type checks, and tests from the frontend package.
+- Use `go -C modules/sync vet ./...`, `go -C modules/sync test ./...`, and `go -C modules/sync test -race ./...` for concurrent code. Run the same Go checks with `-C scripts` for repository automation. Run the configured frontend format/lint, type checks, and tests from the frontend package.
 - Validate in order: formatting/static checks, relevant tests, then production build. The production build must generate embedded assets before compiling Go.
 - Add browser, storage, deployment, and network checks when the changed contract needs them. Keep live platform validation explicit and separate from the ordinary offline suite.
 - Report checks actually run, their results, and missing prerequisites. A skipped check is unverified; claim hosted CI success only after a successful hosted run.

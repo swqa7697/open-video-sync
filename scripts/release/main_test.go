@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/versions"
+	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 )
 
 func gitFixtureCommand(t *testing.T, dir, input string, args ...string) string {

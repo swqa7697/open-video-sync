@@ -4,6 +4,10 @@
 !scripts/
 !scripts/versions.mjs
 !scripts/versions.d.mts
+!scripts/go.mod
+!scripts/go.sum
+!scripts/notices/
+!scripts/notices/**
 !modules/
 !modules/sync/
 !modules/sync/go.mod
@@ -14,9 +18,6 @@
 !modules/sync/internal/**
 !modules/sync/sql/
 !modules/sync/sql/**
-!modules/sync/scripts/
-!modules/sync/scripts/notices/
-!modules/sync/scripts/notices/**
 !modules/web/
 !modules/web/**
 !modules/helper/

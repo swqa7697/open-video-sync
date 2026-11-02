@@ -3,11 +3,50 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// The notices command runs from the tools module but must inspect only the
+// application's compiled dependencies. All fixture dependencies stay local.
+func TestApplicationNoticesFromSeparateModule(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"go.mod":             "module example.invalid/app\n\ngo 1.23.0\n\nrequire (\n example.invalid/runtime v0.0.0\n example.invalid/tool v0.0.0\n)\n\nreplace example.invalid/runtime => ./runtime\nreplace example.invalid/tool => ./tool\n",
+		"cmd/ovs/main.go":    "package main\n\nimport _ \"example.invalid/runtime\"\n\nfunc main() {}\n",
+		"automation/main.go": "package main\n\nimport _ \"example.invalid/tool\"\n\nfunc main() {}\n",
+		"runtime/go.mod":     "module example.invalid/runtime\n\ngo 1.23.0\n",
+		"runtime/runtime.go": "package dependency\n",
+		"runtime/LICENSE":    "synthetic application dependency license\n",
+		"tool/go.mod":        "module example.invalid/tool\n\ngo 1.23.0\n",
+		"tool/tool.go":       "package tool\n",
+		"tool/LICENSE":       "synthetic tool dependency license\n",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if err := run(&out, root, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "example.invalid/runtime v0.0.0") || !strings.Contains(out.String(), "synthetic application dependency license") {
+		t.Fatalf("application dependency notice missing: %s", out.String())
+	}
+	if strings.Contains(out.String(), "example.invalid/tool") || strings.Contains(out.String(), "synthetic tool dependency license") {
+		t.Fatal("notices included a dependency outside the application")
+	}
+	if err := run(io.Discard, filepath.Join(root, "missing"), ""); err == nil {
+		t.Fatal("missing application module accepted")
+	}
+}
 
 // pnpm groups versions under one name. Notices must label each actual version and
 // cover the upstream tarball omission without accepting unrelated missing licenses.

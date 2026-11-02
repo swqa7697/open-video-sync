@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/versions"
+	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 )
 
 var stableVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)

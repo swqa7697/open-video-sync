@@ -25,16 +25,17 @@ import (
 var devtoolsAPILicense string
 
 func main() {
+	syncDir := flag.String("sync", "../modules/sync", "Go application module directory")
 	frontend := flag.String("frontend", "", "pnpm production license metadata")
 	flag.Parse()
-	if err := run(os.Stdout, *frontend); err != nil {
+	if err := run(os.Stdout, *syncDir, *frontend); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(out io.Writer, frontend string) error {
-	output, err := exec.Command("go", "list", "-deps", "-json", "./cmd/ovs").Output()
+func run(out io.Writer, syncDir, frontend string) error {
+	output, err := exec.Command("go", "-C", syncDir, "list", "-deps", "-json", "./cmd/ovs").Output()
 	if err != nil {
 		return fmt.Errorf("list Go modules: %w", err)
 	}

@@ -123,6 +123,7 @@ The Compose example supplies `OVS_PUBLIC_ORIGIN=http://127.0.0.1:8080` by defaul
 
 - [Deployment](deploy/README.md)
 - [Development and validation](CONTRIBUTING.md)
+- [Repository automation](scripts/README.md)
 - [Product requirements](specs/PRD.md), [technical design](specs/DESIGN.md), and [application protocol](specs/WIRE.md)
 - [Changelog](CHANGELOG.md)
 

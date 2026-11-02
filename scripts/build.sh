@@ -18,6 +18,6 @@ bash scripts/log.sh build info "Building the Go application ($version, $channel)
 CGO_ENABLED=0 go -C modules/sync build "${go_flags[@]}" ./cmd/ovs
 bash scripts/log.sh build info "Generating dependency notices..."
 pnpm --dir modules/web licenses list --prod --json > modules/sync/build/frontend-licenses.json
-go -C modules/sync run ./scripts/notices -frontend build/frontend-licenses.json > modules/sync/build/THIRD_PARTY_NOTICES.txt
+go -C scripts run ./notices -sync ../modules/sync -frontend ../modules/sync/build/frontend-licenses.json > modules/sync/build/THIRD_PARTY_NOTICES.txt
 cp LICENSE modules/sync/build/LICENSE
 bash scripts/log.sh build success "Build complete: modules/sync/build/ovs"

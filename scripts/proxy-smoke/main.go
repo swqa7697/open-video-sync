@@ -21,10 +21,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/checkout"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/smoke"
+	"github.com/swqa7697/open-video-sync/scripts/internal/checkout"
+	"github.com/swqa7697/open-video-sync/scripts/internal/smoke"
 )
 
 const (
@@ -277,7 +275,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 	if err != nil {
 		return err
 	}
-	var created rooms.Result
+	var created smoke.RoomResult
 	raw, _ := json.Marshal(value)
 	if err := json.Unmarshal(raw, &created); err != nil {
 		return err
@@ -297,7 +295,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 		kind    string
 		payload map[string]any
 	}{
-		{"media.select", map[string]any{"media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}},
+		{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "400306737", "part": 1, "durationMs": 60000}}},
 		{"playback.command", map[string]any{"action": "seek", "positionMs": 12000}},
 		{"playback.command", map[string]any{"action": "play"}},
 	} {
@@ -376,7 +374,7 @@ func checkAddresses(ctx context.Context, httpClient *http.Client, directPort str
 		if err != nil {
 			return 0, err
 		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, contracts.MaxMessageBytes))
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, smoke.MaxMessageBytes))
 		response.Body.Close()
 		return response.StatusCode, nil
 	}

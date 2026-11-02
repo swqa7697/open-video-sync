@@ -17,10 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/checkout"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/smoke"
+	"github.com/swqa7697/open-video-sync/scripts/internal/checkout"
+	"github.com/swqa7697/open-video-sync/scripts/internal/smoke"
 	_ "modernc.org/sqlite"
 )
 
@@ -249,7 +247,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if err != nil {
 			return previous, err
 		}
-		var created rooms.Result
+		var created smoke.RoomResult
 		raw, _ := json.Marshal(value)
 		if err := json.Unmarshal(raw, &created); err != nil || created.Invitation == nil {
 			return previous, errors.New("room creation returned no host invitation")
@@ -265,7 +263,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if err != nil {
 			return previous, err
 		}
-		var joined rooms.Result
+		var joined smoke.RoomResult
 		raw, _ = json.Marshal(value)
 		if err := json.Unmarshal(raw, &joined); err != nil || joined.Snapshot.SelfMemberID == "" {
 			return previous, errors.New("guest redemption returned no membership")
@@ -310,7 +308,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 	if err != nil {
 		return previous, err
 	}
-	var invitation rooms.Invitation
+	var invitation smoke.Invitation
 	if err := json.Unmarshal(inv["invitation"], &invitation); err != nil {
 		return previous, err
 	}
@@ -326,7 +324,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 			kind    string
 			payload map[string]any
 		}{
-			{"media.select", map[string]any{"media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}},
+			{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "400306737", "part": 1, "durationMs": 60000}}},
 			{"playback.command", map[string]any{"action": "seek", "positionMs": 12000}},
 			{"playback.command", map[string]any{"action": "play"}},
 		} {

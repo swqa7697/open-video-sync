@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/checkout"
+	"github.com/swqa7697/open-video-sync/scripts/internal/checkout"
 )
 
 func main() {

@@ -18,8 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
-	"github.com/swqa7697/open-video-sync/modules/sync/scripts/internal/smoke"
+	"github.com/swqa7697/open-video-sync/scripts/internal/smoke"
 )
 
 // TestRemoteHelper exists only in the test executable. No production environment
@@ -49,7 +48,7 @@ func TestDeploymentSmoke(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Minute)
 	defer cancel()
-	root, err := filepath.Abs("../../../..")
+	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +241,7 @@ func TestDeploymentSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(room)
-	var created rooms.Result
+	var created smoke.RoomResult
 	if err := json.Unmarshal(b, &created); err != nil {
 		t.Fatal(err)
 	}
