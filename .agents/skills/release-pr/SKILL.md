@@ -85,8 +85,10 @@ when practical. Record the PR number and URL, then continue; do not stop at crea
 ## Hosted CI gate and repair loop
 
 **Do not choose/apply a new version bump until hosted CI passes for the current PR
-source and base.** Local checks, an older green run, and an empty check list do not satisfy
-this gate. Use the same gate after each repair push and after the release commit.
+source and base in full validation mode.** Local checks, an older green run, a release-mode
+run, and an empty check list do not satisfy this pre-bump gate. Require full validation
+after code repair pushes too. The final metadata-only release commit may use the verified
+release mode described below.
 
 Read `.github/workflows/` and applicable required checks to identify the expected PR jobs.
 Query the PR and its checks, then inspect the linked workflow runs:
@@ -103,6 +105,33 @@ workflows testing a synthetic merge commit. Do not compare unrelated push runs o
 stale checks from before a source/base update. Required and expected applicable jobs
 must complete successfully. Pending, missing, cancelled, timed-out, or unexpectedly
 skipped jobs keep the gate closed; a successful job does not hide another failed job.
+
+The `CI / validate` job always runs. Its `Select validation mode` log identifies `full`
+or `release`; its summary records the tested source/base and the reused full run when
+applicable. In full mode, all static, unit, race, browser, image, and proxy steps must
+succeed. Do not accept a missing mode as full without inspecting every expected step
+in an older workflow.
+
+Release mode is allowed only for a same-repository PR into `main`, with a single-parent
+release commit that modifies only regular `versions.toml` and optional existing
+`CHANGELOG.md` files. The bump, exact commit message, dated notes, and whitespace must
+validate. The direct parent must have a successful full run for the same PR, base,
+repository, and workflow. CI verifies the latest attempt and its `full-ci-<run>-<attempt>`
+artifact, including its digest and recorded source/base/merge identity. A release-mode
+run never supplies reusable full evidence. Missing, expired, or mismatched evidence and
+API failures select full mode; invalid release metadata fails the run.
+
+For the final release commit, accept either a successful full run or a successful
+release-mode run whose dependency installation, `make check`, image build, image smoke,
+final source/base freshness check, and `Record validation result` step succeed.
+Both modes prepare pnpm and uv, then run `make install` and `make check`.
+Unit, race, browser, and proxy steps are expected to be skipped only in verified release
+mode. Check the linked full run and direct-parent relationship; a pre-bump green check
+alone is insufficient.
+Record both full and release-mode run links in the PR. Recheck the remote source/base
+after completion. A changed base needs fresh full validation. Require the PR branch
+to be up to date with its base in branch rules when enforcing merge-time freshness;
+CI cannot prevent the base from moving after a run finishes.
 
 Poll while jobs are queued/running or still registering. Use short waits or bounded
 watch calls so progress updates remain possible at least every 60 seconds. Treat pending
@@ -222,7 +251,13 @@ changelog when none exists; derive an explicitly identified release summary from
 ## Validate and present the approval package
 
 Validate the proposed source snapshot including the prepared release files. Follow README
-prerequisites and AGENTS.md's documentation-only exception. For implementation releases:
+prerequisites and AGENTS.md's documentation-only exception. When only the isolated release
+files change after successful full validation of the direct parent against the same base,
+reuse the completed local unit, race, browser, and proxy checks, inspect the complete
+release-file diff and metadata, and run `git diff --check`, `make check`, and
+`make image image-smoke` for the prepared snapshot.
+The hosted classifier still independently decides whether release mode is eligible.
+For other implementation changes, run the complete sequence:
 
 ```bash
 make check
@@ -323,13 +358,15 @@ source/base changed, report the state and resolve it within authorization; do no
 create a replacement PR.
 
 Return to the hosted CI gate for the pushed release commit. Diagnose and repair failures
-through the same loop, preserving the chosen version instead of bumping again. If repairs
+through the same loop, accepting full or verified release mode as defined above and
+preserving the chosen version instead of bumping again. If repairs
 change release behavior, refresh the full diff, version rationale, release notes, and any
 affected approval before further Git writes. Verify the final PR head after every push;
 pre-bump green CI does not verify the release commit or later fixes.
 
 After final CI succeeds, update validation links. Report any unmet product gates in
 the PR body and checklist. Report the PR URL, version change, release commit SHA, final head SHA,
-successful CI links, remaining product gates, and publication status. Stop after release
+successful CI links and final validation mode (including the reused full run for release
+mode), remaining product gates, and publication status. Stop after release
 PR preparation and final CI verification. Merging, `make release-tag`, and publication need
 separate user requests; approval for the release PR does not authorize those actions.

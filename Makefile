@@ -26,6 +26,7 @@ endif
 
 .PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 .PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
+.PHONY: ci-plan ci-finish
 
 help: ## Show available commands
 	@printf 'Usage: make <target> [VERBOSE=1]\n\n'
@@ -185,6 +186,12 @@ deploy-stop: ## Stop managed remote services and preserve persistent volumes
 deploy-smoke: ## Exercise deployment through isolated SSH and Docker (requires privileged Docker and SSH tools)
 	@$(INFO) "Running the isolated deployment smoke test..."
 	OVS_DEPLOY_SMOKE=1 go -C $(SCRIPTS) test -count=1 -timeout=10m ./deploy -run TestDeploymentSmoke -v
+
+ci-plan: ## Select full or release validation for the current GitHub PR run
+	go -C $(SCRIPTS) run ./ci plan
+
+ci-finish: ## Record completed CI checks and verify release source/base freshness
+	go -C $(SCRIPTS) run ./ci finish
 
 bump-major: ## Bump the selected module version in versions.toml; major (X.0.0); no Git mutations
 	go -C $(SCRIPTS) run ./release bump major $(MODULE)

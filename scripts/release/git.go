@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
+	"github.com/swqa7697/open-video-sync/scripts/internal/releaseinfo"
 )
 
 func (a *app) branch() (string, error) {
@@ -80,37 +80,13 @@ func (a *app) prepareCommit() (commitPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	previous, err := versions.Parse(oldRaw)
-	if err != nil {
-		return plan, err
-	}
 	currentRaw, err := os.ReadFile(filepath.Join(a.root, "versions.toml"))
 	if err != nil {
 		return plan, err
 	}
-	current, modules, err := versions.ParseOrdered(string(currentRaw))
+	subject, err := releaseinfo.Subject(oldRaw, string(currentRaw))
 	if err != nil {
 		return plan, err
-	}
-	var changed []string
-	for _, module := range modules {
-		before, err := parseVersion(previous[module])
-		if err != nil {
-			return plan, err
-		}
-		after, err := parseVersion(current[module])
-		if err != nil {
-			return plan, err
-		}
-		if before.after(after) {
-			return plan, fmt.Errorf("%s version must not decrease", module)
-		}
-		if after.after(before) {
-			changed = append(changed, module+" "+after.String())
-		}
-	}
-	if len(changed) == 0 {
-		return plan, errors.New("at least one module version must increase relative to HEAD")
 	}
 	files := []string{"versions.toml"}
 	_, changelogExists, err := a.notes()
@@ -144,7 +120,6 @@ func (a *app) prepareCommit() (commitPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	subject := "release open-video-sync: " + strings.Join(changed, " | ")
 	return commitPlan{branch, head, subject, diff, files}, nil
 }
 
@@ -216,7 +191,7 @@ func (a *app) prepareTag() (tagPlan, error) {
 	if !exists {
 		return plan, errors.New("CHANGELOG.md needs a dated release section before tagging")
 	}
-	name := "v" + notes.date
+	name := "v" + notes.Date
 	local, err := a.git("tag", "--list", name)
 	if err != nil {
 		return plan, err
@@ -234,7 +209,7 @@ func (a *app) prepareTag() (tagPlan, error) {
 			continue
 		}
 		tag := strings.TrimSuffix(strings.TrimPrefix(fields[1], "refs/tags/"), "^{}")
-		if tag == name || (strings.HasPrefix(tag, "v") && validReleaseDate(tag[1:]) && fields[0] == head) {
+		if tag == name || (strings.HasPrefix(tag, "v") && releaseinfo.ValidDate(tag[1:]) && fields[0] == head) {
 			return plan, fmt.Errorf("release tag %s already exists on origin", tag)
 		}
 	}
@@ -243,12 +218,12 @@ func (a *app) prepareTag() (tagPlan, error) {
 		return plan, err
 	}
 	for tag := range strings.FieldsSeq(local) {
-		if strings.HasPrefix(tag, "v") && validReleaseDate(tag[1:]) {
+		if strings.HasPrefix(tag, "v") && releaseinfo.ValidDate(tag[1:]) {
 			return plan, fmt.Errorf("HEAD already has release tag %s", tag)
 		}
 	}
 	message := "Release " + name
-	message += "\n\n" + notes.text
+	message += "\n\n" + notes.Text
 	return tagPlan{head, name, message}, nil
 }
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/swqa7697/open-video-sync/scripts/internal/checkout"
 	"github.com/swqa7697/open-video-sync/scripts/internal/smoke"
+	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 	_ "modernc.org/sqlite"
 )
 
@@ -81,6 +82,17 @@ func run(image string) error {
 		if _, err := docker(ctx, "exec", name, "/ovs", "healthcheck"); err != nil {
 			return err
 		}
+		modules, err := versions.Read("versions.toml")
+		if err != nil {
+			return err
+		}
+		binaryVersion, err := docker(ctx, "exec", name, "/ovs", "version")
+		if err != nil {
+			return err
+		}
+		if binaryVersion != fmt.Sprintf("ovs %s (%s)", modules["sync"], smokeChannel()) {
+			return fmt.Errorf("image binary version %q does not match the release manifest", binaryVersion)
+		}
 		// A second process must not become an independent data-directory owner.
 		if _, err := docker(ctx, "exec", name, "/ovs"); err == nil || !strings.Contains(err.Error(), "already owned") {
 			return fmt.Errorf("second process did not reject ownership: %v", err)
@@ -116,7 +128,35 @@ func run(image string) error {
 	return nil
 }
 
+type releaseVersions struct {
+	Sync, Web, Helper string
+	Commit            string
+	Dirty             bool
+	Tag               string
+}
+
+func sourceVersions(ctx context.Context) (releaseVersions, error) {
+	var want releaseVersions
+	modules, err := versions.Read("versions.toml")
+	if err != nil {
+		return want, err
+	}
+	snapshot, err := smoke.Run(ctx, nil, "node", "scripts/versions.mjs", "build-info")
+	if err != nil {
+		return want, fmt.Errorf("read source build metadata: %w", err)
+	}
+	if err := json.Unmarshal([]byte(snapshot), &want); err != nil {
+		return want, err
+	}
+	want.Sync, want.Web, want.Helper = modules["sync"], modules["web"], modules["helper"]
+	return want, nil
+}
+
 func checkHTTP(ctx context.Context, name string) error {
+	want, err := sourceVersions(ctx)
+	if err != nil {
+		return err
+	}
 	port, err := docker(ctx, "port", name, "8080/tcp")
 	if err != nil {
 		return err
@@ -126,7 +166,7 @@ func checkHTTP(ctx context.Context, name string) error {
 	base := "http://" + port
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		err = request(ctx, client, base, "/health/ready", 204)
+		err = request(ctx, client, base, "/health/ready", 204, want)
 		if err == nil {
 			break
 		}
@@ -140,14 +180,14 @@ func checkHTTP(ctx context.Context, name string) error {
 		}
 	}
 	for path, code := range map[string]int{"/": 200, "/join": 200, "/api/v2/version": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v2/session": 404, "/api/v2/rooms/test/ws": 404, "/api/v1/rooms": 409, "/ws/v1/rooms/test": 409} {
-		if err := request(ctx, client, base, path, code); err != nil {
+		if err := request(ctx, client, base, path, code, want); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func request(ctx context.Context, client *http.Client, base, path string, code int) error {
+func request(ctx context.Context, client *http.Client, base, path string, code int, want releaseVersions) error {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return err
@@ -163,23 +203,15 @@ func request(ctx context.Context, client *http.Client, base, path string, code i
 		return err
 	}
 	validBody := code != 200 || strings.Contains(string(body), `<div id="app">`)
+	if path == "/" {
+		validBody = validBody && strings.Contains(string(body), `<meta name="ovs-web-version" content="`+want.Web+`">`)
+	}
 	if path == "/userscripts/ovs-bilibili.user.js" {
-		validBody = strings.Contains(string(body), "@name OVS Bilibili http://ovs.example") && strings.Contains(string(body), `const ORIGIN = "http://ovs.example"`) && strings.HasPrefix(response.Header.Get("Content-Type"), "application/javascript") && !strings.Contains(string(body), "{{")
+		validBody = strings.Contains(string(body), "@name OVS Bilibili http://ovs.example") && strings.Contains(string(body), "// @version "+want.Helper+"\n") && strings.Contains(string(body), `const ORIGIN = "http://ovs.example"`) && strings.HasPrefix(response.Header.Get("Content-Type"), "application/javascript") && !strings.Contains(string(body), "{{")
 	}
 	if path == "/api/v2/version" {
-		// The scratch image has no Git checkout. Its metadata must survive embedding and replacement.
-		snapshot, err := smoke.Run(ctx, nil, "node", "scripts/versions.mjs", "build-info")
-		if err != nil {
-			return fmt.Errorf("read source build metadata: %w", err)
-		}
-		var got, want struct {
-			Commit string
-			Dirty  bool
-			Tag    string
-		}
-		if err := json.Unmarshal([]byte(snapshot), &want); err != nil {
-			return err
-		}
+		// The scratch image must report all embedded module versions and build metadata.
+		var got releaseVersions
 		if err := json.Unmarshal(body, &got); err != nil {
 			return err
 		}
@@ -189,6 +221,13 @@ func request(ctx context.Context, client *http.Client, base, path string, code i
 		return fmt.Errorf("%s returned %d; want %d with expected content", path, response.StatusCode, code)
 	}
 	return nil
+}
+
+func smokeChannel() string {
+	if channel := os.Getenv("CHANNEL"); channel != "" {
+		return channel
+	}
+	return "dev"
 }
 
 func inspectDatabase(ctx context.Context, path string) (string, error) {

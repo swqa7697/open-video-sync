@@ -6,44 +6,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 
+	"github.com/swqa7697/open-video-sync/scripts/internal/releaseinfo"
 	"github.com/swqa7697/open-video-sync/scripts/internal/versions"
 )
-
-var stableVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-
-type version [3]uint64
-
-func parseVersion(raw string) (version, error) {
-	var v version
-	raw = strings.TrimSpace(raw)
-	if !stableVersion.MatchString(raw) {
-		return v, errors.New("version must contain MAJOR.MINOR.PATCH without a prefix or leading zeroes")
-	}
-	for i, part := range strings.Split(raw, ".") {
-		n, err := strconv.ParseUint(part, 10, 64)
-		if err != nil {
-			return v, fmt.Errorf("version component: %w", err)
-		}
-		v[i] = n
-	}
-	return v, nil
-}
-
-func (v version) String() string { return fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]) }
-
-func (v version) after(old version) bool {
-	for i := range v {
-		if v[i] != old[i] {
-			return v[i] > old[i]
-		}
-	}
-	return false
-}
 
 func (a *app) bump(part string, modules ...string) error {
 	module := "sync"
@@ -94,7 +60,7 @@ func (a *app) bump(part string, modules ...string) error {
 			return fmt.Errorf("%s version already modified; review the prepared bump before changing it again", module)
 		}
 	}
-	old, err := parseVersion(manifest[module])
+	old, err := releaseinfo.ParseVersion(manifest[module])
 	if err != nil {
 		return err
 	}
@@ -118,53 +84,15 @@ func (a *app) bump(part string, modules ...string) error {
 	return nil
 }
 
-type releaseNotes struct {
-	date, text string
-}
-
-func validReleaseDate(date string) bool {
-	_, err := time.Parse(time.DateOnly, date)
-	return err == nil
-}
-
 // notes validates dated release sections and selects the first, newest entry.
-func (a *app) notes() (releaseNotes, bool, error) {
-	var notes releaseNotes
+func (a *app) notes() (releaseinfo.Notes, bool, error) {
 	raw, err := os.ReadFile(filepath.Join(a.root, "CHANGELOG.md"))
 	if errors.Is(err, os.ErrNotExist) {
-		return notes, false, nil
+		return releaseinfo.Notes{}, false, nil
 	}
 	if err != nil {
-		return notes, false, err
+		return releaseinfo.Notes{}, false, err
 	}
-	var lines []string
-	dates := make(map[string]bool)
-	collect := false
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.HasPrefix(line, "## ") {
-			collect = false
-			if line != "## [Unreleased]" {
-				date := strings.TrimSuffix(strings.TrimPrefix(line, "## ["), "]")
-				if line != "## ["+date+"]" || !validReleaseDate(date) {
-					return notes, true, errors.New("CHANGELOG.md release headings must use only ## [YYYY-MM-DD]")
-				}
-				if dates[date] {
-					return notes, true, fmt.Errorf("CHANGELOG.md has duplicate release date %s", date)
-				}
-				dates[date] = true
-				if notes.date == "" {
-					notes.date = date
-					collect = true
-				}
-			}
-		}
-		if collect {
-			lines = append(lines, line)
-		}
-	}
-	notes.text = strings.TrimSpace(strings.Join(lines, "\n"))
-	if notes.date == "" || !strings.Contains("\n"+notes.text, "\n- ") {
-		return notes, true, errors.New("CHANGELOG.md needs a nonempty latest ## [YYYY-MM-DD] release section")
-	}
-	return notes, true, nil
+	notes, err := releaseinfo.ParseNotes(string(raw))
+	return notes, true, err
 }
