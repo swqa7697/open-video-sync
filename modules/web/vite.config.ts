@@ -1,5 +1,6 @@
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite-plus';
+
 import { readBuildInfo, readVersions } from '../../scripts/versions.mjs';
 import { developmentHelper, developmentProxy } from './dev-server';
 
@@ -46,9 +47,10 @@ export default defineConfig({
   },
   lint: {
     jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
-    plugins: ['typescript', 'vue'],
+    plugins: ['typescript', 'vue', 'import'],
     categories: { correctness: 'error' },
     rules: {
+      'import/newline-after-import': ['error', { considerComments: true }],
       'vite-plus/prefer-vite-plus-imports': 'error',
       'typescript/no-explicit-any': 'error',
     },

@@ -98,7 +98,7 @@ lint: web-build ## Run Go vet, Bash syntax checks, Oxlint, and Vue template lint
 	bash -n tidy.sh
 	@for script in scripts/*.sh; do bash -n "$$script"; done
 	pnpm --dir $(WEB) run lint
-	pnpm --dir $(WEB) exec vp lint --deny-warnings "$(CURDIR)/tests/e2e" "$(CURDIR)/modules/helper" "$(CURDIR)/scripts" "$(CURDIR)/.prettierrc.cjs"
+	pnpm --dir $(WEB) exec vp lint --deny-warnings "$(CURDIR)/tests/e2e" "$(CURDIR)/modules/helper" "$(CURDIR)/scripts"
 	@$(SUCCESS) "All lint checks passed."
 
 check: format-check lint ## Run format checks, frontend/backend lint, and Vue types

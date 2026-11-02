@@ -1,16 +1,4 @@
 <script setup lang="ts">
-import { t, message as msg, translate, type Message } from './i18n';
-import { useLanguageStore } from './stores/language';
-import AppSettings from './features/AppSettings.vue';
-import HomeIntro from './features/HomeIntro.vue';
-import CommandPalette from './features/commands/CommandPalette.vue';
-import {
-  hasKeyboardOverlay,
-  useOverlayKeyboard,
-} from './components/overlay-keyboard';
-import { usePreferenceCommands } from './features/commands/preferences';
-import type { QuickCommand, VideoSelection } from './features/commands/search';
-
 import {
   computed,
   nextTick,
@@ -19,8 +7,37 @@ import {
   ref,
   watchEffect,
 } from 'vue';
+
+import Icon from './components/Icon.vue';
+import Modal from './components/Modal.vue';
+import RepositoryLink from './components/RepositoryLink.vue';
+import ToastNotice from './components/ToastNotice.vue';
+import {
+  hasKeyboardOverlay,
+  useOverlayKeyboard,
+} from './components/overlay-keyboard';
+import AppSettings from './features/AppSettings.vue';
+import HomeIntro from './features/HomeIntro.vue';
+import CommandPalette from './features/commands/CommandPalette.vue';
+import { usePreferenceCommands } from './features/commands/preferences';
+import type { QuickCommand, VideoSelection } from './features/commands/search';
+import {
+  InputError,
+  describeFailure,
+  type Failure,
+  type FailureContext,
+} from './features/failures';
+import IdentityPanel from './features/identity/IdentityPanel.vue';
+import HelperNotice from './features/media/HelperNotice.vue';
+import MediaPicker from './features/media/MediaPicker.vue';
+import PlayerPanel from './features/player/PlayerPanel.vue';
+import RoomPanel from './features/rooms/RoomPanel.vue';
+import SettingsForm from './features/rooms/SettingsForm.vue';
+import { message as msg, t, translate, type Message } from './i18n';
 import { useConnectionStore } from './stores/connection';
 import { useIdentityStore } from './stores/identity';
+import { useLanguageStore } from './stores/language';
+import { useNotificationStore } from './stores/notifications';
 import {
   APIError,
   decodeInvitation,
@@ -35,23 +52,6 @@ import {
 } from './transport/api';
 import { decodeRoomSettings, type RoomSettings } from './transport/contracts';
 import type { EndReason } from './transport/room-socket';
-import {
-  InputError,
-  describeFailure,
-  type Failure,
-  type FailureContext,
-} from './features/failures';
-import IdentityPanel from './features/identity/IdentityPanel.vue';
-import RoomPanel from './features/rooms/RoomPanel.vue';
-import PlayerPanel from './features/player/PlayerPanel.vue';
-import MediaPicker from './features/media/MediaPicker.vue';
-import HelperNotice from './features/media/HelperNotice.vue';
-import SettingsForm from './features/rooms/SettingsForm.vue';
-import Modal from './components/Modal.vue';
-import Icon from './components/Icon.vue';
-import RepositoryLink from './components/RepositoryLink.vue';
-import ToastNotice from './components/ToastNotice.vue';
-import { useNotificationStore } from './stores/notifications';
 
 const props = defineProps<{ initialInvitation?: string | undefined }>();
 const connection = useConnectionStore(),
@@ -79,7 +79,7 @@ const appSettings = ref<InstanceType<typeof AppSettings>>();
 const paletteOpen = ref(false);
 const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K';
 const preferenceCommands = usePreferenceCommands((panel) =>
-  appSettings.value?.openPanel(panel)
+  appSettings.value?.openPanel(panel),
 );
 const draftSettings = ref(defaultSettings()),
   settingsOpen = ref(false),
@@ -87,10 +87,10 @@ const draftSettings = ref(defaultSettings()),
 const helperGeneration = ref(0);
 let initialFile: File | undefined;
 const safeName = computed(
-  () => identity.session?.identity.displayName || t('common.guest')
+  () => identity.session?.identity.displayName || t('common.guest'),
 );
 const host = computed(
-  () => room.value?.selfMemberId === room.value?.hostMemberId
+  () => room.value?.selfMemberId === room.value?.hostMemberId,
 );
 // Retain uncertain create/redeem intent and its key in memory until its outcome is known.
 const attempt = ref<{
@@ -181,7 +181,7 @@ const serverText = computed(
       ready: t('app.serverReady'),
       not_ready: t('app.serverNotReady'),
       unreachable: t('app.serverUnreachable'),
-    })[connection.status]
+    })[connection.status],
 );
 // Room titles stay out of browser history; the room heading names the room.
 watchEffect(() => {
@@ -200,7 +200,7 @@ const api = (
   method = 'GET',
   payload?: unknown,
   key?: string,
-  replayOnly = false
+  replayOnly = false,
 ) =>
   request(
     path,
@@ -209,7 +209,7 @@ const api = (
     payload,
     controller.signal,
     key,
-    replayOnly
+    replayOnly,
   );
 function recheck(): void {
   void connection.checkReadiness(controller.signal);
@@ -227,7 +227,7 @@ function reload(): void {
 
 async function perform(
   work: () => Promise<void>,
-  context: FailureContext = 'other'
+  context: FailureContext = 'other',
 ): Promise<void> {
   if (busy.value) return;
   busy.value = true;
@@ -291,7 +291,7 @@ async function submitAttempt(): Promise<void> {
     const replayOnly = pending.sent && pending.path === '/rooms';
     pending.sent = true;
     const value = decodeRoomResult(
-      await api(pending.path, 'POST', pending.payload, pending.key, replayOnly)
+      await api(pending.path, 'POST', pending.payload, pending.key, replayOnly),
     );
     attempt.value = undefined;
     pendingLink.value = undefined;
@@ -386,7 +386,7 @@ const managed: Record<'settings' | 'rotate' | 'remove', Message> = {
 async function manage(
   operation: 'settings' | 'rotate' | 'remove' | 'close' | 'leave',
   settings?: RoomSettings,
-  memberId?: string
+  memberId?: string,
 ): Promise<void> {
   const current = room.value;
   if (!current) return;
@@ -419,7 +419,7 @@ async function manage(
   if (self) departing.value = true;
   try {
     response = object(
-      await api(`/rooms/${current.roomId}${suffix}`, method, payload)
+      await api(`/rooms/${current.roomId}${suffix}`, method, payload),
     );
   } catch (reason) {
     if (reason instanceof APIError && reason.code === 'not_found') {
@@ -446,7 +446,7 @@ async function manage(
   room.value = decodeSnapshot(
     operation === 'remove'
       ? await api(`/rooms/${current.roomId}`)
-      : response.snapshot
+      : response.snapshot,
   );
   if (operation === 'rotate')
     invitation.value = decodeInvitation(response.invitation);
@@ -459,7 +459,7 @@ async function manage(
 async function share(): Promise<void> {
   if (!room.value || !host.value) return;
   invitation.value = decodeInvitation(
-    object(await api(`/rooms/${room.value.roomId}/invitations`)).invitation
+    object(await api(`/rooms/${room.value.roomId}/invitations`)).invitation,
   );
 }
 async function back(): Promise<void> {
@@ -500,7 +500,7 @@ async function ended(reason: EndReason): Promise<void> {
           : reason === 'removed'
             ? 'app.removed'
             : 'app.unavailable',
-        { room: `“${name}”` }
+        { room: `“${name}”` },
       )
     : msg('api.not_found');
   if (focusInside || !active?.isConnected) void focus('create-title');

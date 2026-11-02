@@ -53,9 +53,9 @@ export function developmentHelper(): Plugin {
               script
                 ? '../helper/dist/helper.user.js'
                 : '../helper/dist/release.json',
-              import.meta.url
+              import.meta.url,
             ),
-            'utf8'
+            'utf8',
           );
           if (script)
             body = body
@@ -64,7 +64,7 @@ export function developmentHelper(): Plugin {
               .replaceAll('{{MATCH}}', `http://${new URL(origin).hostname}/*`);
           response.setHeader(
             'Content-Type',
-            `${script ? 'application/javascript' : 'application/json'}; charset=utf-8`
+            `${script ? 'application/javascript' : 'application/json'}; charset=utf-8`,
           );
           response.end(request.method === 'HEAD' ? undefined : body);
         } catch {

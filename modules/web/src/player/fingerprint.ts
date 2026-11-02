@@ -1,8 +1,9 @@
-import { message, LocalizedError } from '../i18n';
+import { LocalizedError, message } from '../i18n';
+
 export function localFingerprint(
   file: File,
   roomId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -13,7 +14,7 @@ export function localFingerprint(
       new URL('./fingerprint.worker.ts', import.meta.url),
       {
         type: 'module',
-      }
+      },
     );
     const cleanup = () => {
       clearTimeout(timer);

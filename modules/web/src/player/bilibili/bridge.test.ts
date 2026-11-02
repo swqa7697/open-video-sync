@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
-import { helperRelease, HelperBridge } from './bridge';
+
+import { HelperBridge, helperRelease } from './bridge';
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -26,14 +28,14 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   const deliver = (
     value: unknown,
     origin = location.origin,
-    source: Window | null = window
+    source: Window | null = window,
   ) =>
     window.dispatchEvent(
       new MessageEvent('message', {
         origin,
         source,
         data: JSON.stringify(value),
-      })
+      }),
     );
   deliver({ ...reply, client: 'b'.repeat(32) });
   deliver(reply, 'https://foreign.invalid');
@@ -43,7 +45,7 @@ test('a player accepts only its exact channel and disposal rejects pending repli
       origin: location.origin,
       source: window,
       data: JSON.stringify(reply).replace('"value":', '"value":null,"value":'),
-    })
+    }),
   );
   await Promise.resolve();
   expect(settled).toBe(false);
@@ -83,7 +85,7 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   }
   const pendingCalls = Array.from({ length: 4 }, () => bridge.call('session'));
   const rejected = pendingCalls.map((call) =>
-    expect(call).rejects.toMatchObject({ name: 'AbortError' })
+    expect(call).rejects.toMatchObject({ name: 'AbortError' }),
   );
   bridge.close(2);
   await Promise.all(rejected);
@@ -114,7 +116,7 @@ test('startup waits for late manager registration without opening media first', 
             ...(build !== undefined ? { build } : {}),
           },
         }),
-      })
+      }),
     );
   });
   const bridge = new HelperBridge(),

@@ -1,6 +1,7 @@
-import { message, LocalizedError } from '../../i18n';
 import { videoCodecRank } from '@ovs/helper/media-codecs';
+import { LocalizedError, message } from '../../i18n';
 import { boundedText, exact, HelperError, integer, object } from './bridge';
+
 export interface TrackInfo {
   id: number;
   codec: string;
@@ -35,7 +36,7 @@ export interface MediaInfo extends MediaPreview {
 export function decodePlaylist(
   value: unknown,
   bvid: string,
-  part: number
+  part: number,
 ): Playlist {
   const v = object(value);
   exact(v, ['title', 'episodes']);
@@ -69,7 +70,7 @@ export interface Segment {
 }
 export function parseSelection(
   input: string,
-  part: number
+  part: number,
 ): { bvid: string; part: number } {
   const raw = input.trim();
   if (
@@ -95,7 +96,7 @@ export function parseSelection(
   )
     throw new LocalizedError(message('media.noShortLinks'));
   const match = url.pathname.match(
-    /^\/video\/(BV[1-9A-HJ-NP-Za-km-z]{10})\/?$/
+    /^\/video\/(BV[1-9A-HJ-NP-Za-km-z]{10})\/?$/,
   );
   if (!match) throw new LocalizedError(message('media.canonicalURL'));
   const selected = url.searchParams.has('p')
@@ -108,7 +109,7 @@ export function parseSelection(
 export function decodeInfo(
   value: unknown,
   bvid: string,
-  part: number
+  part: number,
 ): MediaInfo {
   const { handle: rawHandle, ...preview } = object(value);
   const handle = boundedText(rawHandle, 100);
@@ -118,7 +119,7 @@ export function decodeInfo(
 export function decodePreview(
   value: unknown,
   bvid: string,
-  part: number
+  part: number,
 ): MediaPreview {
   const v = object(value);
   exact(v, [

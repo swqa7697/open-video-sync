@@ -1,4 +1,5 @@
 import { expect, type Page } from '../../modules/web/playwright-fixtures';
+
 export interface VideoFile {
   name: string;
   mimeType: string;
@@ -26,7 +27,7 @@ export async function openAppPanel(page: Page, name: string): Promise<void> {
 }
 export async function dismissHelper(page: Page): Promise<void> {
   await expect(
-    page.getByRole('complementary', { name: 'Playback helper' })
+    page.getByRole('complementary', { name: 'Playback helper' }),
   ).not.toContainText('Checking', { timeout: 8000 });
   const later = page.getByRole('button', { name: 'Later', exact: true });
   if (await later.isVisible()) await later.click();
@@ -34,7 +35,7 @@ export async function dismissHelper(page: Page): Promise<void> {
 // Pointer actions reveal the bar first, as users do when controls are hidden.
 export async function clickPlayerControl(
   page: Page,
-  name: string
+  name: string,
 ): Promise<void> {
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page.getByRole('button', { name, exact: true }).click();
@@ -56,7 +57,7 @@ export async function runQuickAction(page: Page, query: string): Promise<void> {
 export async function createLocalRoom(
   page: Page,
   file: VideoFile,
-  title: string
+  title: string,
 ): Promise<void> {
   await dismissHelper(page);
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
@@ -64,17 +65,17 @@ export async function createLocalRoom(
   await page.getByLabel('Room name', { exact: false }).fill(title);
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: title, exact: true })
+    page.getByRole('heading', { name: title, exact: true }),
   ).toBeVisible();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'ready'
+    'ready',
   );
 }
 export async function invitationLink(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Invite', exact: true }).click();
   await expect(
-    page.getByLabel('Invitation link', { exact: true })
+    page.getByLabel('Invitation link', { exact: true }),
   ).not.toHaveValue('');
   const value = await page
     .getByLabel('Invitation link', { exact: true })
@@ -85,7 +86,7 @@ export async function invitationLink(page: Page): Promise<string> {
 export async function settings(
   page: Page,
   controllers: 'host' | 'everyone',
-  wait = true
+  wait = true,
 ): Promise<void> {
   await page
     .getByRole('button', { name: 'Room settings', exact: true })

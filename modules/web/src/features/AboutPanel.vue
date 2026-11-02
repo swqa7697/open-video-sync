@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
-import { t } from '../i18n';
+
 import Icon from '../components/Icon.vue';
+import { t } from '../i18n';
 import { object, request, shape } from '../transport/api';
 
 const modules = ['sync', 'web', 'helper'] as const;
@@ -32,7 +33,7 @@ async function load(): Promise<void> {
   const timeout = setTimeout(() => current.abort(), 5000);
   try {
     const value = object(
-      await request('/version', 'GET', '', undefined, current.signal)
+      await request('/version', 'GET', '', undefined, current.signal),
     );
     shape(value, [...modules, 'commit', 'dirty', 'tag']);
     if (

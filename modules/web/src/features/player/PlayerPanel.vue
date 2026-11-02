@@ -1,14 +1,5 @@
 <script setup lang="ts">
 import {
-  t,
-  message,
-  translate,
-  errorMessage,
-  i18n,
-  type Message,
-} from '../../i18n';
-
-import {
   computed,
   nextTick,
   onMounted,
@@ -17,7 +8,34 @@ import {
   shallowRef,
   watch,
 } from 'vue';
-import type { QuickCommand, VideoSelection } from '../commands/search';
+
+import { videoCodecRank } from '@ovs/helper/media-codecs';
+import Icon from '../../components/Icon.vue';
+import Modal from '../../components/Modal.vue';
+import {
+  dismissKeyboardOverlay,
+  hasKeyboardOverlay,
+  vKeyboardBoundary,
+} from '../../components/overlay-keyboard';
+import {
+  errorMessage,
+  i18n,
+  message,
+  t,
+  translate,
+  type Message,
+} from '../../i18n';
+import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
+import { BilibiliAdapter } from '../../player/bilibili/adapter';
+import { HelperError } from '../../player/bilibili/bridge';
+import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
+import { localFingerprint } from '../../player/fingerprint';
+import {
+  readPlayerPreferences,
+  savePlayerPreferences,
+} from '../../player/preferences';
+import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
+import { reportedReadiness, SyncController } from '../../sync/controller';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
 import type {
@@ -30,28 +48,10 @@ import {
   type EndReason,
   type ProbeResult,
 } from '../../transport/room-socket';
-import { BilibiliAdapter } from '../../player/bilibili/adapter';
-import { videoCodecRank } from '@ovs/helper/media-codecs';
-import { HelperError } from '../../player/bilibili/bridge';
-import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
-import Icon from '../../components/Icon.vue';
-import Modal from '../../components/Modal.vue';
-import {
-  dismissKeyboardOverlay,
-  hasKeyboardOverlay,
-  vKeyboardBoundary,
-} from '../../components/overlay-keyboard';
+import type { QuickCommand, VideoSelection } from '../commands/search';
 import MediaPicker from '../media/MediaPicker.vue';
-import DanmakuControl from './DanmakuControl.vue';
-import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
-import { localFingerprint } from '../../player/fingerprint';
-import { reportedReadiness, SyncController } from '../../sync/controller';
-import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
 import { phaseText, readinessText } from '../status-text';
-import {
-  readPlayerPreferences,
-  savePlayerPreferences,
-} from '../../player/preferences';
+import DanmakuControl from './DanmakuControl.vue';
 
 const props = defineProps<{
   room: Snapshot;
@@ -125,7 +125,7 @@ watch([volume, muted, preferredQuality, danmakuArea], () =>
     muted: muted.value,
     danmakuArea: danmakuArea.value,
     ...(preferredQuality.value ? { quality: preferredQuality.value } : {}),
-  })
+  }),
 );
 const position = ref(0),
   buffered = ref(0),
@@ -150,7 +150,7 @@ const videoCodec = computed(() => {
 const playlist = shallowRef<Playlist>();
 const videoTitle = ref('');
 const totalSeconds = computed(
-  () => (current.value.media?.durationMs ?? 0) / 1000
+  () => (current.value.media?.durationMs ?? 0) / 1000,
 );
 const isPlaying = computed(() => current.value.playback.phase === 'playing');
 const controlsPinned = computed(
@@ -159,7 +159,7 @@ const controlsPinned = computed(
     danmakuMenu.value ||
     qualityMenu.value ||
     dragging.value ||
-    seekPointerDown.value
+    seekPointerDown.value,
 );
 let idleTimer: ReturnType<typeof setTimeout> | undefined,
   seekReleaseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -256,19 +256,19 @@ watch(
     if (
       media?.kind !== 'bilibili' ||
       !playlist.value?.episodes.some(
-        (episode) => episode.bvid === media.bvid && episode.part === media.part
+        (episode) => episode.bvid === media.bvid && episode.part === media.part,
       )
     )
       playlist.value = undefined;
-  }
+  },
 );
 // Rendered state must be reactive; the adapter itself stays outside reactivity.
 const descriptor = shallowRef<MediaDescriptor>();
 const host = computed(
-  () => current.value.selfMemberId === current.value.hostMemberId
+  () => current.value.selfMemberId === current.value.hostMemberId,
 );
 const permitted = computed(
-  () => host.value || current.value.settings.controllers === 'everyone'
+  () => host.value || current.value.settings.controllers === 'everyone',
 );
 let commandDelayTimer: ReturnType<typeof setTimeout> | undefined;
 const commandRecovery = ref<HTMLButtonElement>();
@@ -276,10 +276,10 @@ const commandRecovery = ref<HTMLButtonElement>();
 // disabling during that round trip so browsers keep the current control focused.
 const controls = computed(
   () =>
-    connected.value && active.value && permitted.value && !pendingCommand.value
+    connected.value && active.value && permitted.value && !pendingCommand.value,
 );
 const matched = computed(() =>
-  mediaMatches(current.value.media, descriptor.value)
+  mediaMatches(current.value.media, descriptor.value),
 );
 // One reason, in priority order, explains why room controls are unavailable.
 const controlNote = computed(() => {
@@ -293,7 +293,7 @@ const controlNote = computed(() => {
 });
 const canPlay = computed(
   () =>
-    controls.value && !!current.value.media && matched.value && !loading.value
+    controls.value && !!current.value.media && matched.value && !loading.value,
 );
 const canControl = computed(() => controls.value && !!current.value.media);
 const canReplace = computed(
@@ -302,10 +302,10 @@ const canReplace = computed(
     !loading.value &&
     connected.value &&
     active.value &&
-    !pendingCommand.value
+    !pendingCommand.value,
 );
 const shownStatus = computed<ReadinessStatus>(() =>
-  loading.value ? 'loading' : mediaStatus.value
+  loading.value ? 'loading' : mediaStatus.value,
 );
 const blockers = computed(() => {
   const room = current.value,
@@ -330,7 +330,7 @@ const waitingText = computed(() => {
   const names = blockers.value.map((m) =>
     m.memberId === current.value.selfMemberId
       ? t('common.youLower')
-      : m.displayName
+      : m.displayName,
   );
   if (!names.length) return t('player.waitSettling', { seconds });
   const shown = names.slice(0, 5),
@@ -459,7 +459,7 @@ const transport = new RoomSocket(
       else emit('ended', reason);
     },
   },
-  probe
+  probe,
 );
 function clearMedia(): void {
   endSeek();
@@ -486,7 +486,7 @@ function clearMedia(): void {
 }
 function mediaMatches(
   selected: MediaDescriptor | null,
-  local: MediaDescriptor | undefined
+  local: MediaDescriptor | undefined,
 ): boolean {
   if (
     !selected ||
@@ -525,7 +525,7 @@ function togglePlayback(): void {
       ? 'pause'
       : current.value.playback.phase === 'ended'
         ? 'replay'
-        : 'play'
+        : 'play',
   );
 }
 function clickSurface(event: MouseEvent): void {
@@ -559,7 +559,7 @@ function qualityKeyboard(event: KeyboardEvent): void {
     return;
   }
   const items = Array.from(
-    qualityOptions.value?.querySelectorAll<HTMLButtonElement>('button') ?? []
+    qualityOptions.value?.querySelectorAll<HTMLButtonElement>('button') ?? [],
   );
   const index = items.indexOf(document.activeElement as HTMLButtonElement);
   let next: number;
@@ -663,7 +663,7 @@ function showError(value: Message | '', reload = false): void {
 async function chooseBilibili(
   selected: Pick<Episode, 'bvid' | 'part'>,
   publishMedia = false,
-  quality?: number
+  quality?: number,
 ): Promise<void> {
   if (
     !video.value ||
@@ -688,7 +688,7 @@ async function chooseBilibili(
     },
     (failure) => {
       if (adapter === local) showError(failure.text, failure.reload);
-    }
+    },
   );
   adapter = local;
   danmakuPreferences();
@@ -698,7 +698,7 @@ async function chooseBilibili(
       selected.bvid,
       selected.part,
       signal,
-      quality ?? preferredQuality.value
+      quality ?? preferredQuality.value,
     );
     if (signal.aborted || generation !== selectionGeneration) return;
     streamInfo.value = local.mediaInfo;
@@ -741,7 +741,7 @@ async function choose(event: Event): Promise<void> {
 async function loadLocal(
   file: File,
   prepared?: MediaDescriptor,
-  publishMedia = false
+  publishMedia = false,
 ): Promise<void> {
   if (!video.value || pendingCommand.value || !connected.value) return;
   clearMedia();
@@ -822,7 +822,7 @@ watch(
       autoAttempt = '';
       void autoLoad();
     }
-  }
+  },
 );
 async function retryMedia(): Promise<void> {
   autoAttempt = '';
@@ -843,7 +843,7 @@ async function selectEpisode(episode: Episode): Promise<void> {
   if (
     !canReplace.value ||
     !playlist.value?.episodes.some(
-      (entry) => entry.bvid === episode.bvid && entry.part === episode.part
+      (entry) => entry.bvid === episode.bvid && entry.part === episode.part,
     )
   )
     return;
@@ -916,7 +916,7 @@ const commands = computed<QuickCommand[]>(() => [
         ? 'player.playTogether'
         : action === 'pause'
           ? 'player.pauseTogether'
-          : 'player.replay'
+          : 'player.replay',
     ),
     group: 'watch' as const,
     icon: action,
@@ -978,7 +978,7 @@ const commands = computed<QuickCommand[]>(() => [
         {
           id: 'danmaku',
           label: t(
-            showDanmaku.value ? 'commands.hideDanmaku' : 'player.showDanmaku'
+            showDanmaku.value ? 'commands.hideDanmaku' : 'player.showDanmaku',
           ),
           group: 'watch' as const,
           icon: showDanmaku.value ? 'chat' : 'chat-off',
@@ -1010,8 +1010,8 @@ function hoverSeek(event: PointerEvent): void {
     Math.min(
       totalSeconds.value,
       ((event.clientX - box.getBoundingClientRect().left) / box.clientWidth) *
-        totalSeconds.value
-    )
+        totalSeconds.value,
+    ),
   );
 }
 function dragSeek(event: Event): void {
@@ -1062,7 +1062,7 @@ function keyboard(event: KeyboardEvent): void {
   if (
     event.target instanceof Element &&
     event.target.closest(
-      'input, select, textarea, [contenteditable], [role="menu"], [role="tablist"], dialog, [role="dialog"]'
+      'input, select, textarea, [contenteditable], [role="menu"], [role="tablist"], dialog, [role="dialog"]',
     )
   )
     return;
@@ -1074,7 +1074,7 @@ function keyboard(event: KeyboardEvent): void {
     event.preventDefault();
     seekSeconds.value = Math.min(
       totalSeconds.value,
-      Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5))
+      Math.max(0, position.value + (event.key === 'ArrowLeft' ? -5 : 5)),
     );
     command('seek');
   } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -1084,8 +1084,8 @@ function keyboard(event: KeyboardEvent): void {
       Math.min(
         1,
         Math.round(volume.value * 100 + (event.key === 'ArrowUp' ? 10 : -10)) /
-          100
-      )
+          100,
+      ),
     );
     muted.value = false;
     showVolumeFeedback();
@@ -1139,7 +1139,7 @@ async function sample(): Promise<void> {
           positionResolutionMs: 1000,
         },
       },
-      now
+      now,
     );
     return;
   }
@@ -1155,7 +1155,7 @@ async function sample(): Promise<void> {
         snapshot,
         estimate,
         now,
-        active.value && transport.connected && matched
+        active.value && transport.connected && matched,
       );
       const barrier = snapshot.barrier;
       if (
@@ -1252,7 +1252,7 @@ function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
   transport.command(
     action === 'seek'
       ? { action, positionMs: Math.round(seekSeconds.value * 1000) }
-      : { action }
+      : { action },
   );
 }
 async function enable(): Promise<void> {
@@ -1280,7 +1280,7 @@ async function enable(): Promise<void> {
     showError(
       local.getState().status === 'gesture_required'
         ? message('player.blocked')
-        : message('player.decodeFailed')
+        : message('player.decodeFailed'),
     );
   }
 }

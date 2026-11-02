@@ -1,11 +1,13 @@
-import { clickPlayerControl, createLocalRoom, dismissHelper } from './flows';
 import { writeFile } from 'node:fs/promises';
+
 import {
   appContext,
   expect,
   test,
 } from '../../modules/web/playwright-fixtures';
+import { clickPlayerControl, createLocalRoom, dismissHelper } from './flows';
 import { generatedVideo } from './media';
+
 test.use({ trace: 'off' });
 test.describe('autoplay permission', () => {
   // DOM snapshots and callback resolution can activate a document. Observe setup through console events only.
@@ -24,7 +26,7 @@ test.describe('autoplay permission', () => {
                 'media.autoplay.blocking_policy': 0,
               },
             }
-          : { args: ['--autoplay-policy=user-gesture-required'] }
+          : { args: ['--autoplay-policy=user-gesture-required'] },
       );
     const host = await appContext(browser),
       guest = await appContext(restricted);
@@ -34,10 +36,10 @@ test.describe('autoplay permission', () => {
       await createLocalRoom(
         h,
         { name: 'opus-vp8.webm', mimeType: 'video/webm', buffer: fixture },
-        'Autoplay permission'
+        'Autoplay permission',
       );
       await expect(
-        h.getByRole('status').filter({ hasText: 'Clock calibrated' })
+        h.getByRole('status').filter({ hasText: 'Clock calibrated' }),
       ).toBeVisible();
       const response = await guest.request.post(`${baseURL}/api/v2/session`, {
         headers: { Origin: baseURL! },
@@ -59,11 +61,11 @@ test.describe('autoplay permission', () => {
             Origin: baseURL!,
             'X-OVS-CSRF': session.csrfToken,
             'Idempotency-Key': Buffer.from(
-              crypto.getRandomValues(new Uint8Array(16))
+              crypto.getRandomValues(new Uint8Array(16)),
             ).toString('hex'),
           },
           data: { code },
-        }
+        },
       );
       expect(joined.status()).toBe(200);
       await h.locator('#local-video').setInputFiles({
@@ -73,7 +75,7 @@ test.describe('autoplay permission', () => {
       });
       await expect(h.getByTestId('media-status')).toHaveAttribute(
         'data-state',
-        'ready'
+        'ready',
       );
       let ready: () => void = () => {},
         blocked: () => void = () => {};
@@ -91,7 +93,7 @@ test.describe('autoplay permission', () => {
             const input =
                 document.querySelector<HTMLInputElement>('#local-video'),
               status = document.querySelector<HTMLElement>(
-                '[data-testid=media-status]'
+                '[data-testid=media-status]',
               )?.dataset.state;
             if (input && !input.disabled && !selected) {
               selected = true;
@@ -102,8 +104,8 @@ test.describe('autoplay permission', () => {
                   'opus-vp8.webm',
                   {
                     type: 'video/webm',
-                  }
-                )
+                  },
+                ),
               );
               input.files = transfer.files;
               input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -129,7 +131,7 @@ test.describe('autoplay permission', () => {
       await dismissHelper(p);
       await expect(h.getByTestId('playback-phase')).toHaveAttribute(
         'data-state',
-        'waiting'
+        'waiting',
       );
       // Keyboard activation is a user gesture; focus stays in the player afterwards.
       await p
@@ -137,16 +139,16 @@ test.describe('autoplay permission', () => {
         .focus();
       await p.keyboard.press('Enter');
       await expect(
-        p.getByRole('heading', { name: 'Watch together' })
+        p.getByRole('heading', { name: 'Watch together' }),
       ).toBeFocused();
       await expect
         .poll(() =>
-          p.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused)
+          p.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused),
         )
         .toBe(true);
       await expect(p.getByTestId('media-status')).toHaveAttribute(
         'data-state',
-        'ready'
+        'ready',
       );
       await writeFile(
         testInfo.outputPath('autoplay-result.json'),
@@ -161,7 +163,7 @@ test.describe('autoplay permission', () => {
           permissionDenied: true,
           explicitEnableSucceeded: true,
           defaultWaitAllHeldForGesture: true,
-        }) + '\n'
+        }) + '\n',
       );
     } finally {
       await host.close();

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 // Docker receives this snapshot from the checkout; Git is not needed in the image.
 export function readBuildInfo(
-  root = fileURLToPath(new URL('..', import.meta.url))
+  root = fileURLToPath(new URL('..', import.meta.url)),
 ) {
   if (process.env.OVS_BUILD_INFO) {
     const info = JSON.parse(process.env.OVS_BUILD_INFO);
@@ -52,7 +52,7 @@ export function readBuildInfo(
 export function readVersions() {
   const raw = readFileSync(
     new URL('../versions.toml', import.meta.url),
-    'utf8'
+    'utf8',
   );
   const versions = {};
   let table = false;
@@ -65,11 +65,11 @@ export function readVersions() {
     }
     const match =
       /^(sync|web|helper)\s*=\s*"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"$/.exec(
-        value
+        value,
       );
     if (!table || !match || Object.hasOwn(versions, match[1]))
       throw new Error(
-        'Invalid versions.toml: expected one stable version per module'
+        'Invalid versions.toml: expected one stable version per module',
       );
     versions[match[1]] = match[2];
   }
@@ -85,13 +85,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (name === 'image-tag') {
     const versions = readVersions();
     process.stdout.write(
-      `s${versions.sync}-w${versions.web}-h${versions.helper}\n`
+      `s${versions.sync}-w${versions.web}-h${versions.helper}\n`,
     );
   } else {
     const versions = readVersions();
     if (!Object.hasOwn(versions, name))
       throw new Error(
-        'Usage: node scripts/versions.mjs sync|web|helper|image-tag|build-info'
+        'Usage: node scripts/versions.mjs sync|web|helper|image-tag|build-info',
       );
     process.stdout.write(`${versions[name]}\n`);
   }

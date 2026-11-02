@@ -1,8 +1,9 @@
-import { message, LocalizedError } from '../../i18n';
+import { LocalizedError, message } from '../../i18n';
 import type {
   PlayerCapabilities,
   ReadinessStatus,
 } from '../../transport/protocol-values';
+
 export interface PlayerObservation {
   positionMs: number;
   durationMs: number;
@@ -63,7 +64,7 @@ export class LocalAdapter implements PlayerAdapter {
             this.status = 'ready';
           for (const listener of this.listeners) listener();
         },
-        { signal: this.lifetime.signal }
+        { signal: this.lifetime.signal },
       );
   }
   async load(file: File, signal: AbortSignal): Promise<void> {
@@ -166,7 +167,7 @@ export class LocalAdapter implements PlayerAdapter {
   private wait(
     event: string,
     signal: AbortSignal,
-    operation?: () => void
+    operation?: () => void,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const cleanup = () => {

@@ -1,20 +1,21 @@
 <script setup lang="ts">
+import { nextTick, onUnmounted, ref, watch } from 'vue';
+
+import Icon from '../../components/Icon.vue';
 import {
-  t,
-  message,
-  translate,
   errorMessage,
   LocalizedError,
+  message,
+  t,
+  translate,
   type Message,
 } from '../../i18n';
-
-import { nextTick, onUnmounted, ref, watch } from 'vue';
+import { LocalAdapter } from '../../player/adapters/local';
 import { HelperBridge } from '../../player/bilibili/bridge';
 import { decodePreview, parseSelection } from '../../player/bilibili/media';
-import { LocalAdapter } from '../../player/adapters/local';
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
-import Icon from '../../components/Icon.vue';
+
 const props = defineProps<{ disabled?: boolean; roomId: string }>();
 const source = ref<'bilibili' | 'local'>('bilibili');
 const url = ref(''),
@@ -106,7 +107,7 @@ async function prepare(): Promise<
       const info = decodePreview(
         await inspection.call('preview', selected),
         selected.bvid,
-        selected.part
+        selected.part,
       );
       if (signal.aborted) return;
       url.value = info.bvid;
@@ -140,7 +141,7 @@ onUnmounted(() => {
   file = undefined;
 });
 async function selectBilibili(
-  selection?: ReturnType<typeof parseSelection>
+  selection?: ReturnType<typeof parseSelection>,
 ): Promise<void> {
   if (props.disabled || working.value) return;
   switchSource('bilibili');

@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { t, message, translate, type Message } from '../../i18n';
-
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+
+import Icon from '../../components/Icon.vue';
+import Modal from '../../components/Modal.vue';
+import { message, t, translate, type Message } from '../../i18n';
+import type { Episode, Playlist } from '../../player/bilibili/media';
 import type { Invitation, Snapshot } from '../../transport/api';
 import type { RoomSettings } from '../../transport/contracts';
-import type { Episode, Playlist } from '../../player/bilibili/media';
-import SettingsForm from './SettingsForm.vue';
-import RoomSidebar from './RoomSidebar.vue';
-import Modal from '../../components/Modal.vue';
-import Icon from '../../components/Icon.vue';
 import type { QuickCommand } from '../commands/search';
+import RoomSidebar from './RoomSidebar.vue';
+import SettingsForm from './SettingsForm.vue';
+
 const props = defineProps<{
   room: Snapshot;
   invitation?: Invitation | undefined;
@@ -40,7 +41,7 @@ const inviteOpen = ref(false),
 const shareURL = computed(() =>
   props.invitation
     ? `${location.origin}/join#invite=${props.invitation.linkSecret}`
-    : ''
+    : '',
 );
 let breakpoint: MediaQueryList | undefined;
 function resize(): void {
@@ -57,7 +58,7 @@ watch(
   () => props.room.settings,
   () => {
     if (!settingsOpen.value) settings.value = { ...props.room.settings };
-  }
+  },
 );
 function openSettings(): void {
   settings.value = { ...props.room.settings };
@@ -71,7 +72,7 @@ watch(
       saving = false;
       if (!props.error) settingsOpen.value = false;
     }
-  }
+  },
 );
 function selectLink(event: FocusEvent): void {
   if (event.target instanceof HTMLInputElement) event.target.select();

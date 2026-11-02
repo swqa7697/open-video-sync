@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { t } from '../i18n';
+import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue';
 
-import { nextTick, onMounted, onBeforeUnmount, ref, useId } from 'vue';
+import { t } from '../i18n';
 import Icon from './Icon.vue';
 import { vKeyboardBoundary } from './overlay-keyboard';
+
 defineProps<{ title: string }>();
 const emit = defineEmits<{ close: [] }>();
 const dialog = ref<HTMLDialogElement>();
@@ -38,7 +39,7 @@ function animate(opening: boolean): Animation | undefined {
       duration: reduced ? 80 : durationMs,
       easing: style.getPropertyValue('--ease-out').trim(),
       fill: 'both',
-    }
+    },
   );
   return animation;
 }

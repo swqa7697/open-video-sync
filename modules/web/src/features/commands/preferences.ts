@@ -1,4 +1,5 @@
 import { computed } from 'vue';
+
 import { t } from '../../i18n';
 import {
   appearanceAccents,
@@ -9,7 +10,7 @@ import { languageOptions, useLanguageStore } from '../../stores/language';
 import type { QuickCommand } from './search';
 
 export function usePreferenceCommands(
-  open: (panel: 'appearance' | 'language' | 'notifications' | 'about') => void
+  open: (panel: 'appearance' | 'language' | 'notifications' | 'about') => void,
 ) {
   const appearance = useAppearanceStore(),
     language = useLanguageStore();

@@ -1,9 +1,10 @@
 import { mount } from '@vue/test-utils';
-import { h, nextTick, reactive } from 'vue';
 import { expect, test } from 'vite-plus/test';
-import { decodeSnapshot } from '../../transport/api';
-import { roomFixture } from '../../test-support/room';
+import { h, nextTick, reactive } from 'vue';
+
 import type { Playlist } from '../../player/bilibili/media';
+import { roomFixture } from '../../test-support/room';
+import { decodeSnapshot } from '../../transport/api';
 import RoomSidebar from './RoomSidebar.vue';
 
 // This new surface owns tab navigation, current-episode marking, and read-only viewing.
@@ -37,14 +38,14 @@ test('episode tabs preserve keyboard access and allow only available host select
     { render: () => h(RoomSidebar, state) },
     {
       attachTo: document.body,
-    }
+    },
   );
   const sidebar = wrapper.findComponent(RoomSidebar);
   try {
     await wrapper.get('#members-tab').trigger('keydown', { key: 'ArrowRight' });
     expect(document.activeElement).toBe(wrapper.get('#episodes-tab').element);
     expect(wrapper.get('#episodes-tab').attributes('aria-selected')).toBe(
-      'true'
+      'true',
     );
     expect(wrapper.get('[aria-current="true"]').text()).toContain('Opening');
     expect(wrapper.find('script').exists()).toBe(false);
@@ -68,7 +69,7 @@ test('episode tabs preserve keyboard access and allow only available host select
     expect(wrapper.find('[role="tablist"]').exists()).toBe(false);
     expect(wrapper.get('.roster').isVisible()).toBe(true);
     expect(document.activeElement).toBe(
-      wrapper.get('#participants-title').element
+      wrapper.get('#participants-title').element,
     );
   } finally {
     wrapper.unmount();

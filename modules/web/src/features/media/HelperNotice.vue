@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { t } from '../../i18n';
-
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+
+import Icon from '../../components/Icon.vue';
+import Modal from '../../components/Modal.vue';
+import ToastNotice from '../../components/ToastNotice.vue';
+import { t } from '../../i18n';
 import {
   HelperBridge,
   HelperError,
   helperRelease,
 } from '../../player/bilibili/bridge';
-import Modal from '../../components/Modal.vue';
-import Icon from '../../components/Icon.vue';
-import ToastNotice from '../../components/ToastNotice.vue';
+
 const emit = defineEmits<{ ready: [] }>();
 type State =
   | 'checking'
@@ -36,14 +37,14 @@ const text = computed(
       mismatch: t('helper.mismatch'),
       communication: t('helper.communication'),
       stale: t('helper.stale'),
-    })[state.value]
+    })[state.value],
 );
 const action = computed(() =>
   state.value === 'outdated'
     ? t('helper.update')
     : state.value === 'mismatch'
       ? t('helper.installMatching')
-      : t('helper.install')
+      : t('helper.install'),
 );
 async function check(): Promise<void> {
   if (bridge) return;

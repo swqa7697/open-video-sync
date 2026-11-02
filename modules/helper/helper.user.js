@@ -44,7 +44,7 @@
   };
   const publicError = (error) =>
     /^(destination-denied|busy|cancelled|stale-generation|request-timeout|response-too-large|network-or-permission-denied|redirect-denied|access-expired|http-[0-9]{3}|invalid-range-response|unavailable|login-required|platform-access-denied|part-unavailable|unsupported-stream|unsupported-codec|invalid-danmaku|invalid-request|helper-incompatible|invalid-media|unknown-handle|invalid-range|media-changed|invalid-segment|rate-limited)$/.test(
-      error.message
+      error.message,
     )
       ? error.message
       : 'platform-response-invalid';
@@ -88,7 +88,7 @@
   }
   function request(
     url,
-    { range, binary = false, limit = 1024 * 1024, media = false } = {}
+    { range, binary = false, limit = 1024 * 1024, media = false } = {},
   ) {
     safeURL(url, media);
     if (active >= 2) throw Error('busy');
@@ -146,8 +146,8 @@
             if (r.readyState === 2) {
               const length = Number(
                 r.responseHeaders?.match(
-                  /(?:^|\n)content-length:\s*(\d+)/i
-                )?.[1]
+                  /(?:^|\n)content-length:\s*(\d+)/i,
+                )?.[1],
               );
               if (length > limit) {
                 metrics.oversizeBytes = 0;
@@ -171,7 +171,7 @@
                 throw Error(
                   r.status === 403 || r.status === 410
                     ? 'access-expired'
-                    : `http-${r.status}`
+                    : `http-${r.status}`,
                 );
               const data = binary ? r.response : r.responseText,
                 size = binary
@@ -179,7 +179,7 @@
                   : new TextEncoder().encode(data).byteLength;
               metrics.maxResponseBytes = Math.max(
                 metrics.maxResponseBytes,
-                size
+                size,
               );
               if (size > limit) {
                 metrics.oversizeBytes = size;
@@ -202,8 +202,8 @@
   async function api(path, params) {
     const x = JSON.parse(
       await request(
-        `https://api.bilibili.com${path}?${new URLSearchParams(params)}`
-      )
+        `https://api.bilibili.com${path}?${new URLSearchParams(params)}`,
+      ),
     );
     if (x.code !== 0)
       throw Error(
@@ -211,7 +211,7 @@
           ? 'unavailable'
           : x.code === -101
             ? 'login-required'
-            : 'platform-access-denied'
+            : 'platform-access-denied',
       );
     return x.data;
   }
@@ -261,7 +261,7 @@
               page.page,
               pages.length > 1
                 ? `${text(episode.title)} · ${text(page.part)}`
-                : episode.title || page.part
+                : episode.title || page.part,
             );
             if (episodes.length > 500) return;
           }
@@ -288,7 +288,7 @@
     try {
       return (
         pageWindow.MediaSource?.isTypeSupported(
-          `${mime}; codecs="${track.codecs}"`
+          `${mime}; codecs="${track.codecs}"`,
         ) === true
       );
     } catch {
@@ -337,11 +337,11 @@
         t.id > 0 &&
         t.id <= 127 &&
         videoCodecRank(t.codecs) >= 0 &&
-        supportsTrack(t, 'video/mp4')
+        supportsTrack(t, 'video/mp4'),
     );
     playable.sort(
       (a, b) =>
-        b.id - a.id || videoCodecRank(a.codecs) - videoCodecRank(b.codecs)
+        b.id - a.id || videoCodecRank(a.codecs) - videoCodecRank(b.codecs),
     );
     const matches = (track, current) =>
       track.id === current.id && track.codecs === current.codec;
@@ -350,7 +350,7 @@
         t &&
         typeof t.codecs === 'string' &&
         /^mp4a\.[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/.test(t.codecs) &&
-        supportsTrack(t, 'audio/mp4')
+        supportsTrack(t, 'audio/mp4'),
     );
     const video = currentTracks
       ? playable.find((t) => matches(t, currentTracks[0]))
@@ -393,8 +393,8 @@
               !r.every(Number.isSafeInteger) ||
               r[0] < 0 ||
               r[1] < r[0] ||
-              r[1] > 65535
-          )
+              r[1] > 65535,
+          ),
       )
     )
       throw Error('invalid-media');
@@ -482,7 +482,7 @@
       !Object.hasOwn(allowed, q.op) ||
       Object.keys(q).length !== allowed[q.op].length + 4 ||
       Object.keys(q).some(
-        (k) => !['channel', 'id', 'op', 'client', ...allowed[q.op]].includes(k)
+        (k) => !['channel', 'id', 'op', 'client', ...allowed[q.op]].includes(k),
       )
     )
       throw Error('invalid-request');
@@ -567,7 +567,7 @@
           media.bvid,
           media.part,
           media.quality,
-          media.tracks
+          media.tracks,
         );
         if (
           q.generation !== generation ||
@@ -580,7 +580,7 @@
           fresh.duration !== media.duration ||
           fresh.tracks.some(
             (t, i) =>
-              t.codec !== media.tracks[i].codec || t.id !== media.tracks[i].id
+              t.codec !== media.tracks[i].codec || t.id !== media.tracks[i].id,
           )
         )
           throw Error('media-changed');
@@ -606,7 +606,7 @@
         throw Error('invalid-segment');
       const buffer = await request(
         `https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=${media.cid}&segment_index=${q.segment}`,
-        { binary: true, limit: 8 * 1024 * 1024 }
+        { binary: true, limit: 8 * 1024 * 1024 },
       );
       const comments = [];
       let commentBytes = 0;
@@ -706,7 +706,7 @@
             ok: false,
             error: 'reply-too-large',
           }),
-      ORIGIN
+      ORIGIN,
     );
   });
   window.addEventListener(
@@ -716,6 +716,6 @@
       for (const cancel of [...pending]) cancel();
       handles.clear();
     },
-    { once: true }
+    { once: true },
   );
 })();

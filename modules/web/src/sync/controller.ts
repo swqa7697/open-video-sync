@@ -1,7 +1,7 @@
-import type { Snapshot } from '../transport/api';
 import type { PlayerAdapter } from '../player/adapters/local';
-import type { Estimate } from './clock';
+import type { Snapshot } from '../transport/api';
 import type { ReadinessStatus } from '../transport/protocol-values';
+import type { Estimate } from './clock';
 
 export type Correction =
   | { kind: 'none' }
@@ -24,7 +24,7 @@ export class DriftController {
     now: number,
     rateSupported: boolean,
     degraded: boolean,
-    resolution: number
+    resolution: number,
   ): Correction {
     if (now < this.settledUntil || now - this.sampledAt < 250)
       return { kind: 'none' };
@@ -76,7 +76,7 @@ export class SyncController {
     snapshot: Snapshot,
     estimate: Estimate | undefined,
     now: number,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> {
     if (!enabled || !snapshot.media) {
       this.invalidate();
@@ -115,9 +115,9 @@ export class SyncController {
         (playing && estimate
           ? Math.max(
               0,
-              now + estimate.offsetMs - snapshot.playback.anchorServerMs
+              now + estimate.offsetMs - snapshot.playback.anchorServerMs,
             )
-          : 0)
+          : 0),
     );
     const explicit = this.revision !== snapshot.revision;
     // Calibration changes alone cannot send a running target backward.
@@ -166,7 +166,7 @@ export class SyncController {
             now,
             adapter.capabilities.canSetPlaybackRate,
             estimate.uncertaintyMs > 250,
-            adapter.capabilities.positionResolutionMs
+            adapter.capabilities.positionResolutionMs,
           );
           if (correction.kind === 'seek') {
             await adapter.setPlaybackRate?.(1);

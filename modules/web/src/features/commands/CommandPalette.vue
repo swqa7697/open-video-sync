@@ -8,6 +8,7 @@ import {
   useId,
   watch,
 } from 'vue';
+
 import Icon from '../../components/Icon.vue';
 import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 import { errorMessage, t, translate } from '../../i18n';
@@ -35,15 +36,15 @@ const search = computed(() => {
 });
 const matches = computed(() => search.value.matches);
 const index = computed(() =>
-  Math.min(selected.value, Math.max(0, matches.value.length - 1))
+  Math.min(selected.value, Math.max(0, matches.value.length - 1)),
 );
 const activeId = computed(() =>
-  matches.value.length ? `${id}-option-${index.value}` : undefined
+  matches.value.length ? `${id}-option-${index.value}` : undefined,
 );
 const hint = computed(() =>
   query.value.trim().startsWith('$')
     ? t('commands.videoHint')
-    : t('commands.hint')
+    : t('commands.hint'),
 );
 
 watch(
@@ -51,7 +52,7 @@ watch(
   () => {
     selected.value = 0;
   },
-  { flush: 'sync' }
+  { flush: 'sync' },
 );
 watch([index, matches], async () => {
   await nextTick();

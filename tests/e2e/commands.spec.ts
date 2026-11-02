@@ -25,7 +25,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(input).toHaveCSS('outline-style', 'none');
   await expect(page.locator('.command-search')).toHaveCSS(
     'outline-style',
-    'none'
+    'none',
   );
   expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
   await page.screenshot({
@@ -34,14 +34,14 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await input.fill('/theme');
   await input.press('ArrowDown');
   await expect(palette.getByRole('option', { selected: true })).toContainText(
-    '/theme light'
+    '/theme light',
   );
   await input.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'light');
   await expect(name).toBeFocused();
   await runQuickAction(page, '/appearance');
   await expect(
-    page.getByRole('dialog', { name: 'Appearance', exact: true })
+    page.getByRole('dialog', { name: 'Appearance', exact: true }),
   ).toBeVisible();
   await page.keyboard.press('Control+k');
   await expect(palette).toHaveCount(0);
@@ -58,8 +58,8 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
         key: 'Enter',
         isComposing: true,
         bubbles: true,
-      })
-    )
+      }),
+    ),
   );
   await expect(palette).toBeVisible();
   await input.fill('unmatched-action-xyz');
@@ -75,7 +75,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
 
   await runQuickAction(
     page,
-    '$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2&tracking=synthetic'
+    '$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2&tracking=synthetic',
   );
   await expect(page.locator('#bilibili-url')).toBeFocused();
   await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
@@ -83,7 +83,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(name).toHaveValue('Keep this draft');
   await runQuickAction(
     page,
-    'https://www.bilibili.com/video/BV1hf4y1N75G/?p=3'
+    'https://www.bilibili.com/video/BV1hf4y1N75G/?p=3',
   );
   await expect(page.locator('#bilibili-part')).toHaveValue('3');
   await runQuickAction(page, 'BV1hf4y1N75G');
@@ -91,7 +91,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
   await expect(
-    page.locator('.input-action').filter({ has: page.locator('#join-code') })
+    page.locator('.input-action').filter({ has: page.locator('#join-code') }),
   ).toHaveCSS('outline-style', 'none');
   await runQuickAction(page, '/language zh-CN');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
@@ -129,7 +129,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
     await input.fill('/about');
     await input.press('Enter');
     await expect(
-      page.getByRole('dialog', { name: 'About', exact: true })
+      page.getByRole('dialog', { name: 'About', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('.command-trigger')).toBeFocused();
@@ -139,8 +139,8 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
     });
     expect(
       await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth
-      )
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
     ).toBe(true);
   }
   await runQuickAction(page, '/theme light');
@@ -159,8 +159,8 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   });
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth
-    )
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
   ).toBe(true);
   await page.keyboard.press('Control+k');
   await expect(palette).toHaveCount(0);
@@ -174,12 +174,12 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(
     page
       .getByRole('dialog', { name: 'Appearance', exact: true })
-      .getByRole('status')
+      .getByRole('status'),
   ).toContainText('storage is unavailable');
   await page.keyboard.press('Escape');
   await runQuickAction(page, '/language zh-CN');
   await expect(
-    page.getByRole('dialog', { name: '语言', exact: true }).getByRole('status')
+    page.getByRole('dialog', { name: '语言', exact: true }).getByRole('status'),
   ).toBeVisible();
   expect(mutations).toEqual([]);
   expect(failures).toEqual([]);

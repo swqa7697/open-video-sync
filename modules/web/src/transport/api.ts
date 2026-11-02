@@ -1,8 +1,8 @@
-import { message, LocalizedError, type Message } from '../i18n';
+import { LocalizedError, message, type Message } from '../i18n';
 import {
+  decodeMedia,
   decodeProfilePatch,
   decodeRoomSettings,
-  decodeMedia,
   type MediaDescriptor,
   type RoomSettings,
 } from './contracts';
@@ -155,7 +155,7 @@ export function decodeSnapshot(value: unknown): Snapshot {
   const generation = integer(v.mediaGeneration);
   if (
     !['empty', 'paused', 'waiting', 'playing', 'ended'].includes(
-      text(playback.phase)
+      text(playback.phase),
     ) ||
     typeof playback.desiredPlaying !== 'boolean'
   )
@@ -218,7 +218,7 @@ export function decodeSnapshot(value: unknown): Snapshot {
   if (
     barrier &&
     (barrier.requiredMemberIds.some(
-      (mid) => !members.some((m) => m.memberId === mid)
+      (mid) => !members.some((m) => m.memberId === mid),
     ) ||
       new Set(barrier.requiredMemberIds).size !==
         barrier.requiredMemberIds.length ||
@@ -276,7 +276,7 @@ export function decodeRoomResult(value: unknown): RoomResult {
     v,
     Object.hasOwn(v, 'invitation')
       ? ['snapshot', 'invitation', 'replayed']
-      : ['snapshot', 'replayed']
+      : ['snapshot', 'replayed'],
   );
   if (typeof v.replayed !== 'boolean')
     throw new Error('Invalid server response.');
@@ -347,7 +347,7 @@ export class NetworkError extends LocalizedError {
     super(
       status === undefined
         ? message('api.network')
-        : message('api.proxy', { status })
+        : message('api.proxy', { status }),
     );
   }
 }
@@ -365,7 +365,7 @@ export async function request(
   payload: unknown,
   signal: AbortSignal,
   key?: string,
-  replayOnly = false
+  replayOnly = false,
 ): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
@@ -427,7 +427,9 @@ export async function request(
       throw new NetworkError(response.status);
     const code = (value as Record<string, unknown>).code;
     throw new APIError(
-      typeof code === 'string' && Object.hasOwn(errors, code) ? code : 'unknown'
+      typeof code === 'string' && Object.hasOwn(errors, code)
+        ? code
+        : 'unknown',
     );
   }
   return value;
@@ -435,7 +437,7 @@ export async function request(
 // getRandomValues is available on ordinary HTTP; randomUUID is not required.
 export function requestKey(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
-    b.toString(16).padStart(2, '0')
+    b.toString(16).padStart(2, '0'),
   ).join('');
 }
 export function defaultSettings(): RoomSettings {

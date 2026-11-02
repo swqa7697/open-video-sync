@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { t } from '../../i18n';
-
 import { nextTick, ref, watch } from 'vue';
+
+import { t } from '../../i18n';
 import type { Snapshot } from '../../transport/api';
 import { memberState } from '../status-text';
+
 const props = defineProps<{ room: Snapshot; host: boolean; busy: boolean }>();
 const emit = defineEmits<{ remove: [id: string] }>();
 const heading = ref<HTMLElement>();
@@ -16,7 +17,7 @@ watch(
       await nextTick();
       heading.value?.focus();
     }
-  }
+  },
 );
 </script>
 <template>

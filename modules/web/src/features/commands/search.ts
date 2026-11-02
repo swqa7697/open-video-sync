@@ -20,7 +20,7 @@ export interface CommandMatch {
 // Search stays in this page. Video arguments use the same allowlist as the picker.
 export function searchCommands(
   commands: QuickCommand[],
-  query: string
+  query: string,
 ): CommandMatch[] {
   const raw = query.trim();
   if (raw.startsWith('$') || /^(?:https?:\/\/|BV)/i.test(raw)) {
@@ -37,13 +37,13 @@ export function searchCommands(
       words.every((word) =>
         `${command.label} ${command.shortcut} ${command.aliases}`
           .toLocaleLowerCase()
-          .includes(word)
-      )
+          .includes(word),
+      ),
     )
     .sort(
       (a, b) =>
         Number(b.shortcut === `/${words.join(' ')}`) -
-        Number(a.shortcut === `/${words.join(' ')}`)
+        Number(a.shortcut === `/${words.join(' ')}`),
     )
     .map((command) => ({ command }));
 }

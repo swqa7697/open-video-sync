@@ -21,7 +21,7 @@ export function parseBridgeJSON(raw, maxBytes) {
         const value = JSON.parse(raw.slice(start, at));
         if (
           /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
-            value
+            value,
           )
         )
           invalid();
@@ -65,7 +65,7 @@ export function parseBridgeJSON(raw, maxBytes) {
     else {
       const token =
         /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(
-          raw.slice(at)
+          raw.slice(at),
         )?.[0];
       if (!token) invalid();
       at += token.length;

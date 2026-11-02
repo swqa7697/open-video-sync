@@ -1,13 +1,14 @@
 // @vitest-environment node
+import type { IncomingHttpHeaders } from 'node:http';
 import {
   createServer as createHTTPServer,
   request as httpRequest,
 } from 'node:http';
-import type { IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { runInNewContext } from 'node:vm';
-import { afterAll, beforeAll, expect, test } from 'vite-plus/test';
 import { createServer, type ViteDevServer } from 'vite-plus';
+import { afterAll, beforeAll, expect, test } from 'vite-plus/test';
+
 import config from './vite.config';
 
 const backend = createHTTPServer((request, response) => {
@@ -15,7 +16,7 @@ const backend = createHTTPServer((request, response) => {
 });
 backend.on('upgrade', (request, socket) => {
   socket.end(
-    `HTTP/1.1 403 Forbidden\r\nX-Observed-Origin: ${request.headers.origin}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`
+    `HTTP/1.1 403 Forbidden\r\nX-Observed-Origin: ${request.headers.origin}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`,
   );
 });
 let server: ViteDevServer;
@@ -27,7 +28,7 @@ beforeAll(async () => {
     Object.entries(config.server!.proxy!).map(([path, options]) => [
       path,
       typeof options === 'string' ? target : { ...options, target },
-    ])
+    ]),
   );
   server = await createServer({
     ...config,
@@ -50,14 +51,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await server?.close();
   await new Promise<void>((resolve, reject) =>
-    backend.close((error) => (error ? reject(error) : resolve()))
+    backend.close((error) => (error ? reject(error) : resolve())),
   );
 });
 
 function request(
   path: string,
   headers: Record<string, string> = {},
-  method = 'GET'
+  method = 'GET',
 ): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
@@ -77,10 +78,10 @@ function request(
             status: response.statusCode!,
             headers: response.headers,
             body,
-          })
+          }),
         );
         response.on('error', reject);
-      }
+      },
     );
     req.on('error', reject);
     req.end();
@@ -136,7 +137,7 @@ test.each(['127.0.0.1', 'localhost'])(
     const script = await request('/userscripts/ovs-bilibili.user.js', headers);
     const release = await request(
       '/userscripts/ovs-bilibili.version.json',
-      headers
+      headers,
     );
     expect(script.status).toBe(200);
     expect(script.headers['content-type']).toContain('application/javascript');
@@ -169,11 +170,11 @@ test.each(['127.0.0.1', 'localhost'])(
     const head = await request(
       '/userscripts/ovs-bilibili.user.js',
       headers,
-      'HEAD'
+      'HEAD',
     );
     expect(head.status).toBe(200);
     expect(head.body).toBe('');
-  }
+  },
 );
 
 test('helper delivery rejects unknown hosts, routes, and mutations', async () => {
@@ -182,13 +183,13 @@ test('helper delivery rejects unknown hosts, routes, and mutations', async () =>
       await request('/userscripts/ovs-bilibili.user.js', {
         Host: '127.0.0.2:5173',
       })
-    ).status
+    ).status,
   ).toBe(403);
   expect((await request('/userscripts/unknown')).status).toBe(404);
   const mutation = await request(
     '/userscripts/ovs-bilibili.user.js',
     {},
-    'POST'
+    'POST',
   );
   expect(mutation.status).toBe(405);
   expect(mutation.headers.allow).toBe('GET, HEAD');

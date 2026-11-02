@@ -4,6 +4,7 @@ import {
   notificationPositions,
   useNotificationStore,
 } from '../stores/notifications';
+
 const notifications = useNotificationStore();
 </script>
 <template>

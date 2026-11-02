@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { nextTick } from 'vue';
+
 import { i18n } from '../i18n';
 import HomeIntro from './HomeIntro.vue';
 

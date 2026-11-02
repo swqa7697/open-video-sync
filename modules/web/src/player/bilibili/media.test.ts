@@ -1,4 +1,6 @@
 import { afterEach, expect, onTestFinished, test, vi } from 'vite-plus/test';
+
+import { DanmakuRenderer, decodeComments, type Comment } from './danmaku';
 import {
   decodeInfo,
   decodePlaylist,
@@ -6,7 +8,7 @@ import {
   parseIndex,
   parseSelection,
 } from './media';
-import { DanmakuRenderer, decodeComments, type Comment } from './danmaku';
+
 afterEach(() => vi.unstubAllGlobals());
 
 function commentRenderer(reduced = false) {
@@ -65,7 +67,7 @@ test('dense comments keep their lanes and never overlap or backfill crowded time
   tick(0);
   tick(0.5);
   const short = [...overlay.children].find(
-    (node) => node.textContent === 'Short'
+    (node) => node.textContent === 'Short',
   ) as HTMLSpanElement;
   const lane = short.style.top;
   let previous = new Set<Element>();
@@ -82,7 +84,7 @@ test('dense comments keep their lanes and never overlap or backfill crowded time
           right = xPosition(other);
         const first = left < right ? node : other;
         expect(Math.abs(left - right)).toBeGreaterThanOrEqual(
-          Array.from(first.textContent!).length * 10 + 2 + 24 - 0.001
+          Array.from(first.textContent!).length * 10 + 2 + 24 - 0.001,
         );
       }
     }
@@ -103,7 +105,7 @@ test('dense comments keep their lanes and never overlap or backfill crowded time
   tick(8);
   const top = overlay.children[0] as HTMLSpanElement,
     bottom = [...overlay.children].find(
-      (node) => node.textContent === 'Bottom pinned'
+      (node) => node.textContent === 'Bottom pinned',
     ) as HTMLSpanElement,
     topPosition = top.style.top,
     bottomPosition = bottom.style.top;
@@ -117,7 +119,7 @@ test('dense comments keep their lanes and never overlap or backfill crowded time
     for (const node of [...overlay.children] as HTMLSpanElement[]) {
       if (node === top || node === bottom) continue;
       expect(Number.parseFloat(node.style.top) + 30).toBeLessThanOrEqual(
-        Math.min(304, 400 * area)
+        Math.min(304, 400 * area),
       );
     }
   }
@@ -125,7 +127,7 @@ test('dense comments keep their lanes and never overlap or backfill crowded time
   Object.defineProperty(overlay, 'clientHeight', { value: 154 });
   tick(8);
   const tops = [...overlay.children].map((node) =>
-    Number.parseFloat((node as HTMLElement).style.top)
+    Number.parseFloat((node as HTMLElement).style.top),
   );
   expect(tops.every((top) => top >= 12 && top + 48 <= 154)).toBe(true);
 });
@@ -217,8 +219,8 @@ test('selection resolves only canonical IDs and exact parts without forwarding p
   expect(
     parseSelection(
       'https://www.bilibili.com/video/BV1hf4y1N75G?p=2&token=synthetic',
-      1
-    )
+      1,
+    ),
   ).toEqual({ bvid: 'BV1hf4y1N75G', part: 2 });
   expect(parseSelection('BV1hf4y1N75G', 3)).toEqual({
     bvid: 'BV1hf4y1N75G',
@@ -326,8 +328,8 @@ test('helper metadata and display comments reject foreign payload fields and scr
           tracks: [{ ...preview.tracks[0], codec }, preview.tracks[1]],
         },
         first.bvid,
-        1
-      )
+        1,
+      ),
     ).toThrow();
   }
   for (const invalid of [
@@ -348,7 +350,7 @@ test('helper metadata and display comments reject foreign payload fields and scr
     Array(501).fill(first),
   ])
     expect(() =>
-      decodePlaylist({ ...playlist, episodes }, first.bvid, 1)
+      decodePlaylist({ ...playlist, episodes }, first.bvid, 1),
     ).toThrow();
   expect(() => decodePlaylist(playlist, first.bvid, 2)).toThrow();
   const comment = {
@@ -368,16 +370,16 @@ test('helper metadata and display comments reject foreign payload fields and scr
   renderer.dispose();
 
   expect(() =>
-    decodeComments({ comments: [{ ...comment, mode: 8 }] }, 10)
+    decodeComments({ comments: [{ ...comment, mode: 8 }] }, 10),
   ).toThrow();
   expect(() =>
-    decodeComments({ comments: [{ ...comment, cookie: 'synthetic' }] }, 10)
+    decodeComments({ comments: [{ ...comment, cookie: 'synthetic' }] }, 10),
   ).toThrow();
   expect(() =>
     decodeInfo(
       { bvid: 'BV1hf4y1N75G', part: 1, signedURL: 'synthetic' },
       'BV1hf4y1N75G',
-      1
-    )
+      1,
+    ),
   ).toThrow();
 });

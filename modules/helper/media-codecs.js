@@ -4,7 +4,7 @@ export function videoCodecRank(codec) {
     typeof codec !== 'string' ||
     codec.length > 60 ||
     !/^(?:av01|hvc1|hev1|avc1|avc3)\.[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$/.test(
-      codec
+      codec,
     )
   )
     return -1;

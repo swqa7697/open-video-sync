@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
+
 import { t } from '../i18n';
 import Icon from './Icon.vue';
+
 const props = withDefaults(defineProps<{ duration?: number }>(), {
   duration: 0,
 });

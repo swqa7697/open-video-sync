@@ -57,7 +57,7 @@ export interface SyncQualityState {
 export function nextSyncQuality(
   previous: SyncQualityState,
   estimate: Estimate | undefined,
-  now: number
+  now: number,
 ): SyncQualityState {
   if (!estimate) return { quality: 'calibrating', degradedSince: undefined };
   if (estimate.uncertaintyMs <= 250)

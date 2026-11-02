@@ -1,5 +1,7 @@
 import { expect, test } from 'vite-plus/test';
+
 import { parseFrame } from './protocol-values';
+
 test('raw frame validation retains exact JSON keys, integer literals and Unicode', () => {
   expect(parseFrame('{"v":2,"payload":{"name":"😀"}}')).toEqual({
     v: 2,

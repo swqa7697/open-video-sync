@@ -1,16 +1,16 @@
+import release from '../../modules/helper/dist/release.json';
 import {
   appContext,
   expect,
   test,
 } from '../../modules/web/playwright-fixtures';
-import { generatedVideo } from './media';
 import {
   clickPlayerControl,
   closeRoom,
   invitationLink,
   observePageKeyboard,
 } from './flows';
-import release from '../../modules/helper/dist/release.json';
+import { generatedVideo } from './media';
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
   page,
@@ -118,10 +118,10 @@ test('previewing another Bilibili link preserves the active helper and room unti
               op,
               ...args,
             }),
-            location.origin
+            location.origin,
           );
         }),
-      { op, args }
+      { op, args },
     );
   await page.goto('/');
   const file = {
@@ -137,7 +137,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'ready'
+    'ready',
   );
   expect((await helper('hello', { version: 1 })).ok).toBe(true);
   const opened = await helper('open', {
@@ -168,11 +168,11 @@ test('previewing another Bilibili link preserves the active helper and room unti
     expect(snapshot.mediaGeneration).toBe(before.mediaGeneration);
     await expect(page.locator('video')).toHaveJSProperty(
       'currentSrc',
-      originalSource
+      originalSource,
     );
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
   };
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
@@ -185,7 +185,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
         document.addEventListener('media-read-held', () => resolve(), {
           once: true,
         });
-      })
+      }),
   );
   const reading = helper('bytes', read);
   await held;
@@ -194,12 +194,12 @@ test('previewing another Bilibili link preserves the active helper and room unti
       .getByRole('button', { name: 'Preview video', exact: true })
       .click();
     await expect(page.locator('.media-preview')).toHaveText(
-      'Replacement preview'
+      'Replacement preview',
     );
     await expectOriginalMedia();
   } finally {
     await page.evaluate(() =>
-      document.dispatchEvent(new Event('release-media-read'))
+      document.dispatchEvent(new Event('release-media-read')),
     );
   }
   expect((await reading).ok).toBe(true);
@@ -215,14 +215,14 @@ test('previewing another Bilibili link preserves the active helper and room unti
       .click();
     await page.evaluate(
       (mode) => sessionStorage.setItem('preview-failure', mode),
-      failure
+      failure,
     );
     await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
     await page
       .getByRole('button', { name: 'Preview video', exact: true })
       .click();
     await expect(page.locator('.media-picker [role="alert"]')).toContainText(
-      text
+      text,
     );
     expect((await helper('bytes', read)).ok).toBe(true);
     await page
@@ -231,7 +231,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
     await expectOriginalMedia();
   }
   expect(await page.locator('body').innerText()).not.toContain(
-    'SYNTHETIC_REPLACEMENT_CANARY'
+    'SYNTHETIC_REPLACEMENT_CANARY',
   );
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
@@ -246,15 +246,15 @@ test('previewing another Bilibili link preserves the active helper and room unti
   await expect
     .poll(
       async () =>
-        (await (await page.request.get(roomPath)).json()).media.durationMs
+        (await (await page.request.get(roomPath)).json()).media.durationMs,
     )
     .toBe(6000);
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'ready'
+    'ready',
   );
   await expect(
-    page.getByRole('button', { name: 'Change video', exact: true })
+    page.getByRole('button', { name: 'Change video', exact: true }),
   ).toBeEnabled();
   await closeRoom(page);
 });
@@ -310,25 +310,31 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
             id: q.id,
             ...reply,
           }),
-          location.origin
+          location.origin,
         );
       });
     },
-    { version: release.version, build: release.build, older, firstNewer, newer }
+    {
+      version: release.version,
+      build: release.build,
+      older,
+      firstNewer,
+      newer,
+    },
   );
   await page.goto('/');
   await expect(page.getByRole('dialog')).toContainText('not detected');
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.evaluate(() =>
-    sessionStorage.setItem('synthetic-helper', 'same-version-old-build')
+    sessionStorage.setItem('synthetic-helper', 'same-version-old-build'),
   );
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('needs an update');
   await expect(page.getByRole('dialog')).toContainText(
-    `Installed ${release.version} · Required ${release.version}`
+    `Installed ${release.version} · Required ${release.version}`,
   );
   await expect(page.getByRole('dialog').getByRole('link')).toHaveText(
-    'Update helper'
+    'Update helper',
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
@@ -337,24 +343,24 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   // The development version 0.0.0 has no older valid release. The component
   // regression covers outdated-helper onboarding with a fixed newer requirement.
   await expect(page.getByRole('dialog')).toContainText(
-    older ? 'needs an update' : 'does not match'
+    older ? 'needs an update' : 'does not match',
   );
   await expect(page.getByRole('dialog')).toContainText(
-    `Installed ${older ?? firstNewer} · Required ${release.version}`
+    `Installed ${older ?? firstNewer} · Required ${release.version}`,
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.evaluate(() =>
-    sessionStorage.setItem('synthetic-helper', 'future')
+    sessionStorage.setItem('synthetic-helper', 'future'),
   );
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('does not match');
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await page.evaluate(() =>
-    sessionStorage.setItem('synthetic-helper', 'signed-out')
+    sessionStorage.setItem('synthetic-helper', 'signed-out'),
   );
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   await expect(
-    page.getByRole('complementary', { name: 'Playback helper' })
+    page.getByRole('complementary', { name: 'Playback helper' }),
   ).toHaveCount(0);
   await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
   await page
@@ -368,7 +374,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       Origin: baseURL!,
       'X-OVS-CSRF': session.csrfToken,
       'Idempotency-Key': Buffer.from(
-        crypto.getRandomValues(new Uint8Array(16))
+        crypto.getRandomValues(new Uint8Array(16)),
       ).toString('hex'),
     },
     data: {
@@ -388,11 +394,11 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await page.goto(`/rooms/${room.snapshot.roomId}`);
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'access_denied'
+    'access_denied',
   );
   await expect(page.getByRole('alert')).toContainText('Sign in to Bilibili');
   await expect(page.locator('.roster')).toContainText(
-    'Platform access unavailable'
+    'Platform access unavailable',
   );
   const danmaku = page.locator('.danmaku-toggle');
   const preferences = page.getByRole('dialog', {
@@ -402,7 +408,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await danmaku.hover();
   await expect(preferences).toBeVisible();
   expect(
-    await preferences.evaluate((panel) => panel.scrollWidth - panel.clientWidth)
+    await preferences.evaluate(
+      (panel) => panel.scrollWidth - panel.clientWidth,
+    ),
   ).toBe(0);
   await page
     .getByRole('slider', { name: 'Danmaku density', exact: true })
@@ -412,7 +420,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(preferences).toHaveCount(0);
   await danmaku.press('ArrowDown');
   await expect(
-    page.getByRole('slider', { name: 'Danmaku density', exact: true })
+    page.getByRole('slider', { name: 'Danmaku density', exact: true }),
   ).toBeFocused();
   const speed = page.getByRole('slider', {
     name: 'Danmaku speed',
@@ -441,7 +449,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     expect(
       await page
         .locator('.danmaku-overlay')
-        .evaluate((overlay) => overlay.clientHeight)
+        .evaluate((overlay) => overlay.clientHeight),
     ).toBe(fullHeight);
   }
   await area.selectOption('0.25');
@@ -485,7 +493,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'access_denied'
+    'access_denied',
   );
   for (const viewport of [
     { width: 390, height: 844 },
@@ -496,7 +504,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     // Resize closes player menus; reopen after the browser delivers that event.
     await page.evaluate(
       () =>
-        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
     await danmaku.focus();
     await danmaku.press('ArrowDown');
@@ -504,14 +512,14 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await expect(area).toHaveValue('0.25');
     expect(
       await preferences.evaluate(
-        (panel) => panel.scrollWidth - panel.clientWidth
-      )
+        (panel) => panel.scrollWidth - panel.clientWidth,
+      ),
     ).toBe(0);
     if (viewport.width === 1440)
       expect(
         await preferences.evaluate(
-          (panel) => panel.scrollHeight - panel.clientHeight
-        )
+          (panel) => panel.scrollHeight - panel.clientHeight,
+        ),
       ).toBe(0);
     const reload = preferences.getByRole('button', {
       name: 'Reload danmaku',
@@ -543,7 +551,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('playback-phase')).toHaveAttribute(
     'data-state',
-    'paused'
+    'paused',
   );
   const file = {
     name: 'helper-fallback.webm',
@@ -558,7 +566,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     .press('Enter');
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
-    'ready'
+    'ready',
   );
   const invitation = await invitationLink(page);
   const guest = await appContext(browser);
@@ -594,17 +602,17 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       other.getByRole('heading', {
         name: 'Bilibili helper boundaries',
         exact: true,
-      })
+      }),
     ).toBeVisible();
     await expect(
-      other.getByRole('complementary', { name: 'Playback helper' })
+      other.getByRole('complementary', { name: 'Playback helper' }),
     ).toHaveCount(0);
     await expect(
-      other.getByRole('button', { name: 'Join', exact: true })
+      other.getByRole('button', { name: 'Join', exact: true }),
     ).toHaveCount(0);
     const afterInstall = await (await other.request.get('/api/v2/me')).json();
     expect(afterInstall.identity.identityId).toBe(
-      beforeInstall.identity.identityId
+      beforeInstall.identity.identityId,
     );
     const restored = await (
       await other.request.get(`/api/v2/rooms/${room.snapshot.roomId}`)
@@ -614,15 +622,15 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     await closeRoom(page);
     await expect(
-      other.getByRole('status').filter({ hasText: 'The host closed' })
+      other.getByRole('status').filter({ hasText: 'The host closed' }),
     ).toBeVisible();
     await expect(other.locator('video')).toHaveCount(0);
     await expect(
-      other.getByRole('heading', { name: 'Start a watch party', exact: true })
+      other.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeFocused();
   } finally {
     await guest.close();

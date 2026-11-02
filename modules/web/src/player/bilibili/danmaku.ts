@@ -1,4 +1,5 @@
 import { boundedText, exact, HelperError, integer, object } from './bridge';
+
 const SCROLL_DURATION_SECONDS = 10;
 export interface Comment {
   time: number;
@@ -58,7 +59,7 @@ export class DanmakuRenderer {
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
   constructor(
     private video: HTMLVideoElement,
-    private overlay: HTMLElement
+    private overlay: HTMLElement,
   ) {
     this.frame = requestAnimationFrame(this.draw);
   }
@@ -92,7 +93,7 @@ export class DanmakuRenderer {
       fullLanes = Math.max(0, Math.floor((height - 12) / lineHeight)),
       scrollHeight = Math.min(
         height,
-        stageHeight * Math.max(0.25, Math.min(1, this.area))
+        stageHeight * Math.max(0.25, Math.min(1, this.area)),
       ),
       scrollLanes = Math.max(0, Math.floor((scrollHeight - 12) / lineHeight)),
       layout = `${width}:${height}:${fontSize}:${this.reduced.matches}:${this.visible}`;
@@ -140,7 +141,7 @@ export class DanmakuRenderer {
       const textWidth =
           Math.ceil(
             this.measurement?.measureText(c.text).width ??
-              Array.from(c.text).length * fontSize
+              Array.from(c.text).length * fontSize,
           ) + 2,
         scrolling = c.mode === 1 && !this.reduced.matches,
         velocity = scrolling

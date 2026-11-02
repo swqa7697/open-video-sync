@@ -1,14 +1,16 @@
-import { createPinia } from 'pinia';
-import { defineComponent } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
+import { defineComponent } from 'vue';
+
 import App from './App.vue';
-import { decodeSnapshot } from './transport/api';
-import { consumeInvitation } from './transport/invitation';
-import { FakeSocket, roomFixture } from './test-support/room';
+import { i18n } from './i18n';
 import { BilibiliAdapter } from './player/bilibili/adapter';
 import type { MediaInfo } from './player/bilibili/media';
-import { i18n } from './i18n';
+import { FakeSocket, roomFixture } from './test-support/room';
+import { decodeSnapshot } from './transport/api';
+import { consumeInvitation } from './transport/invitation';
+
 const identity = {
   identity: { identityId: 'a'.repeat(32), displayName: '' },
   csrfToken: 'A'.repeat(43),
@@ -85,7 +87,7 @@ test.each([
         ? healthy
           ? Promise.resolve(new Response(null, { status: 204 }))
           : health()
-        : Promise.resolve(json(identity))
+        : Promise.resolve(json(identity)),
     );
     vi.stubGlobal('fetch', fetch);
     const wrapper = app();
@@ -94,14 +96,14 @@ test.each([
     expect(document.title).toBe('Watch together · Open Video Sync');
     expect(wrapper.find('#display-name').exists()).toBe(false);
     expect(fetch.mock.calls.some(([url]) => url === '/api/v2/rooms')).toBe(
-      false
+      false,
     );
     healthy = true;
     window.dispatchEvent(new Event('online'));
     await flushPromises();
     expect(wrapper.get('header [role="status"]').text()).toBe('Server: ready');
     wrapper.unmount();
-  }
+  },
 );
 test('aborts pending requests and releases readiness listeners when disposed', async () => {
   const signals: AbortSignal[] = [];
@@ -110,7 +112,7 @@ test('aborts pending requests and releases readiness listeners when disposed', a
     vi.fn((_url: string, options: RequestInit) => {
       if (options.signal) signals.push(options.signal);
       return new Promise<Response>(() => {});
-    })
+    }),
   );
   const wrapper = app();
   wrapper.unmount();
@@ -137,7 +139,7 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
   vi.stubGlobal('fetch', async (url: string) =>
     url.startsWith('/health')
       ? new Response(null, { status: 204 })
-      : json(url.endsWith('/session') ? identity : room)
+      : json(url.endsWith('/session') ? identity : room),
   );
   vi.spyOn(BilibiliAdapter.prototype, 'load').mockResolvedValue(room.media!);
   vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockReturnValue({
@@ -189,7 +191,9 @@ test.each([true, false])(
         if (url.endsWith('/session')) return Promise.resolve(json(identity));
         if (options.method === 'GET')
           return Promise.resolve(
-            new Response(JSON.stringify({ code: 'not_found' }), { status: 404 })
+            new Response(JSON.stringify({ code: 'not_found' }), {
+              status: 404,
+            }),
           );
         attempts.push(options);
         return attempts.length === 1
@@ -201,10 +205,10 @@ test.each([true, false])(
                     JSON.stringify({ code: 'request_outcome_unknown' }),
                     {
                       status: 409,
-                    }
-                  )
+                    },
+                  ),
             );
-      })
+      }),
     );
     const wrapper = app();
     await flushPromises();
@@ -213,7 +217,7 @@ test.each([true, false])(
     await flushPromises();
     expect(wrapper.get('#room-name').attributes('readonly')).toBeDefined();
     expect(wrapper.get('[role="alert"]').text()).toContain(
-      'Cannot reach the server'
+      'Cannot reach the server',
     );
     expect(document.activeElement?.id).toBe('retry-attempt');
     await wrapper.get('#retry-attempt').trigger('click');
@@ -225,10 +229,10 @@ test.each([true, false])(
       media,
     });
     expect(new Headers(attempts[1]!.headers).get('Idempotency-Key')).toBe(
-      new Headers(attempts[0]!.headers).get('Idempotency-Key')
+      new Headers(attempts[0]!.headers).get('Idempotency-Key'),
     );
     expect(
-      new Headers(attempts[1]!.headers).get('Idempotency-Replay-Only')
+      new Headers(attempts[1]!.headers).get('Idempotency-Replay-Only'),
     ).toBe('true');
     if (retained) {
       expect(wrapper.get('#room-title').text()).toBe('Private room');
@@ -239,7 +243,7 @@ test.each([true, false])(
       expect(wrapper.find('.room-list').exists()).toBe(false);
     }
     wrapper.unmount();
-  }
+  },
 );
 test.each(['session', 'redeem'])(
   'recovers invitation after a failed %s request and helper reload',
@@ -260,22 +264,22 @@ test.each(['session', 'redeem'])(
           return Promise.resolve(
             json({
               invitation: { linkSecret: secret, code: '0123456789ABCDEF' },
-            })
+            }),
           );
         requests.push(options);
         if (interrupted)
           return Promise.reject(new TypeError('network failure'));
         return Promise.resolve(
-          json({ snapshot, invitation: null, replayed: false })
+          json({ snapshot, invitation: null, replayed: false }),
         );
-      })
+      }),
     );
     history.replaceState(null, '', `/join#invite=${secret}`);
     let wrapper = app({ initialInvitation: consumeInvitation()! });
     try {
       await flushPromises();
       expect(wrapper.get('[role="alert"]').text()).toContain(
-        'Cannot reach the server'
+        'Cannot reach the server',
       );
       expect(location.hash).toBe('');
       wrapper.unmount();
@@ -290,21 +294,21 @@ test.each(['session', 'redeem'])(
       expect(wrapper.find('#join-submit').exists()).toBe(false);
       await wrapper.get('.invite-button').trigger('click');
       expect(
-        wrapper.get<HTMLInputElement>('#invite-link').element.value
+        wrapper.get<HTMLInputElement>('#invite-link').element.value,
       ).toContain(secret);
       expect(history.state).toBeNull();
       expect(consumeInvitation()).toBeUndefined();
     } finally {
       wrapper.unmount();
     }
-  }
+  },
 );
 test('rejects malformed room responses before rendering authority', () => {
   expect(() =>
-    decodeSnapshot({ ...snapshot, selfMemberId: 'f'.repeat(32) })
+    decodeSnapshot({ ...snapshot, selfMemberId: 'f'.repeat(32) }),
   ).toThrow();
   expect(() =>
-    decodeSnapshot({ ...snapshot, signedURL: 'synthetic-credential' })
+    decodeSnapshot({ ...snapshot, signedURL: 'synthetic-credential' }),
   ).toThrow();
   expect(() => decodeSnapshot({ ...snapshot, revision: 1.5 })).toThrow();
   expect(decodeSnapshot(snapshot).selfMemberId).toBe(snapshot.selfMemberId);
@@ -320,7 +324,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
       if (url.endsWith('/session')) return Promise.resolve(json(identity));
       if (url.startsWith(`/api/v2/rooms/${snapshot.roomId}`))
         return Promise.resolve(
-          new Response(JSON.stringify({ code: 'not_found' }), { status: 404 })
+          new Response(JSON.stringify({ code: 'not_found' }), { status: 404 }),
         );
       if (url.endsWith('/invitations/redeem'))
         return Promise.resolve(
@@ -328,10 +332,10 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
             ? json({})
             : new Response(JSON.stringify({ code: 'invalid_invitation' }), {
                 status: 404,
-              })
+              }),
         );
       return Promise.resolve(new Response('', { status: 502 }));
-    })
+    }),
   );
   history.replaceState(null, '', `/rooms/${snapshot.roomId}`);
   const wrapper = app();
@@ -356,7 +360,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   wrapper.get<HTMLInputElement>('#join-code').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain(
-    'This invitation is unavailable or the room has closed.'
+    'This invitation is unavailable or the room has closed.',
   );
   expect(document.activeElement?.id).toBe('join-code');
   expect(wrapper.get('#join-code').attributes('aria-invalid')).toBe('true');
@@ -364,7 +368,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   wrapper.get<HTMLInputElement>('#room-name').element.form?.requestSubmit();
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain(
-    'through its proxy (HTTP 502)'
+    'through its proxy (HTTP 502)',
   );
   // An error already on screen must follow the selection without retrying the request.
   const requestCount = vi.mocked(fetch).mock.calls.length;
@@ -379,7 +383,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
   await wrapper.get('input[name="language"][value="zh-CN"]').setValue(true);
   await flushPromises();
   expect(wrapper.get('#app-alert').text()).toContain(
-    '无法通过代理连接服务器（HTTP 502）'
+    '无法通过代理连接服务器（HTTP 502）',
   );
   expect(wrapper.find('button[aria-label="设置"]').exists()).toBe(true);
   expect(document.title).toBe('一起观看 · Open Video Sync');

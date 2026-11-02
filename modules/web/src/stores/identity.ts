@@ -1,21 +1,22 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+
+import { InputError } from '../features/failures';
 import { decodeSession, request, type Session } from '../transport/api';
 import { decodeProfilePatch } from '../transport/contracts';
-import { InputError } from '../features/failures';
 
 // Credentials stay in memory; the bearer cookie remains inaccessible to JavaScript.
 export const useIdentityStore = defineStore('identity', () => {
   const session = ref<Session>();
   async function bootstrap(signal: AbortSignal): Promise<void> {
     const value = decodeSession(
-      await request('/session', 'POST', '', {}, signal)
+      await request('/session', 'POST', '', {}, signal),
     );
     if (!signal.aborted) session.value = value;
   }
   async function rename(
     displayName: string,
-    signal: AbortSignal
+    signal: AbortSignal,
   ): Promise<void> {
     let patch: ReturnType<typeof decodeProfilePatch>;
     try {
@@ -29,8 +30,8 @@ export const useIdentityStore = defineStore('identity', () => {
         'PATCH',
         session.value?.csrfToken ?? '',
         patch,
-        signal
-      )
+        signal,
+      ),
     );
     if (!signal.aborted) session.value = value;
   }
@@ -40,7 +41,7 @@ export const useIdentityStore = defineStore('identity', () => {
       'DELETE',
       session.value?.csrfToken ?? '',
       {},
-      signal
+      signal,
     );
     session.value = undefined;
   }

@@ -30,7 +30,7 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
   await createLocalRoom(
     page,
     { name: 'streamed.webm', mimeType: 'video/webm', buffer: file },
-    'Streamed seek'
+    'Streamed seek',
   );
   const roomPath = `/api/v2${new URL(page.url()).pathname}`;
   const snapshot = async () => {
@@ -44,30 +44,30 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
       const source = new MediaSource();
       const url = URL.createObjectURL(source);
       const opened = new Promise<void>((resolve) =>
-        source.addEventListener('sourceopen', () => resolve(), { once: true })
+        source.addEventListener('sourceopen', () => resolve(), { once: true }),
       );
       video.src = url;
       await opened;
       source.duration = 30;
       const buffer = source.addSourceBuffer('video/webm; codecs="vp8"');
       const appended = new Promise<void>((resolve) =>
-        buffer.addEventListener('updateend', () => resolve(), { once: true })
+        buffer.addEventListener('updateend', () => resolve(), { once: true }),
       );
       buffer.appendBuffer(new Uint8Array(initial));
       await appended;
       return { source, buffer, url };
     },
-    Array.from(file.subarray(0, split))
+    Array.from(file.subarray(0, split)),
   );
   try {
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(0.2);
     await seekTo(page, 20);
@@ -79,17 +79,17 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
     await stream.evaluate(
       async ({ source, buffer }, remaining) => {
         const appended = new Promise<void>((resolve) =>
-          buffer.addEventListener('updateend', () => resolve(), { once: true })
+          buffer.addEventListener('updateend', () => resolve(), { once: true }),
         );
         buffer.appendBuffer(new Uint8Array(remaining));
         await appended;
         source.endOfStream();
       },
-      Array.from(file.subarray(split))
+      Array.from(file.subarray(split)),
     );
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(target + 0.5);
     await expect(page.locator('video')).toHaveJSProperty('paused', false);
@@ -101,13 +101,13 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
     await seekTo(page, 10);
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeCloseTo(10, 1);
     await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(10.5);
     await closeRoom(page);

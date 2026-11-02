@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
-import RepositoryLink from './RepositoryLink.vue';
+
 import { i18n } from '../i18n';
+import RepositoryLink from './RepositoryLink.vue';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -21,7 +22,7 @@ test.each([0, 1234])(
       const count = stars.toLocaleString('en');
       expect(wrapper.get('.repo-star-count').text()).toBe(count);
       expect(wrapper.get('a').attributes('aria-label')).toContain(
-        `${count} stars`
+        `${count} stars`,
       );
       expect(fetch).toHaveBeenCalledWith(
         'https://api.github.com/repos/swqa7697/open-video-sync',
@@ -29,17 +30,17 @@ test.each([0, 1234])(
           credentials: 'omit',
           referrerPolicy: 'no-referrer',
           redirect: 'error',
-        })
+        }),
       );
       i18n.global.locale.value = 'zh-CN';
       await flushPromises();
       expect(wrapper.get('a').attributes('aria-label')).toContain(
-        `${count} 个 Star`
+        `${count} 个 Star`,
       );
     } finally {
       wrapper.unmount();
     }
-  }
+  },
 );
 
 test.each([
@@ -57,15 +58,15 @@ test.each([
       await flushPromises();
       expect(wrapper.get('.repo-star-count').text()).toBe('—');
       expect(wrapper.get('a').attributes('href')).toBe(
-        'https://github.com/swqa7697/open-video-sync'
+        'https://github.com/swqa7697/open-video-sync',
       );
       expect(wrapper.get('a').attributes('aria-label')).toBe(
-        'Star Open Video Sync on GitHub'
+        'Star Open Video Sync on GitHub',
       );
     } finally {
       wrapper.unmount();
     }
-  }
+  },
 );
 
 test('cancels pending requests on timeout and disposal', async () => {

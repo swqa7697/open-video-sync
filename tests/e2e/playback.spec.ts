@@ -1,17 +1,18 @@
-import {
-  clickPlayerControl,
-  createLocalRoom,
-  invitationLink,
-  dismissHelper,
-  settings,
-  seekTo,
-} from './flows';
 import { writeFile } from 'node:fs/promises';
+
 import {
   appContext,
   expect,
   test,
 } from '../../modules/web/playwright-fixtures';
+import {
+  clickPlayerControl,
+  createLocalRoom,
+  dismissHelper,
+  invitationLink,
+  seekTo,
+  settings,
+} from './flows';
 import { decodedFrame, generatedVideo } from './media';
 
 test('two independent local players match, play, seek, pause, reconnect, and transfer tab ownership', async ({
@@ -29,7 +30,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
   page.on('websocket', (socket) =>
     socket.on('framesent', (event) => {
       if (typeof event.payload === 'string') frames.push(event.payload);
-    })
+    }),
   );
   const file = {
     name: 'synthetic-private-name-canary.webm',
@@ -64,26 +65,26 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await createLocalRoom(
       page,
       { name: 'synthetic.webm', mimeType: 'video/webm', buffer: fixture },
-      'Local synchronized viewing'
+      'Local synchronized viewing',
     );
     await expect(
-      page.getByRole('status').filter({ hasText: 'Clock calibrated' })
+      page.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
     const roomURL = page.url(),
       invitation = await invitationLink(page);
     await other.goto(invitation);
     await dismissHelper(other);
     await expect(
-      other.getByRole('status').filter({ hasText: 'Clock calibrated' })
+      other.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
     await settings(page, 'everyone');
     await expect(
-      page.getByRole('status').filter({ hasText: 'Preferences saved.' })
+      page.getByRole('status').filter({ hasText: 'Preferences saved.' }),
     ).toBeVisible();
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     const changed = Buffer.from(fixture);
     changed[changed.length - 1]! ^= 1;
@@ -92,10 +93,10 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .setInputFiles({ ...file, buffer: changed });
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'mismatch'
+      'mismatch',
     );
     await expect(other.getByTestId('media-status')).toHaveText(
-      'Different video from the room'
+      'Different video from the room',
     );
     await other.locator('#local-video').setInputFiles({
       name: 'unsupported-codec.webm',
@@ -104,7 +105,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     });
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'unsupported'
+      'unsupported',
     );
     await expect(other.getByRole('alert')).toContainText('cannot decode');
     await other
@@ -113,13 +114,13 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     await page.setViewportSize({ width: 375, height: 1000 });
     expect(
       await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth
-      )
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
     ).toBe(true);
     // Narrow screens reach the room heading and navigation before the player.
     expect(
@@ -129,7 +130,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         return (
           !!heading && !!video && !!(heading.compareDocumentPosition(video) & 4)
         );
-      })
+      }),
     ).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath('player-375.png'),
@@ -145,8 +146,8 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             .evaluate(
               (v) =>
                 !(v as HTMLVideoElement).paused &&
-                (v as HTMLVideoElement).currentTime > 0.5
-            )
+                (v as HTMLVideoElement).currentTime > 0.5,
+            ),
         )
         .toBe(true);
     // Headless windows stay visible. Exercise visibility events on actual playing media;
@@ -164,14 +165,14 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     });
     await page.keyboard.press('m');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(false);
     const backgroundPosition = await background.evaluate(
-      (state) => state.position
+      (state) => state.position,
     );
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(backgroundPosition + 0.5);
     expect(await background.evaluate((state) => state.pauses)).toBe(0);
@@ -180,7 +181,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await expect(
-      page.getByRole('status').filter({ hasText: 'Clock calibrated' })
+      page.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
     expect(await background.evaluate((state) => state.pauses)).toBe(0);
     await background.dispose();
@@ -190,7 +191,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         .poll(() =>
           player
             .locator('video')
-            .evaluate((v) => (v as HTMLVideoElement).currentTime)
+            .evaluate((v) => (v as HTMLVideoElement).currentTime),
         )
         .toBeGreaterThan(10);
     await clickPlayerControl(page, 'Pause together');
@@ -199,13 +200,13 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         .poll(() =>
           player
             .locator('video')
-            .evaluate((v) => (v as HTMLVideoElement).paused)
+            .evaluate((v) => (v as HTMLVideoElement).paused),
         )
         .toBe(true);
     const positions = await Promise.all(
       [page, other].map((p) =>
-        p.locator('video').evaluate((v) => (v as HTMLVideoElement).currentTime)
-      )
+        p.locator('video').evaluate((v) => (v as HTMLVideoElement).currentTime),
+      ),
     );
     expect(Math.abs(positions[0]! - positions[1]!)).toBeLessThan(0.15);
     const seekFrames = await Promise.all([
@@ -221,19 +222,19 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       throw new Error('The guest must have a real room socket before outage.');
     await interruptSocket();
     await expect(
-      other.getByRole('status').filter({ hasText: /Disconnected|uncertain/ })
+      other.getByRole('status').filter({ hasText: /Disconnected|uncertain/ }),
     ).toBeVisible({ timeout: 10000 });
     socketAvailable = true;
     await guest.setOffline(false);
     await expect(
-      other.getByRole('status').filter({ hasText: 'Clock calibrated' })
+      other.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible({
       timeout: 20000,
     });
     await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>
-        other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused)
+        other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused),
       )
       .toBe(true);
     // Both browser roles must control actual decoded playback after reconnect.
@@ -246,7 +247,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         .poll(() =>
           player
             .locator('video')
-            .evaluate((v) => (v as HTMLVideoElement).paused)
+            .evaluate((v) => (v as HTMLVideoElement).paused),
         )
         .toBe(true);
     const recoveredFrames = await Promise.all([
@@ -254,7 +255,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       decodedFrame(other),
     ]);
     expect(
-      Math.abs(recoveredFrames[0]! - recoveredFrames[1]!)
+      Math.abs(recoveredFrames[0]! - recoveredFrames[1]!),
     ).toBeLessThanOrEqual(3);
     await clickPlayerControl(other, 'Play together');
     for (const player of [page, other])
@@ -284,38 +285,38 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             'Decoded source-frame pixels; no physical display timing.',
         },
         null,
-        2
-      ) + '\n'
+        2,
+      ) + '\n',
     );
     const tab = await page.context().newPage();
     await tab.goto(roomURL);
     await dismissHelper(tab);
     await expect(
-      tab.getByRole('status').filter({ hasText: 'Clock calibrated' })
+      tab.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
     await expect(
-      page.getByText('This room is open elsewhere.', { exact: false })
+      page.getByText('This room is open elsewhere.', { exact: false }),
     ).toBeVisible();
     await expect
       .poll(() =>
         page
           .locator('video')
           .evaluate(
-            (v) => (v as HTMLVideoElement).paused && !v.getAttribute('src')
-          )
+            (v) => (v as HTMLVideoElement).paused && !v.getAttribute('src'),
+          ),
       )
       .toBe(true);
     await tab
       .getByRole('slider', { name: 'Seek', exact: true })
       .evaluate((input) =>
-        input.dispatchEvent(new Event('change', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true })),
       );
     await clickPlayerControl(other, 'Pause together');
     await other.reload();
     await dismissHelper(other);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'no_media'
+      'no_media',
     );
     expect(await other.locator('video').getAttribute('src')).toBeNull();
     expect(frames.join('')).not.toContain(file.name);
@@ -325,7 +326,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         await p.evaluate(() => ({
           local: localStorage.length,
           session: sessionStorage.length,
-        }))
+        })),
       ).toEqual({ local: 0, session: 0 });
     if (
       baseURL &&
@@ -335,7 +336,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         await page.evaluate(() => ({
           secure: isSecureContext,
           subtle: !!crypto.subtle,
-        }))
+        })),
       ).toEqual({ secure: false, subtle: false });
     await tab.screenshot({
       path: testInfo.outputPath('local-player.png'),

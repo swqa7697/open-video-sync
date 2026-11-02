@@ -1,11 +1,12 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
-import PlayerPanel from './PlayerPanel.vue';
-import { decodeSnapshot } from '../../transport/api';
-import { FakeSocket, roomFixture } from '../../test-support/room';
+
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
 import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
+import { FakeSocket, roomFixture } from '../../test-support/room';
+import { decodeSnapshot } from '../../transport/api';
 import { decodeReadiness } from '../../transport/protocol-values';
+import PlayerPanel from './PlayerPanel.vue';
 
 vi.mock('../../player/fingerprint', () => ({
   localFingerprint: async () => 'f'.repeat(64),
@@ -125,7 +126,7 @@ async function join(phase: 'playing' | 'waiting') {
 }
 async function select(
   wrapper: VueWrapper,
-  video: HTMLVideoElement
+  video: HTMLVideoElement,
 ): Promise<void> {
   const input = wrapper.get('#local-video');
   Object.defineProperty(input.element, 'files', {
@@ -139,7 +140,7 @@ const reported = (socket: FakeSocket) =>
   socket.sent
     .map(
       (text) =>
-        JSON.parse(text) as { type: string; payload: { status?: string } }
+        JSON.parse(text) as { type: string; payload: { status?: string } },
     )
     .filter((frame) => frame.type === 'member.readiness')
     .map((frame) => frame.payload.status);
@@ -156,7 +157,7 @@ beforeEach(() => {
         return 'blob:fixture-panel';
       }
       static revokeObjectURL(): void {}
-    }
+    },
   );
 });
 
@@ -168,7 +169,7 @@ test('quality and danmaku area choices survive player recreation', async () => {
   }));
   localStorage.setItem(
     'ovs.player',
-    JSON.stringify({ volume: 0.4, muted: false, danmakuArea: 0.75 })
+    JSON.stringify({ volume: 0.4, muted: false, danmakuArea: 0.75 }),
   );
   const media = {
     kind: 'bilibili' as const,
@@ -188,7 +189,7 @@ test('quality and danmaku area choices survive player recreation', async () => {
     async (_bvid, _part, _signal, quality) => {
       selectedQuality = quality ?? 120;
       return media;
-    }
+    },
   );
   vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
     (): MediaInfo => ({
@@ -208,7 +209,7 @@ test('quality and danmaku area choices survive player recreation', async () => {
           index: [32, 63],
         },
       ],
-    })
+    }),
   );
   vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
     positionMs: 0,
@@ -238,10 +239,10 @@ test('quality and danmaku area choices survive player recreation', async () => {
       .get('.video-stage')
       .trigger('pointerleave', { pointerType: 'mouse' });
     expect(wrapper.get('.video-stage').classes()).not.toContain(
-      'controls-idle'
+      'controls-idle',
     );
     expect(wrapper.find('.player-menu:not(.quality-menu)').exists()).toBe(
-      false
+      false,
     );
     const option = wrapper
       .findAll('[role="menuitemradio"]')
@@ -250,14 +251,14 @@ test('quality and danmaku area choices survive player recreation', async () => {
     await flushPromises();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
     expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
-      'HEVC'
+      'HEVC',
     );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(wrapper.get('.video-stage').classes()).toContain('controls-idle');
     for (const pressed of ['false', 'true']) {
       await wrapper.get('.video-stage').trigger('keydown', { key: 'd' });
       expect(wrapper.get('.danmaku-toggle').attributes('aria-pressed')).toBe(
-        pressed
+        pressed,
       );
       expect(wrapper.get('.video-stage').classes()).toContain('controls-idle');
     }
@@ -268,13 +269,13 @@ test('quality and danmaku area choices survive player recreation', async () => {
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
     expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
-      'HEVC'
+      'HEVC',
     );
     await wrapper.get('.quality-trigger').trigger('click');
     expect(wrapper.get('[aria-checked="true"]').text()).toBe('1080p');
     await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Escape' });
     expect(document.activeElement).toBe(
-      wrapper.get('.quality-trigger').element
+      wrapper.get('.quality-trigger').element,
     );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Player settings"]').exists()).toBe(false);
@@ -288,7 +289,7 @@ test('quality and danmaku area choices survive player recreation', async () => {
       .get('.video-stage')
       .trigger('pointerleave', { pointerType: 'mouse' });
     expect(wrapper.get('.video-stage').classes()).not.toContain(
-      'controls-idle'
+      'controls-idle',
     );
     await wrapper.get('input[id$="-density"]').setValue(12);
     await wrapper.get('input[id$="-size"]').setValue(24);
@@ -298,37 +299,37 @@ test('quality and danmaku area choices survive player recreation', async () => {
     await area.setValue('0.25');
     expect(wrapper.get('output[for$="-speed"]').text()).toBe('0.7×');
     expect(
-      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
     ).toBe('12');
     expect(
-      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
     ).toBe('24');
     await trigger.trigger('click');
     expect(trigger.attributes('aria-pressed')).toBe('false');
     expect(wrapper.get('.danmaku-menu').text()).toContain('Hidden by you');
     expect(area.element.value).toBe('0.25');
     expect(
-      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
     ).toBe('0.7');
     expect(
-      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
     ).toBe('12');
     expect(
-      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
     ).toBe('24');
     await wrapper
       .get('.danmaku-control')
       .trigger('pointerleave', { pointerType: 'mouse' });
     await vi.waitFor(() =>
-      expect(wrapper.find('.danmaku-menu').exists()).toBe(false)
+      expect(wrapper.find('.danmaku-menu').exists()).toBe(false),
     );
     await trigger.trigger('keydown', { key: 'ArrowDown' });
     await flushPromises();
     expect(
-      wrapper.get<HTMLSelectElement>('select[id$="-area"]').element.value
+      wrapper.get<HTMLSelectElement>('select[id$="-area"]').element.value,
     ).toBe('0.25');
     expect(document.activeElement).toBe(
-      wrapper.get('input[id$="-density"]').element
+      wrapper.get('input[id$="-density"]').element,
     );
     await wrapper.get('.danmaku-menu').trigger('keydown', { key: 'Escape' });
     expect(wrapper.find('.danmaku-menu').exists()).toBe(false);
@@ -337,7 +338,7 @@ test('quality and danmaku area choices survive player recreation', async () => {
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
     expect(wrapper.get<HTMLInputElement>('.volume-slider').element.value).toBe(
-      '0.4'
+      '0.4',
     );
     await wrapper
       .get('.danmaku-toggle')
@@ -509,7 +510,7 @@ test('host episode selection publishes resolved metadata and retains the list du
         });
       media = { ...media, bvid, part, cid: bvid === first.bvid ? '1' : '2' };
       return media;
-    }
+    },
   );
   vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
     (): MediaInfo => ({
@@ -530,7 +531,7 @@ test('host episode selection publishes resolved metadata and retains the list du
           index: [32, 63],
         },
       ],
-    })
+    }),
   );
   vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
     positionMs: 0,
@@ -560,7 +561,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     expect(
       socket.sent
         .map((raw) => JSON.parse(raw))
-        .filter((q) => q.type === 'media.select')
+        .filter((q) => q.type === 'media.select'),
     ).toHaveLength(0);
     const selecting = panel.selectEpisode(second);
     await flushPromises();
@@ -621,7 +622,7 @@ test('a failed Bilibili player keeps readiness valid and video replacement avail
   });
   let fail: (() => void) | undefined;
   vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(function (
-    this: BilibiliAdapter
+    this: BilibiliAdapter,
   ) {
     fail = () => {
       this.dispose();
@@ -724,7 +725,7 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     await input.trigger('change');
     await vi.advanceTimersByTimeAsync(3100);
     expect(
-      wrapper.get('[data-testid="media-status"]').attributes('data-state')
+      wrapper.get('[data-testid="media-status"]').attributes('data-state'),
     ).toBe('loading');
     expect(commands()).toHaveLength(0);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
@@ -752,7 +753,7 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     await vi.advanceTimersByTimeAsync(3100);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     expect(
-      wrapper.get('[data-testid="playback-phase"]').attributes('data-state')
+      wrapper.get('[data-testid="playback-phase"]').attributes('data-state'),
     ).toBe('waiting');
     expect(play.attributes('aria-disabled')).toBe('false');
     socket.frame('room.snapshot', snapshot);
@@ -761,7 +762,7 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     await vi.advanceTimersByTimeAsync(2);
     expect(wrapper.get('.command-recovery').text()).toContain(
-      'No server acknowledgement'
+      'No server acknowledgement',
     );
     const recovery = wrapper.get('.command-recovery button');
     (recovery.element as HTMLButtonElement).focus();
@@ -779,7 +780,7 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     socket.frame(
       'room.snapshot',
       { ...snapshot, epoch: '9'.repeat(32) },
-      '9'.repeat(32)
+      '9'.repeat(32),
     );
     await vi.advanceTimersByTimeAsync(2);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
@@ -824,7 +825,7 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   await flushPromises();
   expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   expect(
-    wrapper.get('[data-testid="media-status"]').attributes('data-state')
+    wrapper.get('[data-testid="media-status"]').attributes('data-state'),
   ).toBe('buffering');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
@@ -938,8 +939,8 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   await select(wrapper, video);
   await vi.waitFor(() =>
     expect(
-      wrapper.get('[data-testid="media-status"]').attributes('data-state')
-    ).toBe('gesture_required')
+      wrapper.get('[data-testid="media-status"]').attributes('data-state'),
+    ).toBe('gesture_required'),
   );
   const enable = wrapper
     .findAll('button')
@@ -954,7 +955,7 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   await flushPromises();
   expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   expect(
-    wrapper.get('[data-testid="media-status"]').attributes('data-state')
+    wrapper.get('[data-testid="media-status"]').attributes('data-state'),
   ).toBe('buffering');
   expect(document.activeElement?.id).toBe('player-title');
   expect(reported(socket)).not.toContain('error');

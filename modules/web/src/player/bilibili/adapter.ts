@@ -6,8 +6,9 @@ import {
   type PlayerObservation,
 } from '../adapters/local';
 import { exact, HelperBridge, HelperError, object } from './bridge';
-import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
 import { DanmakuRenderer, decodeComments } from './danmaku';
+import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
+
 const CHUNK_BYTES = 256 * 1024;
 interface Track {
   index: number;
@@ -46,7 +47,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     private video: HTMLVideoElement,
     overlay: HTMLElement,
     private onDanmaku: (status: Message) => void,
-    private onError: (failure: HelperError) => void
+    private onError: (failure: HelperError) => void,
   ) {
     this.native = new LocalAdapter(video);
     this.capabilities = { ...this.native.capabilities, canShowDanmaku: true };
@@ -58,21 +59,21 @@ export class BilibiliAdapter implements PlayerAdapter {
         this.danmaku.reset();
         void this.loadDanmaku(true);
       },
-      { signal: this.lifetime.signal }
+      { signal: this.lifetime.signal },
     );
   }
   async load(
     bvid: string,
     part: number,
     signal: AbortSignal,
-    quality?: number
+    quality?: number,
   ): Promise<MediaDescriptor> {
     const abort = () => this.dispose();
     signal.addEventListener('abort', abort, { once: true });
     this.lifetime.signal.addEventListener(
       'abort',
       () => signal.removeEventListener('abort', abort),
-      { once: true }
+      { once: true },
     );
     if (signal.aborted) this.dispose();
     try {
@@ -86,7 +87,7 @@ export class BilibiliAdapter implements PlayerAdapter {
           ...(quality ? { quality } : {}),
         }),
         bvid,
-        part
+        part,
       );
       this.assertOwned();
       if (typeof MediaSource === 'undefined')
@@ -115,12 +116,12 @@ export class BilibiliAdapter implements PlayerAdapter {
         const data = await this.bytes(
           index,
           track.init[0],
-          track.init[1] - track.init[0] + 1
+          track.init[1] - track.init[0] + 1,
         );
         const indexData = await this.bytes(
           index,
           track.index[0],
-          track.index[1] - track.index[0] + 1
+          track.index[1] - track.index[0] + 1,
         );
         this.assertOwned();
         this.tracks.push({
@@ -132,8 +133,8 @@ export class BilibiliAdapter implements PlayerAdapter {
       }
       await Promise.all(
         initialization.map(({ buffer, data }) =>
-          this.update(buffer, () => buffer.appendBuffer(data))
-        )
+          this.update(buffer, () => buffer.appendBuffer(data)),
+        ),
       );
       await this.pump();
       this.assertOwned();
@@ -184,7 +185,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     track: number,
     offset: number,
     length: number,
-    seek = this.seekGeneration
+    seek = this.seekGeneration,
   ): Promise<Uint8Array<ArrayBuffer>> {
     if (length < 1 || length > CHUNK_BYTES)
       throw new HelperError('segment-limit');
@@ -199,7 +200,7 @@ export class BilibiliAdapter implements PlayerAdapter {
             offset,
             length,
             generation: this.generation,
-          })
+          }),
         );
         break;
       } catch (error) {
@@ -230,7 +231,7 @@ export class BilibiliAdapter implements PlayerAdapter {
   private wait(
     target: EventTarget,
     event: string,
-    operation?: () => void
+    operation?: () => void,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -327,14 +328,14 @@ export class BilibiliAdapter implements PlayerAdapter {
   private async trim(
     track: Track,
     seek: number,
-    pressure = false
+    pressure = false,
   ): Promise<void> {
     this.assertSeek(seek);
     const target = this.video.currentTime;
     const window = this.window(track, target);
     const behind = pressure ? 1 : Math.min(15, window);
     const current = track.segments.find(
-      (s) => s.time <= target && s.end > target
+      (s) => s.time <= target && s.end > target,
     );
     // remove() also drops dependent frames up to the next random access point.
     // Preserve the current fragment's keyframe even when its byte rate is high.
@@ -351,7 +352,7 @@ export class BilibiliAdapter implements PlayerAdapter {
   private async append(
     track: Track,
     data: Uint8Array<ArrayBuffer>,
-    seek: number
+    seek: number,
   ): Promise<boolean> {
     for (let attempt = 0; ; attempt++) {
       this.assertSeek(seek);
@@ -418,7 +419,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       track.index,
       pending.segment.offset + pending.at,
       Math.min(CHUNK_BYTES, pending.segment.length - pending.at),
-      seek
+      seek,
     );
     this.assertSeek(seek);
     if (!(await this.append(track, pending.data, seek))) return false;
@@ -455,7 +456,7 @@ export class BilibiliAdapter implements PlayerAdapter {
         this.video.currentTime > this.info.duration - 15 &&
         this.tracks.every(
           (t) =>
-            !t.pending && this.contains(t.buffer, this.info!.duration - 0.3)
+            !t.pending && this.contains(t.buffer, this.info!.duration - 0.3),
         ) &&
         this.source?.readyState === 'open'
       )
@@ -472,7 +473,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (!this.info || this.disposed) return;
     const segment = Math.min(
       Math.ceil(this.info.duration / 360),
-      Math.floor(this.video.currentTime / 360) + 1
+      Math.floor(this.video.currentTime / 360) + 1,
     );
     // A same-segment seek reuses both loaded comments and an in-flight reply.
     if (segment === this.dmSegment) return;
@@ -491,7 +492,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       this.onDanmaku(
         this.danmaku.comments.length
           ? message('player.danmakuLoaded')
-          : message('player.danmakuEmpty')
+          : message('player.danmakuEmpty'),
       );
     } catch {
       if (!this.disposed && request === this.dmRequest) {

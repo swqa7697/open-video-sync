@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue';
-import { t } from '../../i18n';
+
 import Icon from '../../components/Icon.vue';
 import { vKeyboardBoundary } from '../../components/overlay-keyboard';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   open: boolean;
@@ -149,7 +150,7 @@ watch(
       bottom: `${bounds.bottom - anchor.top + 8}px`,
       maxHeight: `${Math.max(0, anchor.top - bounds.top - 20)}px`,
     });
-  }
+  },
 );
 onMounted(() => {
   document.addEventListener('pointerdown', outside);

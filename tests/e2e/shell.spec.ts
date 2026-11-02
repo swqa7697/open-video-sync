@@ -1,23 +1,24 @@
-import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
 import {
   appContext,
   expect,
   test,
   type Page,
 } from '../../modules/web/playwright-fixtures';
-import { generatedVideo } from './media';
 import {
   closeRoom,
   createLocalRoom,
   dismissHelper,
   invitationLink,
-  openAppPanel,
   observePageKeyboard,
+  openAppPanel,
   openQuickActions,
   runQuickAction,
   settings,
 } from './flows';
+import { generatedVideo } from './media';
 
 async function expectHeaderFits(page: Page): Promise<void> {
   const header = page.getByRole('banner');
@@ -34,16 +35,16 @@ async function expectHeaderFits(page: Page): Promise<void> {
           width: bounds.width,
         };
       })
-      .filter((bounds) => bounds.width > 0)
+      .filter((bounds) => bounds.width > 0),
   );
   for (const bounds of actions) {
     expect(bounds.left).toBeGreaterThanOrEqual(headerBounds.x);
     expect(bounds.right).toBeLessThanOrEqual(
-      headerBounds.x + headerBounds.width
+      headerBounds.x + headerBounds.width,
     );
     expect(bounds.top).toBeGreaterThanOrEqual(headerBounds.y);
     expect(bounds.bottom).toBeLessThanOrEqual(
-      headerBounds.y + headerBounds.height
+      headerBounds.y + headerBounds.height,
     );
   }
   for (const [index, bounds] of actions.entries()) {
@@ -51,7 +52,7 @@ async function expectHeaderFits(page: Page): Promise<void> {
       expect(
         bounds.left >= previous.right ||
           bounds.top >= previous.bottom ||
-          previous.top >= bounds.bottom
+          previous.top >= bounds.bottom,
       ).toBe(true);
     }
   }
@@ -102,24 +103,24 @@ test('independent identities manage a private room over direct HTTP', async ({
     other.on('pageerror', (error) => failures.push(error.message));
     await page.goto('/');
     await expect(page.locator('header [role="status"]')).toHaveText(
-      'Server: ready'
+      'Server: ready',
     );
     await expect(page).toHaveTitle('Watch together · Open Video Sync');
     const favicon = await page.request.get(
       await page
         .locator('link[rel="icon"]')
-        .evaluate((node: HTMLLinkElement) => node.href)
+        .evaluate((node: HTMLLinkElement) => node.href),
     );
     expect(favicon.ok()).toBe(true);
     expect(favicon.headers()['content-type']).toContain('image/svg+xml');
     await expect(
-      page.getByRole('link', { name: 'Star Open Video Sync on GitHub' })
+      page.getByRole('link', { name: 'Star Open Video Sync on GitHub' }),
     ).toHaveAttribute('href', 'https://github.com/swqa7697/open-video-sync');
     for (const landmark of ['banner', 'main', 'contentinfo'] as const)
       await expect(page.getByRole(landmark)).toHaveCount(1);
     await page.keyboard.press('Tab');
     await expect(
-      page.getByRole('link', { name: 'Skip to main content' })
+      page.getByRole('link', { name: 'Skip to main content' }),
     ).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('main')).toBeFocused();
@@ -140,38 +141,38 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.setViewportSize({ width: 1440, height: 900 });
     await createLocalRoom(page, file, 'Friday watch party');
     await expect(
-      page.getByRole('heading', { name: 'Friday watch party' })
+      page.getByRole('heading', { name: 'Friday watch party' }),
     ).toBeFocused();
     await expect(
-      page.getByRole('heading', { name: 'Friday watch party' })
+      page.getByRole('heading', { name: 'Friday watch party' }),
     ).toHaveCSS('outline-style', 'none');
     await expect(page).toHaveTitle('Room · Open Video Sync');
     expect(await page.locator('video').getAttribute('src')).toMatch(/^blob:/);
     await expect(page.locator('#local-volume')).toHaveValue('0.5');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(false);
     await page.locator('video').click({ position: { x: 150, y: 80 } });
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await page.locator('video').click({ position: { x: 150, y: 80 } });
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     // Player shortcuts belong to the foreground page, including focus outside the player.
     await page.getByRole('heading', { name: 'Friday watch party' }).click();
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await page.keyboard.press('k');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await page.keyboard.press('ArrowUp');
     await page.keyboard.press('ArrowUp');
@@ -179,7 +180,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('m');
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
     await page.keyboard.press('f');
     await expect
@@ -212,7 +213,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await runQuickAction(page, '/appearance');
     const appearance = page.getByRole('dialog', {
@@ -269,10 +270,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(changeVideo).toHaveCSS('opacity', '1');
     await expect(page.locator('.command-recovery')).toHaveCount(0);
     expect(await page.locator('.room-layout').boundingBox()).toEqual(
-      playerLayout
+      playerLayout,
     );
     expect(await page.locator('.video-information').boundingBox()).toEqual(
-      playerInformation
+      playerInformation,
     );
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -283,13 +284,13 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(changeVideo).toBeFocused();
     await expect(changeVideo).toHaveCSS('opacity', '1');
     expect(await page.locator('.room-layout').boundingBox()).toEqual(
-      playerLayout
+      playerLayout,
     );
     expect(await page.locator('.video-information').boundingBox()).toEqual(
-      playerInformation
+      playerInformation,
     );
     expect(await page.locator('.playback-status').textContent()).toBe(
-      playerStatus
+      playerStatus,
     );
     await page.screenshot({ path: testInfo.outputPath('command-delayed.png') });
     releaseResults();
@@ -297,19 +298,19 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(changeVideo).toBeEnabled();
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     // Enter still activates a deliberately focused button.
     await expect(changeVideo).toBeFocused();
     await expect(changeVideo).toBeEnabled();
     await page.keyboard.press('Enter');
     await expect(
-      page.getByRole('dialog', { name: 'Change the video', exact: true })
+      page.getByRole('dialog', { name: 'Change the video', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');
     const fullscreen = page.getByRole('button', {
@@ -330,14 +331,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
     await expect(fullscreen).toBeFocused();
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     // Inputs and dialog buttons retain their native keys and cannot control the room.
     await page.locator('.profile-button').click();
@@ -349,11 +350,11 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(nameInput).toHaveValue('m d f k ');
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await page
       .getByRole('button', { name: 'Close dialog', exact: true })
@@ -361,14 +362,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('m');
     await page.keyboard.press('f');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
     expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
     await page.keyboard.press('Space');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     const profile = page.locator('.profile-button');
     await expect(profile).toBeFocused();
@@ -377,26 +378,26 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await expect(profile).toBeFocused();
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await page.reload();
     await dismissHelper(page);
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
-      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted)
+      await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
     await page.getByRole('heading', { name: 'Friday watch party' }).click();
     await page.keyboard.press('m');
     await page.locator('#local-video').setInputFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     // Branding shares the Leave action, including confirmation and cancellation.
     const home = page.getByRole('button', { name: 'OVS home', exact: true });
@@ -406,7 +407,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       if (input === 'pointer') await home.click();
       else await home.press('Enter');
       await expect(
-        page.getByRole('dialog', { name: 'Leave this room?' })
+        page.getByRole('dialog', { name: 'Leave this room?' }),
       ).toBeVisible();
       expect(page.context().pages()).toHaveLength(pageCount);
       expect(page.url()).toBe(activeRoomURL);
@@ -429,7 +430,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       .fill('$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
     await page.getByRole('combobox').press('Enter');
     await expect(
-      page.getByRole('dialog', { name: 'Change the video', exact: true })
+      page.getByRole('dialog', { name: 'Change the video', exact: true }),
     ).toBeVisible();
     await expect(page.locator('#bilibili-url')).toBeFocused();
     await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
@@ -454,7 +455,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     });
     await other.goto(inviteURL);
     await expect(other.locator('#app-alert')).toContainText(
-      'Cannot reach the server'
+      'Cannot reach the server',
     );
     expect(new URL(other.url()).hash).toBe('');
     expect(new URL(other.url()).pathname).toBe('/join');
@@ -463,8 +464,8 @@ test('independent identities manage a private room over direct HTTP', async ({
     ).json();
     expect(
       duringJoin.members.find(
-        (member: { role: string }) => member.role === 'host'
-      ).presence
+        (member: { role: string }) => member.role === 'host',
+      ).presence,
     ).toBe('connected');
     expect(duringJoin.members).toHaveLength(2);
     expect(await invitationLink(page)).toBe(inviteURL);
@@ -476,10 +477,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     await dismissHelper(other);
     expect(new URL(other.url()).hash).toBe('');
     await expect(
-      other.getByRole('button', { name: 'Join', exact: true })
+      other.getByRole('button', { name: 'Join', exact: true }),
     ).toHaveCount(0);
     await expect(
-      other.getByRole('heading', { name: 'Friday watch party' })
+      other.getByRole('heading', { name: 'Friday watch party' }),
     ).toBeVisible();
     const afterJoin = await (
       await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
@@ -487,29 +488,29 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(afterJoin.members).toHaveLength(2);
     expect(
       afterJoin.members.find(
-        (member: { role: string }) => member.role === 'host'
-      ).presence
+        (member: { role: string }) => member.role === 'host',
+      ).presence,
     ).toBe('connected');
     expect(await invitationLink(page)).toBe(inviteURL);
     await expect(other.locator('#control-note')).toContainText('Only the host');
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     await openQuickActions(other, '/play');
     await expect(other.getByRole('option', { selected: true })).toHaveAttribute(
       'aria-disabled',
-      'true'
+      'true',
     );
     await expect(other.getByRole('option', { selected: true })).toContainText(
-      'Only the host'
+      'Only the host',
     );
     await other.getByRole('combobox').press('Enter');
     await expect(other.locator('.command-palette')).toBeVisible();
     await other.getByRole('combobox').fill('/video');
     await expect(
-      other.getByRole('option').filter({ hasText: '/video' })
+      other.getByRole('option').filter({ hasText: '/video' }),
     ).toHaveCount(0);
     await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
     await expect(other.getByRole('option')).toHaveCount(0);
@@ -517,34 +518,34 @@ test('independent identities manage a private room over direct HTTP', async ({
     await runQuickAction(page, '/play');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await expect
       .poll(() =>
         page
           .locator('video')
-          .evaluate((video: HTMLVideoElement) => video.paused)
+          .evaluate((video: HTMLVideoElement) => video.paused),
       )
       .toBe(false);
     await runQuickAction(page, '/pause');
     await expect(other.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await runQuickAction(other, '/mute');
     expect(
       await other
         .locator('video')
-        .evaluate((video: HTMLVideoElement) => video.muted)
+        .evaluate((video: HTMLVideoElement) => video.muted),
     ).toBe(true);
     expect(
       await page
         .locator('video')
-        .evaluate((video: HTMLVideoElement) => video.muted)
+        .evaluate((video: HTMLVideoElement) => video.muted),
     ).toBe(false);
     await runQuickAction(page, '/seek');
     await expect(
-      page.getByRole('slider', { name: 'Seek', exact: true })
+      page.getByRole('slider', { name: 'Seek', exact: true }),
     ).toBeFocused();
     await runQuickAction(page, '/fullscreen');
     await expect
@@ -586,13 +587,13 @@ test('independent identities manage a private room over direct HTTP', async ({
     await (await fileChooser).setFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     const guestIdentity = await (
       await guest.request.get(`${baseURL}/api/v2/me`)
     ).json();
     expect(guestIdentity.identity.identityId).not.toBe(
-      firstIdentity.identity.identityId
+      firstIdentity.identity.identityId,
     );
     await settings(page, 'everyone', false);
     // Real pointer seeking inside the custom player changes the observed media position.
@@ -623,20 +624,20 @@ test('independent identities manage a private room over direct HTTP', async ({
     await tabToSeek();
     await page.keyboard.press('Tab');
     await expect(
-      page.getByRole('button', { name: 'Play together', exact: true })
+      page.getByRole('button', { name: 'Play together', exact: true }),
     ).toBeFocused();
     releaseResults();
     await expect(seek).toBeEnabled();
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(3);
     await seek.focus();
     await page.keyboard.press('Home');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeLessThan(0.2);
     await expect(seek).toBeFocused();
@@ -661,14 +662,14 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('ArrowRight');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeGreaterThan(8);
     await expect(seek).toBeEnabled();
     await page.keyboard.press('ArrowLeft');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeLessThan(5);
     await expect(seek).toBeEnabled();
@@ -676,7 +677,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await seek.press('Home');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeLessThan(0.2);
     await expect(seek).toBeEnabled();
@@ -684,7 +685,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     // Passive stage focus must not pin controls; native pointer input owns visibility.
     await player.hover({ position: { x: 100, y: 100 } });
@@ -711,13 +712,13 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('k');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await page.keyboard.press('Space');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'playing'
+      'playing',
     );
     await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await player.hover({ position: { x: 101, y: 100 } });
@@ -728,7 +729,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('k');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
-      'paused'
+      'paused',
     );
     await player.hover({ position: { x: 100, y: 100 } });
     await page.waitForTimeout(3200);
@@ -757,12 +758,12 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('Home');
     await expect
       .poll(() =>
-        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)
+        page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeLessThan(0.2);
     await expect(seek).toBeFocused();
     await expect(
-      page.getByRole('button', { name: 'Show danmaku locally', exact: true })
+      page.getByRole('button', { name: 'Show danmaku locally', exact: true }),
     ).toHaveCount(0);
     await page.getByRole('button', { name: 'Invite', exact: true }).click();
     const firstCode = (
@@ -772,7 +773,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       .getByRole('button', { name: 'Replace invitation', exact: true })
       .click();
     await expect(
-      page.getByLabel('Invitation link', { exact: true })
+      page.getByLabel('Invitation link', { exact: true }),
     ).not.toHaveValue(inviteURL);
     await page.keyboard.press('Escape');
     await outside.goto('/');
@@ -780,13 +781,13 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(
       (
         await outsider.request.get(
-          `${baseURL}/api/v2${new URL(roomURL).pathname}`
+          `${baseURL}/api/v2${new URL(roomURL).pathname}`,
         )
-      ).status()
+      ).status(),
     ).toBe(404);
     expect(
       (await (await outsider.request.get(`${baseURL}/api/v2/rooms`)).json())
-        .rooms
+        .rooms,
     ).toEqual([]);
     await outside.getByLabel('Invitation link or code').fill(firstCode);
     await outside.getByRole('button', { name: 'Join', exact: true }).click();
@@ -794,31 +795,33 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.getByRole('button', { name: /^Remove / }).click();
     await expect(page.locator('.roster li')).toHaveCount(1);
     await expect(
-      page.getByRole('heading', { name: 'Participants', exact: true })
+      page.getByRole('heading', { name: 'Participants', exact: true }),
     ).toBeFocused();
     // A disconnected guest may learn removal from an HTTP denial after reconnect.
     // Check revoked access and room exit independently of the notification wording.
     await expect(other).toHaveURL(`${baseURL}/`);
     await expect(
-      other.getByRole('heading', { name: 'Start a watch party', exact: true })
+      other.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeVisible();
     expect(
-      (await other.request.get(`/api/v2${new URL(roomURL).pathname}`)).status()
+      (await other.request.get(`/api/v2${new URL(roomURL).pathname}`)).status(),
     ).toBe(404);
     await expect(
-      other.getByRole('status').filter({ hasText: 'Friday watch party' })
+      other.getByRole('status').filter({ hasText: 'Friday watch party' }),
     ).toBeVisible();
     await expect(
-      page.getByRole('button', { name: 'Leave', exact: true })
+      page.getByRole('button', { name: 'Leave', exact: true }),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Leave', exact: true }).click();
     await expect(
-      page.getByRole('dialog', { name: 'Leave this room?' })
+      page.getByRole('dialog', { name: 'Leave this room?' }),
     ).toBeVisible();
     await page
       .getByRole('dialog', { name: 'Leave this room?' })
       .evaluate((node) =>
-        Promise.all(node.getAnimations().map((animation) => animation.finished))
+        Promise.all(
+          node.getAnimations().map((animation) => animation.finished),
+        ),
       );
     await page.screenshot({
       path: testInfo.outputPath('leave-confirmation.png'),
@@ -831,10 +834,10 @@ test('independent identities manage a private room over direct HTTP', async ({
       .getByRole('button', { name: 'Confirm leave', exact: true })
       .click();
     await expect(
-      page.getByRole('heading', { name: 'Start a watch party', exact: true })
+      page.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeFocused();
     expect(
-      (await page.request.get(`/api/v2${new URL(roomURL).pathname}`)).status()
+      (await page.request.get(`/api/v2${new URL(roomURL).pathname}`)).status(),
     ).toBe(404);
     await page.locator('.profile-button').click();
     await page
@@ -844,15 +847,15 @@ test('independent identities manage a private room over direct HTTP', async ({
       .getByRole('button', { name: 'Confirm forget', exact: true })
       .click();
     await expect(page.locator('.app-message')).toContainText(
-      'A new identity is active.'
+      'A new identity is active.',
     );
     const changed = await (await page.request.get('/api/v2/me')).json();
     expect(changed.identity.identityId).not.toBe(
-      firstIdentity.identity.identityId
+      firstIdentity.identity.identityId,
     );
     await page.keyboard.press('Escape');
     const cookie = (await page.context().cookies()).find(
-      (c) => c.name === 'ovs_session'
+      (c) => c.name === 'ovs_session',
     );
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.sameSite).toBe('Lax');
@@ -861,7 +864,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       await page.evaluate(() => ({
         local: Object.keys(localStorage).sort(),
         session: sessionStorage.length,
-      }))
+      })),
     ).toEqual({ local: ['ovs.appearance', 'ovs.player'], session: 0 });
     expect(failures).toEqual([]);
   } finally {
@@ -887,7 +890,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
   try {
     await page.goto('/');
     await expect(page.locator('header [role="status"]')).toHaveText(
-      'Server: ready'
+      'Server: ready',
     );
     await dismissHelper(page);
     await page.locator('.profile-button').click();
@@ -903,7 +906,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       await page.setViewportSize({ width: width!, height: height! });
       await expect(page.locator('.repo-star-count')).toBeVisible();
       expect(
-        await page.evaluate(() => document.documentElement.scrollWidth)
+        await page.evaluate(() => document.documentElement.scrollWidth),
       ).toBeLessThanOrEqual(width!);
       await expectHeaderFits(page);
       for (const colorScheme of ['light', 'dark'] as const) {
@@ -931,12 +934,12 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       other.getByRole('heading', {
         name: 'Responsive watch party',
         exact: true,
-      })
+      }),
     ).toBeVisible();
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
-      'ready'
+      'ready',
     );
     await other.locator('.profile-button').click();
     await other.getByLabel('Display name (optional)').fill('W'.repeat(48));
@@ -970,12 +973,12 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         await page.keyboard.press('Escape');
         expect(await playerColors()).toEqual(darkPlayerColors);
         expect(
-          (await page.locator('.room').boundingBox())!.width
+          (await page.locator('.room').boundingBox())!.width,
         ).toBeLessThanOrEqual(1600);
         if (width! > 760) {
           const stage = (await page.locator('.video-stage').boundingBox())!;
           expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1
+            1,
           );
         }
         await page.screenshot({
@@ -989,17 +992,17 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
           await members.click();
           await expect(members).toHaveAttribute(
             'aria-expanded',
-            String(expanded)
+            String(expanded),
           );
           const stage = (await page.locator('.video-stage').boundingBox())!;
           expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1
+            1,
           );
           const toolbar = (await page.locator('.room-actions').boundingBox())!;
           const room = (await page.locator('.room').boundingBox())!;
           expect(toolbar.x).toBeGreaterThanOrEqual(room.x);
           expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
-            room.x + room.width
+            room.x + room.width,
           );
           if (width === 1966 && !expanded)
             await page.screenshot({
@@ -1009,8 +1012,8 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       }
       expect(
         await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth
-        )
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
       ).toBe(true);
       for (const control of [
         page.locator('.video-stage'),
@@ -1023,12 +1026,12 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(
-      () => (document.documentElement.style.fontSize = '200%')
+      () => (document.documentElement.style.fontSize = '200%'),
     );
     expect(
       await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth
-      )
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
     ).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath('room-200-percent.png'),
@@ -1053,13 +1056,13 @@ test('settings groups local preferences and shows packaged versions and source r
   const menu = page.getByRole('menu', { name: 'Settings', exact: true });
   const about = page.getByRole('dialog', { name: 'About', exact: true });
   await expect(
-    page.getByRole('link', { name: 'Star Open Video Sync on GitHub' })
+    page.getByRole('link', { name: 'Star Open Video Sync on GitHub' }),
   ).toBeVisible();
   await expect(page.locator('.repo-star-count')).toHaveText('1,234');
   await trigger.focus();
   await trigger.press('ArrowDown');
   await expect(
-    menu.getByRole('menuitem', { name: 'Appearance' })
+    menu.getByRole('menuitem', { name: 'Appearance' }),
   ).toBeFocused();
   const menuKeys = await observePageKeyboard(page);
   await page.keyboard.press('Control+k');
@@ -1070,7 +1073,7 @@ test('settings groups local preferences and shows packaged versions and source r
   await expect(menu.getByRole('menuitem', { name: 'About' })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(
-    menu.getByRole('menuitem', { name: 'Appearance' })
+    menu.getByRole('menuitem', { name: 'Appearance' }),
   ).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(menu.getByRole('menuitem', { name: 'About' })).toBeFocused();
@@ -1092,9 +1095,9 @@ test('settings groups local preferences and shows packaged versions and source r
   const release = Object.fromEntries(
     [
       ...readFileSync('../../versions.toml', 'utf8').matchAll(
-        /^(sync|web|helper) = "([\d.]+)"$/gm
+        /^(sync|web|helper) = "([\d.]+)"$/gm,
       ),
-    ].map(([, name, version]) => [name!, version!])
+    ].map(([, name, version]) => [name!, version!]),
   );
   const componentVersions = ['sync', 'web', 'helper'].map((name) => {
     const version = release[name];
@@ -1102,11 +1105,11 @@ test('settings groups local preferences and shows packaged versions and source r
     return version;
   });
   const componentValues = about.locator(
-    '.about-versions > div:nth-child(-n+3) dd'
+    '.about-versions > div:nth-child(-n+3) dd',
   );
   await expect(componentValues).toHaveText(componentVersions);
   await about.evaluate((node) =>
-    Promise.all(node.getAnimations().map((animation) => animation.finished))
+    Promise.all(node.getAnimations().map((animation) => animation.finished)),
   );
   // The response is public, uncached metadata from the running artifact, not browser helper state.
   const response = await page.request.get('/api/v2/version');
@@ -1114,7 +1117,7 @@ test('settings groups local preferences and shows packaged versions and source r
   const buildInfo = JSON.parse(
     execFileSync('node', ['../../scripts/versions.mjs', 'build-info'], {
       encoding: 'utf8',
-    })
+    }),
   ) as { commit: string; dirty: boolean; tag: string };
   const deployed = { ...release, ...buildInfo };
   expect(await response.json()).toEqual(deployed);
@@ -1140,7 +1143,7 @@ test('settings groups local preferences and shows packaged versions and source r
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
     expect(
-      await about.evaluate((node) => node.scrollWidth <= node.clientWidth)
+      await about.evaluate((node) => node.scrollWidth <= node.clientWidth),
     ).toBe(true);
   }
   await page.keyboard.press('Escape');
@@ -1160,7 +1163,7 @@ test('settings groups local preferences and shows packaged versions and source r
     { commit: '', dirty: false, tag: '' },
   ]) {
     await page.route('**/api/v2/version', (route) =>
-      route.fulfill({ json: { ...release, ...info } })
+      route.fulfill({ json: { ...release, ...info } }),
     );
     await openAppPanel(page, 'About');
     await expect(componentValues).toHaveText(componentVersions);
@@ -1178,7 +1181,7 @@ test('settings groups local preferences and shows packaged versions and source r
       });
     }
     expect(
-      await about.evaluate((node) => node.scrollWidth <= node.clientWidth)
+      await about.evaluate((node) => node.scrollWidth <= node.clientWidth),
     ).toBe(true);
     await page.keyboard.press('Escape');
     await page.unroute('**/api/v2/version');
@@ -1196,11 +1199,11 @@ test('settings groups local preferences and shows packaged versions and source r
         status: body === 'unavailable' ? 503 : 200,
         contentType: 'application/json',
         body,
-      })
+      }),
     );
     await openAppPanel(page, 'About');
     await expect(about.getByRole('status')).toContainText(
-      'Versions are unavailable'
+      'Versions are unavailable',
     );
     await expect(about.locator('dd')).toHaveCount(0);
     await page.unroute('**/api/v2/version');
@@ -1211,7 +1214,7 @@ test('settings groups local preferences and shows packaged versions and source r
   }
   await expect(page.locator('#toast-region')).toHaveAttribute(
     'data-position',
-    'right'
+    'right',
   );
   const mainTop = (await page.getByRole('main').boundingBox())!.y;
   for (const position of ['Left', 'Center']) {
@@ -1220,7 +1223,7 @@ test('settings groups local preferences and shows packaged versions and source r
     await page.keyboard.press('Escape');
     await expect(page.locator('#toast-region')).toHaveAttribute(
       'data-position',
-      position.toLowerCase()
+      position.toLowerCase(),
     );
     expect((await page.getByRole('main').boundingBox())!.y).toBe(mainTop);
   }
@@ -1228,14 +1231,14 @@ test('settings groups local preferences and shows packaged versions and source r
   await dismissHelper(page);
   await expect(page.locator('#toast-region')).toHaveAttribute(
     'data-position',
-    'center'
+    'center',
   );
   await page.screenshot({
     path: testInfo.outputPath('toast-mobile-center.png'),
   });
   await openAppPanel(page, 'Notifications');
   await expect(
-    page.getByRole('radio', { name: 'Center', exact: true })
+    page.getByRole('radio', { name: 'Center', exact: true }),
   ).toBeChecked();
   await page.keyboard.press('Escape');
 });
@@ -1262,7 +1265,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await page.goto('/');
   await dismissHelper(page);
   await expect(
-    page.getByRole('heading', { name: 'Start a watch party' })
+    page.getByRole('heading', { name: 'Start a watch party' }),
   ).toBeVisible();
   const dark = await background();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
@@ -1283,10 +1286,10 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   expect(enteringOpacity).toBeGreaterThan(0);
   expect(enteringOpacity).toBeLessThan(1);
   await expect(
-    page.getByRole('radio', { name: 'Dark', exact: true })
+    page.getByRole('radio', { name: 'Dark', exact: true }),
   ).toBeChecked();
   await expect(
-    page.getByRole('radio', { name: 'System', exact: true })
+    page.getByRole('radio', { name: 'System', exact: true }),
   ).toHaveCount(0);
   await page.getByRole('radio', { name: 'Light', exact: true }).check();
   await expect.poll(background).not.toBe(dark);
@@ -1306,7 +1309,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
     page
       .locator('.appearance-choice')
       .filter({ hasText: 'Graphite' })
-      .locator('.appearance-tile')
+      .locator('.appearance-tile'),
   ).toHaveCSS('outline-style', 'none');
   await expect.poll(accent).not.toBe(iris);
   await page.screenshot({ path: testInfo.outputPath('appearance-light.png') });
@@ -1318,7 +1321,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await expect.poll(background).toBe(light);
   await openAppearance();
   await expect(
-    page.getByRole('radio', { name: 'Light', exact: true })
+    page.getByRole('radio', { name: 'Light', exact: true }),
   ).toBeChecked();
   await expect(page.getByRole('radio', { name: 'Graphite' })).toBeChecked();
   await page.getByRole('radio', { name: 'Dark', exact: true }).check();
@@ -1330,8 +1333,8 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   });
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth
-    )
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
   ).toBe(true);
   await page.keyboard.press('Escape');
   await expect(appearance).toBeFocused();
@@ -1345,7 +1348,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await openAppearance();
   await expect(page.getByRole('radio', { name: 'Quiet teal' })).toBeChecked();
   await dialog.evaluate((node) =>
-    Promise.all(node.getAnimations().map((animation) => animation.finished))
+    Promise.all(node.getAnimations().map((animation) => animation.finished)),
   );
   await page.screenshot({
     path: testInfo.outputPath('appearance-expanded-mobile.png'),
@@ -1361,8 +1364,8 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   expect(
     await dialog.evaluate(
       (node) =>
-        node.getAnimations().filter((a) => a.playState === 'running').length
-    )
+        node.getAnimations().filter((a) => a.playState === 'running').length,
+    ),
   ).toBe(0);
   await page.keyboard.press('Escape');
   // Close during entry and reopen immediately; no stranded focus trap or stale callback.
@@ -1378,7 +1381,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await openAppearance();
   await expect(dialog).toBeVisible();
   expect(
-    await dialog.evaluate((node) => getComputedStyle(node).transform)
+    await dialog.evaluate((node) => getComputedStyle(node).transform),
   ).toBe('none');
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await expect(dialog).toHaveCount(0);
@@ -1391,14 +1394,14 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   ]) {
     await page.evaluate(
       (value) => localStorage.setItem('ovs.appearance', value),
-      invalid
+      invalid,
     );
     await page.reload();
     await dismissHelper(page);
     await expect.poll(background).toBe(dark);
     await openAppearance();
     await expect(
-      page.getByRole('radio', { name: 'Dark', exact: true })
+      page.getByRole('radio', { name: 'Dark', exact: true }),
     ).toBeChecked();
     await expect(page.getByRole('radio', { name: 'Slate blue' })).toBeChecked();
     await page.keyboard.press('Escape');
@@ -1417,7 +1420,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await page.getByRole('radio', { name: 'Light', exact: true }).check();
   await expect.poll(background).toBe(light);
   await expect(dialog.getByRole('status')).toContainText(
-    'storage is unavailable'
+    'storage is unavailable',
   );
   expect(failures).toEqual([]);
 });
@@ -1457,7 +1460,7 @@ test.describe('interface language', () => {
     };
     const dismissChineseHelper = async () => {
       await expect(
-        page.getByRole('complementary', { name: '播放助手' })
+        page.getByRole('complementary', { name: '播放助手' }),
       ).not.toContainText('正在检查', { timeout: 8000 });
       const later = page.getByRole('button', { name: '稍后', exact: true });
       if (await later.isVisible()) await later.click();
@@ -1468,10 +1471,10 @@ test.describe('interface language', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page).toHaveTitle('一起观看 · Open Video Sync');
     await expect(page.locator('header [role="status"]')).toHaveText(
-      '服务器：就绪'
+      '服务器：就绪',
     );
     expect(
-      await page.evaluate(() => localStorage.getItem('ovs.language'))
+      await page.evaluate(() => localStorage.getItem('ovs.language')),
     ).toBeNull();
     await page.screenshot({
       path: testInfo.outputPath('i18n-home-zh.png'),
@@ -1480,11 +1483,11 @@ test.describe('interface language', () => {
     await page.getByRole('button', { name: '本地文件', exact: true }).click();
     await page.getByRole('button', { name: '创建房间', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText(
-      '请先选择支持的视频文件'
+      '请先选择支持的视频文件',
     );
     await selectLanguage('en');
     await expect(page.getByRole('alert')).toContainText(
-      'Select a supported video file first.'
+      'Select a supported video file first.',
     );
     await expect(page.getByLabel('Room name', { exact: false })).toBeVisible();
     await page.reload();
@@ -1507,12 +1510,12 @@ test.describe('interface language', () => {
     await selectLanguage('zh-CN');
     await expect(page).toHaveTitle('房间 · Open Video Sync');
     await expect(
-      page.getByRole('heading', { name: title, exact: true })
+      page.getByRole('heading', { name: title, exact: true }),
     ).toBeVisible();
     await expect(page.getByTestId('media-status')).toHaveText('已就绪');
     await expect(page.getByTestId('playback-phase')).toHaveText('已暂停');
     await expect(
-      page.getByRole('button', { name: '一起播放', exact: true })
+      page.getByRole('button', { name: '一起播放', exact: true }),
     ).toBeEnabled();
     await expect(page.locator('.playback-status')).toContainText('已连接');
     expect(await page.locator('video').getAttribute('src')).toBe(videoSource);
@@ -1524,13 +1527,13 @@ test.describe('interface language', () => {
     expect(after.title).toBe(title);
     await page.getByRole('button', { name: '邀请', exact: true }).click();
     await expect(
-      page.getByRole('dialog', { name: '一起看，更精彩' })
+      page.getByRole('dialog', { name: '一起看，更精彩' }),
     ).toContainText(title);
     await expect(page.locator('.modal b')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '房间设置', exact: true }).click();
     await expect(page.getByLabel('播放控制权限', { exact: true })).toHaveValue(
-      'host'
+      'host',
     );
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 375, height: 812 });
@@ -1541,12 +1544,12 @@ test.describe('interface language', () => {
     });
     expect(
       await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth
-      )
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
     ).toBe(true);
     await openAppPanel(page, '外观');
     await expect(
-      page.getByRole('radio', { name: '石板蓝', exact: true })
+      page.getByRole('radio', { name: '石板蓝', exact: true }),
     ).toBeChecked();
     await page.keyboard.press('Escape');
     await language();
@@ -1559,15 +1562,15 @@ test.describe('interface language', () => {
     await systemLanguage(['de-DE', 'zh-CN']);
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(
-      page.getByRole('button', { name: 'Play together', exact: true })
+      page.getByRole('button', { name: 'Play together', exact: true }),
     ).toBeEnabled();
     await closeRoom(page);
     await expect(page.locator('.app-message')).toContainText(
-      `You closed “${title}”.`
+      `You closed “${title}”.`,
     );
     await systemLanguage(['zh-CN']);
     await expect(page.locator('.app-message')).toContainText(
-      `你已关闭“${title}”。`
+      `你已关闭“${title}”。`,
     );
 
     // An actual storage event from another same-origin tab updates the open page.
@@ -1577,7 +1580,7 @@ test.describe('interface language', () => {
       await other.evaluate(() => localStorage.setItem('ovs.language', 'en'));
       await expect(page.locator('html')).toHaveAttribute('lang', 'en');
       await other.evaluate(() =>
-        localStorage.setItem('ovs.language', 'invalid')
+        localStorage.setItem('ovs.language', 'invalid'),
       );
       await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     } finally {
@@ -1601,7 +1604,7 @@ test.describe('interface language', () => {
     await expect(
       page
         .getByRole('dialog', { name: 'Language', exact: true })
-        .getByRole('status')
+        .getByRole('status'),
     ).toContainText('storage is unavailable');
     await page.keyboard.press('Escape');
     await expect(page).toHaveTitle('Watch together · Open Video Sync');

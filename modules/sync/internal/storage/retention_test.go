@@ -3,12 +3,13 @@ package storage
 import (
 	"context"
 	"crypto/rand"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/identity"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/identity"
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
 )
 
 func TestExpiredSessionCleanupPreservesRoomsInvitationsAndIdentities(t *testing.T) {

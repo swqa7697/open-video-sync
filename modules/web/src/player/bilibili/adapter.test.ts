@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
+
 import { BilibiliAdapter } from './adapter';
 import { HelperBridge } from './bridge';
 
@@ -14,12 +15,12 @@ function fixture(
   lengths = [65 * 1024 * 1024 + 17],
   progressive = false,
   codec = 'avc1.640033',
-  reordered = false
+  reordered = false,
 ) {
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
   vi.stubGlobal('atob', (text: string) =>
-    Buffer.from(text, 'base64').toString('binary')
+    Buffer.from(text, 'base64').toString('binary'),
   );
   const video = document.createElement('video');
   Object.defineProperties(video, {
@@ -78,11 +79,11 @@ function fixture(
         const bytes = Buffer.from(data);
         const offset = bytes.readUInt32BE();
         const segment = segments[this.track]!.find(
-          (s) => offset >= s.offset && offset < s.offset + s.length
+          (s) => offset >= s.offset && offset < s.offset + s.length,
         )!;
         expect(offset).toBe(this.next ?? segment.offset);
         expect(
-          bytes.subarray(4).equals(Buffer.alloc(data.length - 4, offset % 251))
+          bytes.subarray(4).equals(Buffer.alloc(data.length - 4, offset % 251)),
         ).toBe(true);
         const end = offset + data.length;
         this.appends.push({ track: this.track, offset, length: data.length });
@@ -140,7 +141,7 @@ function fixture(
       expect(mime).toBe(
         buffers.length === 0
           ? `video/mp4; codecs="${codec}"`
-          : 'audio/mp4; codecs="mp4a.40.2"'
+          : 'audio/mp4; codecs="mp4a.40.2"',
       );
       const buffer = new FakeBuffer(buffers.length);
       buffers.push(buffer);
@@ -167,7 +168,7 @@ function fixture(
         return 'blob:synthetic-dash';
       }
       static revokeObjectURL(): void {}
-    }
+    },
   );
   vi.spyOn(HelperBridge.prototype, 'hello').mockResolvedValue();
   vi.spyOn(HelperBridge.prototype, 'call').mockImplementation(
@@ -208,7 +209,7 @@ function fixture(
             : Buffer.alloc(range.length, range.offset % 251);
       if (range.offset > 32) data.writeUInt32BE(range.offset);
       return { base64: data.toString('base64') };
-    }
+    },
   );
   const onError = vi.fn();
   const overlay = document.createElement('div');
@@ -350,7 +351,7 @@ test.each(['hidden at start', 'hidden during opening', 'opens while hidden'])(
       f.adapter.dispose();
       await loading.catch(() => {});
     }
-  }
+  },
 );
 
 test.each(['timeout', 'error', 'dispose'] as const)(
@@ -364,7 +365,7 @@ test.each(['timeout', 'error', 'dispose'] as const)(
     const failed = expect(f.load()).rejects.toMatchObject(
       action === 'dispose'
         ? { name: 'AbortError' }
-        : { code: 'source-buffer-failed' }
+        : { code: 'source-buffer-failed' },
     );
     try {
       await vi.advanceTimersByTimeAsync(2000);
@@ -392,7 +393,7 @@ test.each(['timeout', 'error', 'dispose'] as const)(
       f.adapter.dispose();
       await failed;
     }
-  }
+  },
 );
 
 test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or assembling fragments', async () => {
@@ -411,14 +412,14 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
     expect(f.onError).not.toHaveBeenCalled();
     for (const [track, buffer] of f.buffers.entries()) {
       expect(buffer.appends).toEqual(
-        f.ranges.filter((r) => r.track === track && r.offset > 32)
+        f.ranges.filter((r) => r.track === track && r.offset > 32),
       );
       expect(buffer.appends.reduce((sum, r) => sum + r.length, 0)).toBe(
-        f.segments[track]![0]!.length
+        f.segments[track]![0]!.length,
       );
     }
     expect(f.ranges.every((r) => r.length > 0 && r.length <= chunkSize)).toBe(
-      true
+      true,
     );
   } finally {
     f.adapter.dispose();
@@ -434,7 +435,7 @@ test('a paused high-bitrate fragment stops prefetch at the byte budget and resum
     await vi.advanceTimersByTimeAsync(2000);
     expect(f.ranges).toHaveLength(before);
     expect(
-      f.buffers[0]!.appends.reduce((sum, r) => sum + r.length, 0)
+      f.buffers[0]!.appends.reduce((sum, r) => sum + r.length, 0),
     ).toBeLessThanOrEqual(32 * 1024 * 1024);
     f.video.currentTime = 0.75;
     await f.until(() => f.ranges.length > before);
@@ -461,15 +462,15 @@ test.each(['av01.0.08M.08', 'hvc1.1.6.L120.90', 'hev1.1.6.L120.90'])(
       f.video.dispatchEvent(new Event('seeking'));
       await f.until(() =>
         f.buffers.every((b) =>
-          b.times.some(([start, end]) => start <= 1 && end > 1)
-        )
+          b.times.some(([start, end]) => start <= 1 && end > 1),
+        ),
       );
       expect(f.ranges.length).toBeGreaterThan(reads);
       expect(f.onError).not.toHaveBeenCalled();
     } finally {
       f.adapter.dispose();
     }
-  }
+  },
 );
 
 test.each(['seek', 'dispose'] as const)(
@@ -488,7 +489,7 @@ test.each(['seek', 'dispose'] as const)(
           new Promise<void>((resolve) => {
             release = resolve;
             started!();
-          })
+          }),
       );
       const tick = vi.advanceTimersByTimeAsync(250);
       await reading;
@@ -505,16 +506,16 @@ test.each(['seek', 'dispose'] as const)(
         await f.until(() => f.buffers[0]!.appends.length > before);
         expect(f.buffers[0]!.aborts).toBe(1);
         expect(f.buffers[0]!.appends[before]!.offset).toBe(
-          f.segments[0]![1]!.offset
+          f.segments[0]![1]!.offset,
         );
         await vi.advanceTimersByTimeAsync(2000);
         expect(
-          f.buffers[0]!.times.some(([start, end]) => start <= 9 && end > 9)
+          f.buffers[0]!.times.some(([start, end]) => start <= 9 && end > 9),
         ).toBe(true);
         expect(
           f.ranges.filter(
-            (r) => r.track === 0 && r.offset === f.segments[0]![1]!.offset
-          )
+            (r) => r.track === 0 && r.offset === f.segments[0]![1]!.offset,
+          ),
         ).toHaveLength(1);
       } else {
         const requests = f.ranges.length;
@@ -526,7 +527,7 @@ test.each(['seek', 'dispose'] as const)(
       release?.();
       f.adapter.dispose();
     }
-  }
+  },
 );
 
 test('full buffers retain one chunk, then evict played data and retry without downloading it again', async () => {
@@ -541,14 +542,14 @@ test('full buffers retain one chunk, then evict played data and retry without do
     await vi.advanceTimersByTimeAsync(750);
     expect(f.buffers[0]!.appends).toHaveLength(before);
     expect(f.ranges.filter((r) => r.track === 0 && r.offset > 32)).toHaveLength(
-      reads
+      reads,
     );
     f.video.currentTime = 6;
     f.full(true, true);
     await f.until(() => f.buffers[0]!.appends.length > before);
     expect(f.buffers[0]!.removals).toContainEqual([0, 5]);
     expect(f.ranges.filter((r) => r.track === 0 && r.offset > 32)).toHaveLength(
-      reads
+      reads,
     );
     expect(f.onError).not.toHaveBeenCalled();
   } finally {

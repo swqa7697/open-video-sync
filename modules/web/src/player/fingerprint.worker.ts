@@ -1,4 +1,5 @@
 import { fingerprint } from './fingerprint-core';
+
 self.onmessage = async (event: MessageEvent<unknown>) => {
   const value = event.data;
   if (

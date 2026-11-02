@@ -24,6 +24,14 @@ The development proxy forwards API, health, and WebSocket requests to Go. Keep t
 Install the Bilibili helper from the frontend development page and reload; the helper is scoped to that exact origin.
 
 Run `make help` for all commands. `make format` changes files; `make check` runs read-only format, lint, and type checks.
+The root `.prettierrc` defines shared formatting for JavaScript, TypeScript, Vue, Bash, documentation, and configuration.
+Prettier organizes JavaScript, TypeScript, and Vue imports: it sorts and combines imports and removes unused bindings.
+Place new imports in the groups defined in [AGENTS.md](AGENTS.md); Prettier preserves blank-line boundaries and organizes each group.
+Keep one blank line between the final import and the following code or its comments; `make format` fixes this and `make check` enforces it.
+The Go formatter uses `golang.org/x/tools/imports` from the locked `scripts` module to organize imports and apply `gofmt` formatting.
+VS Code applies Prettier on save and uses the Go extension's organize-imports action for Go files.
+Keep required side effects as bare imports (`import './style.css'` in JavaScript or `_` imports in Go).
+For JavaScript, TypeScript, or Vue files with intentional import evaluation order, add `// organize-imports-ignore` to preserve that order.
 `make clean`, `make uninstall`, and `make build CLEAN=1` delete repository-local `data/`. Stop the development server before using them.
 
 ## Modules and builds

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+
 import { i18n, t } from '../i18n';
 import Icon from './Icon.vue';
 
@@ -9,12 +10,12 @@ let timeout: ReturnType<typeof setTimeout> | undefined;
 const count = computed(() =>
   stars.value === undefined
     ? '—'
-    : stars.value.toLocaleString(i18n.global.locale.value)
+    : stars.value.toLocaleString(i18n.global.locale.value),
 );
 const label = computed(() =>
   stars.value === undefined
     ? t('app.githubStar')
-    : t('app.githubStarCount', { count: count.value })
+    : t('app.githubStarCount', { count: count.value }),
 );
 onMounted(async () => {
   timeout = setTimeout(() => controller.abort(), 5000);
@@ -27,7 +28,7 @@ onMounted(async () => {
         referrerPolicy: 'no-referrer',
         redirect: 'error',
         headers: { Accept: 'application/vnd.github+json' },
-      }
+      },
     );
     if (!response.ok) return;
     const data: unknown = await response.json();

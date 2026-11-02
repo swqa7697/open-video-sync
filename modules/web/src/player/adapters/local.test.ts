@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
+
 import { LocalAdapter } from './local';
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -15,7 +17,7 @@ test('a streamed seek waits for data and a newer seek or disposal cancels the ol
   const seek = (position: number) =>
     adapter.seek(position).then(
       () => outcomes.push('seeked'),
-      (error: Error) => outcomes.push(error.name)
+      (error: Error) => outcomes.push(error.name),
     );
   try {
     const first = seek(60000);
@@ -50,7 +52,7 @@ test('a disposed adapter cannot pause the replacement when an old play promise c
         return `blob:fixture-${++number}`;
       }
       static revokeObjectURL(): void {}
-    }
+    },
   );
   const video = document.createElement('video');
   let paused = true;
@@ -71,7 +73,7 @@ test('a disposed adapter cannot pause the replacement when an old play promise c
   const load = async (adapter: LocalAdapter) => {
     const promise = adapter.load(
       new File(['synthetic'], 'private.webm'),
-      new AbortController().signal
+      new AbortController().signal,
     );
     video.dispatchEvent(new Event('loadeddata'));
     await promise;
@@ -105,7 +107,7 @@ test('a stalled fetch with playable data is not buffering; waiting is until play
         return 'blob:fixture-buffering';
       }
       static revokeObjectURL(): void {}
-    }
+    },
   );
   const video = document.createElement('video');
   let readyState = 4;
@@ -118,7 +120,7 @@ test('a stalled fetch with playable data is not buffering; waiting is until play
   const adapter = new LocalAdapter(video);
   const loading = adapter.load(
     new File(['synthetic'], 'private.webm'),
-    new AbortController().signal
+    new AbortController().signal,
   );
   video.dispatchEvent(new Event('loadeddata'));
   await loading;
@@ -149,7 +151,7 @@ test.each([
           return 'blob:fixture-rejection';
         }
         static revokeObjectURL(): void {}
-      }
+      },
     );
     const video = document.createElement('video');
     Object.defineProperties(video, {
@@ -168,7 +170,7 @@ test.each([
     const adapter = new LocalAdapter(video);
     const loading = adapter.load(
       new File(['synthetic'], 'private.webm'),
-      new AbortController().signal
+      new AbortController().signal,
     );
     video.dispatchEvent(new Event('loadeddata'));
     await loading;
@@ -179,5 +181,5 @@ test.each([
     await expect(playing).rejects.toMatchObject({ name });
     expect(adapter.getState().status).toBe(status);
     adapter.dispose();
-  }
+  },
 );

@@ -8,7 +8,7 @@ Use root Make targets as the common entry point:
 
 | Command directory | Make targets                                                                              | Purpose                                                             |
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `gofmt/`          | `format`, `format-check`                                                                  | Format or check all repository Go source                            |
+| `gofmt/`          | `format`, `format-check`                                                                  | Format Go source and organize imports, or check without writing     |
 | `release/`        | `bump-major`, `bump-minor`, `bump-patch`, `release-commit`, `release-tag`                 | Prepare module versions and manage approved release Git actions     |
 | `deploy/`         | `deploy`, `deploy-status`, `deploy-logs`, `deploy-restart`, `deploy-stop`, `deploy-smoke` | Deploy and manage the complete application through SSH              |
 | `notices/`        | `build`, `image`                                                                          | Collect compiled server and frontend production dependency licenses |

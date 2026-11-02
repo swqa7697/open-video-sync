@@ -3,9 +3,10 @@ package http
 
 import (
 	"context"
-	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
 	"net/http"
 	"time"
+
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/contracts"
 )
 
 // NewHandler serves health, application routes, and the embedded frontend.

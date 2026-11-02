@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+
 import { i18n, t, type Locale } from '../i18n';
 
 export const languageOptions = ['system', 'zh-CN', 'en'] as const;

@@ -1,11 +1,13 @@
 // Fault fixtures complement, and do not replace, live Tampermonkey experiments.
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import { parseBridgeJSON } from './bridge-json.js';
 import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import vm from 'node:vm';
+
+import { parseBridgeJSON } from './bridge-json.js';
+
 const release = JSON.parse(
-  await readFile(new URL('./dist/release.json', import.meta.url), 'utf8')
+  await readFile(new URL('./dist/release.json', import.meta.url), 'utf8'),
 );
 const code = (
   await readFile(new URL('./dist/helper.user.js', import.meta.url), 'utf8')
@@ -210,7 +212,7 @@ function fixture(options = {}) {
       ...eventOptions,
     };
     await Promise.all(
-      (listeners.message || []).map((listener) => listener(event))
+      (listeners.message || []).map((listener) => listener(event)),
     );
     return replies.find((r) => r.id === number);
   }
@@ -245,23 +247,23 @@ test('exact activation and source checks reject origins, frames, and forged wind
     const f = fixture({ firefox });
     assert.equal(
       (await f.call('probe', { version: 1 })).value.build,
-      release.build
+      release.build,
     );
     assert.equal(
       await f.call('hello', { version: 1 }, { origin: 'https://evil.invalid' }),
-      undefined
+      undefined,
     );
     assert.equal(
       await f.call(
         'hello',
         { version: 1 },
-        { source: { wrappedJSObject: f.page } }
+        { source: { wrappedJSObject: f.page } },
       ),
-      undefined
+      undefined,
     );
     assert.equal(
       await f.call('hello', { version: 1 }, { data: 'x'.repeat(2049) }),
-      undefined
+      undefined,
     );
     assert.equal((await f.call('hello', { version: 1 })).ok, true);
     if (firefox) {
@@ -269,7 +271,7 @@ test('exact activation and source checks reject origins, frames, and forged wind
       f.unwrap.set(source, f.page);
       assert.equal(
         (await f.call('hello', { version: 1 }, { source })).ok,
-        true
+        true,
       );
     }
   }
@@ -292,7 +294,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   await f.call('probe', { version: 1 }, { data: JSON.stringify(inspection) });
   assert.equal(
     f.replies.find((r) => r.id === 999).value.helper,
-    release.version
+    release.version,
   );
   const preview = await f.call('preview', {
     client: inspection.client,
@@ -313,7 +315,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
         part: 1,
       })
     ).error,
-    'invalid-media'
+    'invalid-media',
   );
   assert.equal(
     (
@@ -323,7 +325,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
         part: 2,
       })
     ).error,
-    'part-unavailable'
+    'part-unavailable',
   );
   assert(!JSON.stringify(open).includes(CANARY));
   assert(!JSON.stringify(open).includes('https://'));
@@ -425,7 +427,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   }
   assert.equal(
     f.requests.filter((r) => r.url.includes('/upgcxcode/')).length,
-    1
+    1,
   );
   const switched = await f.call('open', {
     bvid: 'BV1hf4y1N75G',
@@ -437,9 +439,9 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert.equal(switched.value.tracks[0].id, 32);
   assert.equal(
     new URL(
-      f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url
+      f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url,
     ).searchParams.get('qn'),
-    '32'
+    '32',
   );
   assert(!JSON.stringify(switched).includes(CANARY));
   const unavailable = await f.call('open', {
@@ -492,7 +494,7 @@ test('unapproved primary media locations use reviewed backups without exposing U
     }
     assert.deepEqual(
       f.requests.filter((r) => r.headers.Range).map((r) => r.url),
-      [selected, selected]
+      [selected, selected],
     );
     assert(!JSON.stringify(f.replies).includes(CANARY));
     assert(!JSON.stringify(f.replies).includes('https://'));
@@ -508,7 +510,7 @@ test('unapproved primary media locations use reviewed backups without exposing U
   });
   assert.equal(
     new URL(preferred.requests.at(-1).url).hostname,
-    'cdn.bilivideo.com'
+    'cdn.bilivideo.com',
   );
   for (const backupUrl of [denied, 'invalid-backup-list', [null, 123, {}]]) {
     const f = fixture({ track: { baseUrl: denied[0], backupUrl } });
@@ -576,10 +578,10 @@ test('previews and opens select the best supported codec at the preferred or hig
     assert.equal(selected.value.quality, 32);
     assert.equal(
       selected.value.tracks[0].codec,
-      supported.includes(av1) ? av1 : avc
+      supported.includes(av1) ? av1 : avc,
     );
     const query = new URL(
-      f.requests.find((r) => r.url.includes('/playurl')).url
+      f.requests.find((r) => r.url.includes('/playurl')).url,
     ).searchParams;
     assert.equal(Number(query.get('fnval')) & 2048, 2048);
     assert.equal(Number(query.get('fnval')) & 16, 16);
@@ -638,7 +640,7 @@ test('expired ranges refresh once through the same identity and return media byt
   assert.equal((await f.call('metrics')).value.refreshes, 1);
   assert.deepEqual(
     f.requests.filter((r) => r.headers.Range).map((r) => r.url),
-    [backup, backup]
+    [backup, backup],
   );
   assert(!JSON.stringify(f.replies).includes(CANARY));
   // The same quality can acquire a preferred codec after open. Refresh must keep
@@ -664,7 +666,7 @@ test('expired ranges refresh once through the same identity and return media byt
     if (!keepOriginal) assert.equal(reply.error, 'media-changed');
     assert.equal(
       f.requests.filter((r) => r.headers.Range).length,
-      keepOriginal ? 2 : 1
+      keepOriginal ? 2 : 1,
     );
   }
 });
@@ -763,7 +765,7 @@ test('danmaku strips provider fields and executable modes while preserving plain
   assert.equal(reply.ok, true);
   assert.deepEqual(
     reply.value.comments.map((c) => c.mode),
-    [1, 5]
+    [1, 5],
   );
   assert.equal(reply.value.comments[0].text, '<script>text only</script>');
   assert(!JSON.stringify(reply).includes(CANARY));
@@ -775,7 +777,7 @@ test('bridge JSON rejects duplicate keys, nesting, invalid scalars, and oversize
     {
       duration: 10.25,
       comments: [{ time: 1.5 }],
-    }
+    },
   );
   for (const raw of [
     '{"op":"session","op":"session"}',
@@ -800,7 +802,7 @@ test('bridge JSON rejects duplicate keys, nesting, invalid scalars, and oversize
         id: 999,
         op: 'session',
       }).replace('"op":"session"', '"op":"session","op":"session"'),
-    }
+    },
   );
   assert.equal(f.requests.length, before);
 });

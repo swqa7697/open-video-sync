@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
+
+import Icon from '../../components/Icon.vue';
 import { t } from '../../i18n';
 import type { Episode, Playlist } from '../../player/bilibili/media';
 import type { Snapshot } from '../../transport/api';
 import { settingsSummary } from '../status-text';
-import Icon from '../../components/Icon.vue';
 import MembersPanel from './MembersPanel.vue';
 
 const props = defineProps<{
@@ -31,7 +32,7 @@ watch(
     await nextTick();
     if (focused)
       root.value?.querySelector<HTMLElement>('#participants-title')?.focus();
-  }
+  },
 );
 function keydown(event: KeyboardEvent): void {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -59,7 +60,7 @@ function showMembers(): void {
     (
       membersTab.value ??
       root.value?.querySelector<HTMLElement>('#participants-title')
-    )?.focus()
+    )?.focus(),
   );
 }
 defineExpose({ showMembers });

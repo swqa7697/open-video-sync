@@ -23,11 +23,11 @@ export const useAppearanceStore = defineStore('appearance', () => {
   const root = document.documentElement;
   const mode = ref<Mode>(
     appearanceModes.find((option) => option.value === root.dataset.mode)
-      ?.value ?? 'dark'
+      ?.value ?? 'dark',
   );
   const accent = ref<Accent>(
     appearanceAccents.find((option) => option.value === root.dataset.accent)
-      ?.value ?? 'slate'
+      ?.value ?? 'slate',
   );
   const saved = ref(true);
 
@@ -37,7 +37,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
     try {
       localStorage.setItem(
         'ovs.appearance',
-        JSON.stringify({ mode: mode.value, accent: accent.value })
+        JSON.stringify({ mode: mode.value, accent: accent.value }),
       );
       saved.value = true;
     } catch {

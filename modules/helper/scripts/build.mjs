@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+
 import { readVersions } from '../../../scripts/versions.mjs';
 
 const root = new URL('../', import.meta.url);
@@ -19,5 +20,5 @@ await mkdir(new URL('dist/', root), { recursive: true });
 await writeFile(new URL('dist/helper.user.js', root), body);
 await writeFile(
   new URL('dist/release.json', root),
-  `${JSON.stringify(release)}\n`
+  `${JSON.stringify(release)}\n`,
 );

@@ -9,7 +9,7 @@ export function readPlayerPreferences(): PlayerPreferences {
   const defaults = { volume: 0.5, muted: false, danmakuArea: 0.5 };
   try {
     const saved: unknown = JSON.parse(
-      localStorage.getItem('ovs.player') ?? 'null'
+      localStorage.getItem('ovs.player') ?? 'null',
     );
     if (!saved || typeof saved !== 'object') return defaults;
     const value = saved as Record<string, unknown>;

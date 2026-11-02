@@ -1,4 +1,5 @@
 import { id, integer, object, shape, text } from './api';
+
 export interface PlayerCapabilities {
   canPlay: boolean;
   canPause: boolean;
@@ -114,7 +115,7 @@ export function parseFrame(raw: string): Record<string, unknown> {
         if (
           typeof value !== 'string' ||
           /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
-            value
+            value,
           )
         )
           throw new Error('Invalid string.');
@@ -157,7 +158,7 @@ export function parseFrame(raw: string): Record<string, unknown> {
     } else if (c === '"') string();
     else {
       const token = /^(?:true|false|null|0|[1-9][0-9]*)/.exec(
-        raw.slice(at)
+        raw.slice(at),
       )?.[0];
       if (!token) throw new Error('Invalid value.');
       at += token.length;

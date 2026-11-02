@@ -18,7 +18,7 @@ export async function mockRepository(context: BrowserContext): Promise<void> {
     route.fulfill({
       json: { stargazers_count: 1234 },
       headers: { 'Access-Control-Allow-Origin': '*' },
-    })
+    }),
   );
 }
 

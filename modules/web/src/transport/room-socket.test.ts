@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
+
 import { translate } from '../i18n';
 import { FakeSocket, roomFixture } from '../test-support/room';
 import {
@@ -51,7 +52,7 @@ test.each([
     expect(ended).toEqual([reason]);
     expect(FakeSocket.instances).toHaveLength(1);
     socket.dispose();
-  }
+  },
 );
 
 test('unreachable and refused upgrades keep the backoff and explain repeated refusals once', async () => {
@@ -70,7 +71,7 @@ test('unreachable and refused upgrades keep the backoff and explain repeated ref
   expect(FakeSocket.instances).toHaveLength(5);
   expect(ended).toEqual([]);
   expect(
-    errors.filter((e) => e.includes('connection is refused'))
+    errors.filter((e) => e.includes('connection is refused')),
   ).toHaveLength(1);
   // Admission clears the refusal explanation; a welcomed connection that drops reconnects without probing.
   FakeSocket.instances.at(-1)!.welcome();
@@ -115,7 +116,7 @@ test.each([
     expect(socket.active).toBe(false);
     expect(FakeSocket.instances).toHaveLength(1);
     socket.dispose();
-  }
+  },
 );
 
 test('disposal aborts an in-flight refusal probe and ignores its answer', async () => {
@@ -135,7 +136,7 @@ test('disposal aborts an in-flight refusal probe and ignores its answer', async 
     (signal) => {
       signals.push(signal);
       return probe;
-    }
+    },
   );
   pending.start();
   FakeSocket.instances.at(-1)!.close();

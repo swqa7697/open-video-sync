@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
+
 import { i18n } from '../../i18n';
 import HelperNotice from './HelperNotice.vue';
 
@@ -38,8 +39,8 @@ test.each([
             version: '1.2.0',
             protocol: 1,
             build: deployedBuild,
-          })
-        )
+          }),
+        ),
     );
     handshake.mockResolvedValue({
       ...installed,
@@ -58,20 +59,20 @@ test.each([
     try {
       await flushPromises();
       expect(wrapper.get('[role="dialog"]').text()).toContain(
-        'OVS 播放助手需要更新'
+        'OVS 播放助手需要更新',
       );
       expect(wrapper.get('[role="dialog"]').text()).toContain(
-        `已安装 ${installed.helper} · 需要 1.2.0`
+        `已安装 ${installed.helper} · 需要 1.2.0`,
       );
       expect(wrapper.get('aside a').text()).toBe('更新助手');
       const checks = handshake.mock.calls.length;
       i18n.global.locale.value = 'en';
       await flushPromises();
       expect(wrapper.get('[role="dialog"]').text()).toContain(
-        'needs an update'
+        'needs an update',
       );
       expect(wrapper.get('[role="dialog"]').text()).toContain(
-        `Installed ${installed.helper} · Required 1.2.0`
+        `Installed ${installed.helper} · Required 1.2.0`,
       );
       expect(wrapper.get('aside a').text()).toBe('Update helper');
       expect(handshake.mock.calls).toHaveLength(checks);
@@ -97,5 +98,5 @@ test.each([
     } finally {
       wrapper.unmount();
     }
-  }
+  },
 );

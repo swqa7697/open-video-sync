@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { t } from '../../i18n';
-
 import type { RoomSettings } from '../../transport/contracts';
+
 const settings = defineModel<RoomSettings>({ required: true });
 defineProps<{ disabled: boolean }>();
 </script>

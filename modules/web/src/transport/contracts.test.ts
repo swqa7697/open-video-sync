@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vite-plus/test';
+
 import {
   decodeMedia,
   decodeProfilePatch,
@@ -30,17 +31,17 @@ test.each(fixtures)(
     };
     if (valid) expect(decode()).toEqual(input);
     else expect(decode).toThrow('invalid input');
-  }
+  },
 );
 
 test('rejects values that JSON cannot represent before serialization', () => {
   const media = decodeMedia(
     fixtures.find((fixture) => fixture.name === 'local matching metadata')!
-      .input
+      .input,
   );
   for (const durationMs of [NaN, Infinity, -1, undefined]) {
     expect(() => decodeMedia({ ...media, durationMs })).toThrow(
-      'invalid input'
+      'invalid input',
     );
   }
 });

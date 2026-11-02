@@ -30,7 +30,7 @@ const input: Partial<Record<FailureContext, { text: Message; field: string }>> =
 // Presentation mapping only: each failure class gets one distinct, actionable message.
 export function describeFailure(
   reason: unknown,
-  context: FailureContext = 'other'
+  context: FailureContext = 'other',
 ): Failure {
   const correctable = input[context];
   if (

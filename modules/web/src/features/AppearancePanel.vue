@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { t } from '../i18n';
-
 import Icon from '../components/Icon.vue';
+import { t } from '../i18n';
 import {
-  appearanceModes,
   appearanceAccents,
+  appearanceModes,
   useAppearanceStore,
 } from '../stores/appearance';
 

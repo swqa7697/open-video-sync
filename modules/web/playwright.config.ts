@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+
 import type { BrowserOptions } from './playwright-fixtures';
 
 const host = process.env.OVS_E2E_HOST ?? '127.0.0.1';
@@ -32,7 +33,7 @@ export default defineConfig<BrowserOptions>({
       OVS_LISTEN_ADDR: `${host}:18080`,
       OVS_PUBLIC_ORIGIN: baseURL,
       OVS_DATA_DIR: fileURLToPath(
-        new URL('../../.misc/e2e/data', import.meta.url)
+        new URL('../../.misc/e2e/data', import.meta.url),
       ),
     },
   },

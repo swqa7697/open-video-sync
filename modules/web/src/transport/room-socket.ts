@@ -1,4 +1,5 @@
 import { message, type Message } from '../i18n';
+import { ClockEstimator } from '../sync/clock';
 import {
   APIError,
   decodeSnapshot,
@@ -10,9 +11,8 @@ import {
   text,
   type Snapshot,
 } from './api';
-import { parseFrame } from './protocol-values';
-import { ClockEstimator } from '../sync/clock';
 import { decodeMedia, type MediaDescriptor } from './contracts';
+import { parseFrame } from './protocol-values';
 
 export interface Command {
   v: 2;
@@ -43,7 +43,7 @@ export interface SocketEvents {
   lease(active: boolean): void;
   error(
     message: Message | '',
-    options?: { reload?: boolean; recheck?: boolean }
+    options?: { reload?: boolean; recheck?: boolean },
   ): void;
   pending(command: Command | undefined): void;
   ended(reason: EndReason): void;
@@ -71,7 +71,7 @@ export class RoomSocket {
     private roomId: string,
     private events: SocketEvents,
     private probe: (signal: AbortSignal) => Promise<ProbeResult> = () =>
-      Promise.resolve('unreachable')
+      Promise.resolve('unreachable'),
   ) {}
   start(): void {
     this.stopped = false;
@@ -158,7 +158,7 @@ export class RoomSocket {
     this.events.status(
       reason === 'replaced'
         ? message('socket.otherPage')
-        : message('socket.ended')
+        : message('socket.ended'),
     );
     this.events.ended(reason);
   }
@@ -191,7 +191,7 @@ export class RoomSocket {
             c0,
             integer(p.serverReceiveMs),
             integer(p.serverSendMs),
-            Math.ceil(performance.now())
+            Math.ceil(performance.now()),
           );
       }
       return;
@@ -263,7 +263,7 @@ export class RoomSocket {
                 ? 'session_ended'
                 : result === 'room_unavailable'
                   ? 'removed'
-                  : 'revoked'
+                  : 'revoked',
             );
           });
       }

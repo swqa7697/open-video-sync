@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useId } from 'vue';
-import { t } from '../i18n';
+
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import { vKeyboardBoundary } from '../components/overlay-keyboard';
+import { t } from '../i18n';
+import AboutPanel from './AboutPanel.vue';
 import AppearancePanel from './AppearancePanel.vue';
 import LanguagePanel from './LanguagePanel.vue';
-import AboutPanel from './AboutPanel.vue';
 import NotificationPanel from './NotificationPanel.vue';
 
 const menuId = useId();
@@ -21,7 +22,7 @@ const options = [
   { value: 'about', label: 'common.about', icon: 'info' },
 ] as const;
 const title = computed(() =>
-  t(options.find((option) => option.value === panel.value)!.label)
+  t(options.find((option) => option.value === panel.value)!.label),
 );
 
 function positionMenu(): void {

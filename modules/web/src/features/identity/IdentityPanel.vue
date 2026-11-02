@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { t } from '../../i18n';
-
 import { nextTick, ref, watch } from 'vue';
+
+import { t } from '../../i18n';
 import { useIdentityStore } from '../../stores/identity';
+
 const props = defineProps<{ busy: boolean; invalid: boolean }>();
 const emit = defineEmits<{ rename: [name: string]; forget: []; edit: [] }>();
 const identity = useIdentityStore();
@@ -15,7 +16,7 @@ watch(
   (value) => {
     name.value = value ?? '';
   },
-  { immediate: true }
+  { immediate: true },
 );
 // Opening waits for idle; Cancel always works and returns focus to the trigger.
 async function confirm(open: boolean): Promise<void> {
@@ -32,7 +33,7 @@ watch(
   () => identity.session?.identity.identityId,
   () => {
     confirming.value = false;
-  }
+  },
 );
 </script>
 <template>

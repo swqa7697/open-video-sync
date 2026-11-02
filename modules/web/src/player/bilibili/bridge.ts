@@ -1,7 +1,8 @@
-import { message, LocalizedError, type Message } from '../../i18n';
-import release from '@ovs/helper/release';
-export const helperRelease = release;
 import { parseBridgeJSON } from '@ovs/helper/bridge-json';
+import release from '@ovs/helper/release';
+import { LocalizedError, message, type Message } from '../../i18n';
+
+export const helperRelease = release;
 // All privileged values remain in the helper. This bridge owns one player channel.
 type FailureStatus = 'access_denied' | 'unsupported' | 'error';
 interface FailureGroup {
@@ -132,7 +133,7 @@ interface Pending {
 export class HelperBridge {
   private readonly client = Array.from(
     crypto.getRandomValues(new Uint8Array(16)),
-    (b) => b.toString(16).padStart(2, '0')
+    (b) => b.toString(16).padStart(2, '0'),
   ).join('');
   private sequence = 0;
   private pending = new Map<number, Pending>();
@@ -175,12 +176,12 @@ export class HelperBridge {
           typeof reply.error === 'string' &&
             /^[a-z0-9-]{1,64}$/.test(reply.error)
             ? reply.error
-            : 'invalid-reply'
+            : 'invalid-reply',
         );
       }
     } catch (error) {
       pending.reject(
-        error instanceof HelperError ? error : new HelperError('invalid-reply')
+        error instanceof HelperError ? error : new HelperError('invalid-reply'),
       );
     }
   };
@@ -207,7 +208,7 @@ export class HelperBridge {
         reply = await this.call(
           probe ? 'probe' : 'hello',
           { version: release.protocol },
-          500
+          500,
         );
         break;
       } catch (error) {
@@ -242,7 +243,7 @@ export class HelperBridge {
   call(
     op: string,
     args: Record<string, unknown> = {},
-    deadline = 15000
+    deadline = 15000,
   ): Promise<unknown> {
     if (this.closed)
       return Promise.reject(new DOMException('Cancelled', 'AbortError'));
@@ -264,8 +265,8 @@ export class HelperBridge {
           new HelperError(
             op === 'hello' || op === 'probe'
               ? 'helper-missing'
-              : 'bridge-timeout'
-          )
+              : 'bridge-timeout',
+          ),
         );
       }, deadline);
       this.pending.set(id, { resolve, reject, timer });
@@ -284,7 +285,7 @@ export class HelperBridge {
           op: 'dispose',
           generation,
         }),
-        location.origin
+        location.origin,
       );
     this.closed = true;
     window.removeEventListener('message', this.receive);

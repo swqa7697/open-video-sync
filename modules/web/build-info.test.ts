@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
+
 import { readBuildInfo } from '../../scripts/versions.mjs';
 
 afterEach(() => vi.unstubAllEnvs());

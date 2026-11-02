@@ -1,0 +1,20 @@
+{
+  "trailingComma": "all",
+  "printWidth": 80,
+  "tabWidth": 2,
+  "semi": true,
+  "singleQuote": true,
+  "plugins": [
+    "./modules/web/node_modules/prettier-plugin-organize-imports/index.js",
+    "./modules/web/node_modules/prettier-plugin-sh/lib/index.js"
+  ],
+  "overrides": [
+    {
+      "files": ["*.jsonc", "**/tsconfig*.json", ".vscode/*.json"],
+      "options": {
+        "parser": "jsonc",
+        "trailingComma": "none"
+      }
+    }
+  ]
+}

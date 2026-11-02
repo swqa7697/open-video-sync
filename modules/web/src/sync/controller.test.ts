@@ -1,15 +1,16 @@
 import { expect, test } from 'vite-plus/test';
+
+import type {
+  PlayerAdapter,
+  PlayerObservation,
+} from '../player/adapters/local';
+import { defaultSettings, type Snapshot } from '../transport/api';
 import { ClockEstimator, nextSyncQuality } from './clock';
 import {
   DriftController,
   reportedReadiness,
   SyncController,
 } from './controller';
-import { defaultSettings, type Snapshot } from '../transport/api';
-import type {
-  PlayerAdapter,
-  PlayerObservation,
-} from '../player/adapters/local';
 
 test('four-timestamp calibration rejects invalid samples and expires after suspension', () => {
   const clock = new ClockEstimator();
@@ -18,7 +19,7 @@ test('four-timestamp calibration rejects invalid samples and expires after suspe
   expect(clock.add(100, 200, 200, 2201)).toBe(false);
   for (let i = 0; i < 5; i++)
     expect(clock.add(i * 100, i * 100 + 105, i * 100 + 106, i * 100 + 11)).toBe(
-      true
+      true,
     );
   expect(clock.estimate(5)).toBeUndefined();
   expect(clock.estimate(500)).toEqual({ offsetMs: 100, uncertaintyMs: 5 });
@@ -31,7 +32,7 @@ test('four-timestamp calibration rejects invalid samples and expires after suspe
   let quality = nextSyncQuality(
     { quality: 'calibrating', degradedSince: undefined },
     good,
-    100
+    100,
   );
   expect(quality.quality).toBe('calibrated');
   quality = nextSyncQuality(quality, poor, 200);
@@ -114,7 +115,7 @@ class Player implements PlayerAdapter {
 const timeline = (
   phase: 'playing' | 'paused',
   revision: number,
-  position = 1000
+  position = 1000,
 ): Snapshot => ({
   roomId: 'a'.repeat(32),
   epoch: 'b'.repeat(32),
@@ -168,7 +169,7 @@ test.each([false, true])(
       timeline('playing', 1),
       { offsetMs: 0, uncertaintyMs: 1 },
       0,
-      true
+      true,
     );
     await Promise.resolve();
     expect(p.pendingSeek).toBeDefined();
@@ -178,10 +179,10 @@ test.each([false, true])(
       timeline('paused', 2, 0),
       { offsetMs: 0, uncertaintyMs: 1 },
       0,
-      true
+      true,
     );
     p.pendingSeek?.(
-      failed ? new Error('Superseded seek timed out') : undefined
+      failed ? new Error('Superseded seek timed out') : undefined,
     );
     await original;
     await c.reconcile(
@@ -189,11 +190,11 @@ test.each([false, true])(
       timeline('paused', 2, 0),
       { offsetMs: 0, uncertaintyMs: 1 },
       250,
-      true
+      true,
     );
     expect(p.getState().paused).toBe(true);
     expect(p.getState().positionMs).toBe(0);
-  }
+  },
 );
 test('loss of connection cancels pending playback application', async () => {
   const c = new SyncController(),
@@ -204,7 +205,7 @@ test('loss of connection cancels pending playback application', async () => {
     timeline('playing', 1),
     { offsetMs: 0, uncertaintyMs: 1 },
     0,
-    true
+    true,
   );
   await Promise.resolve();
   await c.reconcile(p, timeline('playing', 1), undefined, 50, false);
@@ -225,7 +226,7 @@ test.each(['loading', 'access_denied'] as const)(
       snapshot,
       { offsetMs: 0, uncertaintyMs: 1 },
       1000,
-      true
+      true,
     );
     expect(p.getState().paused).toBe(true);
     p.state.status = 'ready';
@@ -235,11 +236,11 @@ test.each(['loading', 'access_denied'] as const)(
       snapshot,
       { offsetMs: 0, uncertaintyMs: 1 },
       1000,
-      true
+      true,
     );
     expect(p.getState().paused).toBe(false);
     expect(p.getState().positionMs).toBe(2000);
-  }
+  },
 );
 test('readiness needs a usable clock estimate, and a degraded one does not block waits', () => {
   const base = {
@@ -254,14 +255,14 @@ test('readiness needs a usable clock estimate, and a degraded one does not block
     reportedReadiness({
       ...base,
       estimate: { offsetMs: 0, uncertaintyMs: 400 },
-    })
+    }),
   ).toBe('ready');
   expect(
     reportedReadiness({
       ...base,
       estimate: { offsetMs: 0, uncertaintyMs: 40 },
       seeking: true,
-    })
+    }),
   ).toBe('loading');
   expect(
     reportedReadiness({
@@ -269,7 +270,7 @@ test('readiness needs a usable clock estimate, and a degraded one does not block
       estimate: { offsetMs: 0, uncertaintyMs: 40 },
       seeking: true,
       status: 'buffering',
-    })
+    }),
   ).toBe('buffering');
   expect(
     reportedReadiness({
@@ -277,16 +278,16 @@ test('readiness needs a usable clock estimate, and a degraded one does not block
       estimate: undefined,
       seeking: true,
       status: 'buffering',
-    })
+    }),
   ).toBe('loading');
   expect(
     reportedReadiness({
       ...base,
       estimate: { offsetMs: 0, uncertaintyMs: 40 },
       matched: false,
-    })
+    }),
   ).toBe('mismatch');
   expect(
-    reportedReadiness({ ...base, estimate: undefined, pending: true })
+    reportedReadiness({ ...base, estimate: undefined, pending: true }),
   ).toBe('loading');
 });

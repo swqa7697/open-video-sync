@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+
 import { checkReadiness, type Readiness } from '../transport/health';
 
 // Readiness reads in-memory server flags only. Callers re-check after failures and reconnects.

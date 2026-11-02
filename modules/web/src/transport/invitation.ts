@@ -17,7 +17,7 @@ export function consumeInvitation(): string | undefined {
   history.replaceState(
     pending ? { pendingInvitation: pending } : null,
     '',
-    location.pathname + location.search
+    location.pathname + location.search,
   );
   return pending;
 }
