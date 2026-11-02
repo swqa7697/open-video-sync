@@ -43,7 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 	image := flag.String("image", defaultImage, "application image")
-	caddy := flag.String("caddy", "caddy:2", "Caddy image")
+	caddy := flag.String("caddy", "caddy:alpine", "Caddy image")
 	flag.Parse()
 	if err := run(*image, *caddy); err != nil {
 		fmt.Fprintln(os.Stderr, err)

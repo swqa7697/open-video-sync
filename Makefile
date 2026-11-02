@@ -10,7 +10,7 @@ CHANNEL ?= dev
 VERBOSE ?= 0
 CLEAN ?= 0
 IMAGE ?= ovs:$(shell node scripts/versions.mjs image-tag)
-CADDY_IMAGE ?= caddy:2
+CADDY_IMAGE ?= caddy:alpine
 export CHANNEL VERBOSE CLEAN IMAGE CADDY_IMAGE
 export HOST URL DEPLOY_DIR PROXY PROXY_NETWORK TRUSTED_PROXIES PROXY_SUBNET
 

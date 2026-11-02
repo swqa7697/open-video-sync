@@ -34,7 +34,7 @@ published ports. The tool does not install Docker or change host firewall rules.
 
 The command detects the remote CPU architecture, builds the application locally,
 and streams the image through SSH to `docker image load`. Managed HTTPS also
-transfers the pinned Caddy image. The remote machine does not need a registry
+transfers the Caddy image. The remote machine does not need a registry
 account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
 needs access to build dependencies, images, and Compose release downloads.
 
@@ -63,7 +63,8 @@ are reused. If Compose is missing, the tool downloads version 5.6.1 locally,
 checks its official SHA-256 checksum, and installs the remote user CLI plugin.
 An existing incompatible plugin is preserved; a deployment-local executable is
 used instead. Automatically installed versions are fixed and do not self-update.
-Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
+Caddy uses `caddy:alpine` to select the latest Alpine variant without a version pin.
+The image is pulled locally on each managed HTTPS deployment.
 
 ### Configuration
 
@@ -173,7 +174,7 @@ silence an ownership conflict. The original manual recipes below remain supporte
 
 `make deploy-smoke` uses a disposable SSH server and a privileged, isolated Docker
 daemon. It never mounts the host Docker socket into the fixture. Prepare the OVS
-image with `make image` and pull `caddy:2.11.7-alpine` first. The test requires SSH
+image with `make image` and pull `caddy:alpine` first. The test requires SSH
 client tools and network access for fixture and Compose downloads. It checks
 Compose bootstrap, image transfer, updates, data preservation, failed preparation,
 stop/restart, and IP HTTPS/WebSocket with a test CA. Test CA injection exists only
@@ -221,7 +222,7 @@ Run Caddy separately on a private network shared only with OVS. Give Caddy a sta
 docker network create --subnet 172.30.0.0/24 --ip-range 172.30.0.128/25 ovs-proxy
 docker run -d --name caddy --network ovs-proxy --ip 172.30.0.2 -p 80:80 -p 443:443 \
   -v "$PWD/deploy/Caddyfile.container.example:/etc/caddy/Caddyfile:ro" \
-  -v caddy-data:/data -v caddy-config:/config caddy:2
+  -v caddy-data:/data -v caddy-config:/config caddy:alpine
 OVS_PUBLIC_ORIGIN=https://watch.example.com OVS_TRUSTED_PROXIES=172.30.0.2/32 \
   docker compose -f deploy/compose.yaml -f deploy/compose.caddy.yaml up -d --wait
 ```
@@ -278,7 +279,7 @@ Preserve `/data` across upgrades and use a binary compatible with its schema. Pl
 OVS has no backup/restore command or automated downgrade workflow.
 
 `make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
-`make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:2` and a local certificate authority.
+`make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:alpine` and a local certificate authority.
 It checks HTTPS pages, the `Secure` cookie, the helper scope, trusted-proxy client addresses, a same-epoch socket reconnect after `caddy reload --force`, and a clean stop.
 Both checks retain sanitized evidence under ignored `.misc/` and remove their containers, networks, and volumes.
 Certificate issuance and DNS belong to the operator's Caddy installation.
