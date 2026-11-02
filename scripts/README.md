@@ -42,4 +42,4 @@ make web-build
 go -C scripts run ./notices -sync ../modules/sync
 ```
 
-`scripts/build.sh` and the root Dockerfile supply both paths when they collect the complete application notices.
+`scripts/build.sh` and [deploy/Dockerfile](../deploy/Dockerfile) supply both paths when they collect the complete application notices.

@@ -268,7 +268,7 @@ func runTarget(ctx context.Context, action string, target sshTarget, publicClien
 	if err != nil {
 		return fmt.Errorf("read build metadata: %w", err)
 	}
-	if err := runVisible(ctx, "docker", "buildx", "build", "--pull", "--load", "--platform", "linux/"+arch, "--build-arg", "CHANNEL="+channel, "--build-arg", "OVS_BUILD_INFO="+buildInfo, "-t", c.Image, "."); err != nil {
+	if err := runVisible(ctx, "docker", "buildx", "build", "--file", "deploy/Dockerfile", "--pull", "--load", "--platform", "linux/"+arch, "--build-arg", "CHANNEL="+channel, "--build-arg", "OVS_BUILD_INFO="+buildInfo, "-t", c.Image, "."); err != nil {
 		return fmt.Errorf("build image: %w", err)
 	}
 	images := []string{c.Image}

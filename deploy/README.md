@@ -1,7 +1,11 @@
-# Deployment examples
+# Deployment
 
-These examples deploy the current OVS application, including room and playback features.
+This directory contains the OVS application image build and deployment examples.
 The [design](../specs/DESIGN.md) keeps playback in memory and stores persistent metadata in `/data`.
+
+The [Dockerfile](Dockerfile) builds all three modules using the repository root as its build context.
+[Dockerfile.dockerignore](Dockerfile.dockerignore) defines the files included in that context.
+`make image`, `make deploy`, and the Compose example select this Dockerfile automatically.
 
 ## Remote deployment
 

@@ -3,6 +3,7 @@ services:
     image: ${IMAGE:?Set IMAGE from the combined sync/web/helper versions in versions.toml}
     build:
       context: ..
+      dockerfile: deploy/Dockerfile
       pull: true
     environment:
       OVS_PUBLIC_ORIGIN: ${OVS_PUBLIC_ORIGIN:-http://127.0.0.1:8080}

@@ -9,6 +9,6 @@ vendor/
 
 # The shell plugin also recognizes these files; keep their existing syntax.
 Dockerfile
-.dockerignore
+*.dockerignore
 .gitignore
 .prettierignore

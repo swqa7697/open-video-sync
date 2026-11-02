@@ -37,8 +37,7 @@
 | `scripts`                                                          | Independent Go automation module, cross-module builds, releases, deployment and smoke checks |
 | `tests`, `specs`                                                   | Application journeys and shared contracts                                                    |
 | `versions.toml`                                                    | Sole release-version source for sync, web, and helper                                        |
-| `Dockerfile`, `.dockerignore`                                      | Complete application image build across all three modules                                    |
-| `deploy`                                                           | Shared application deployment examples, Compose and Caddy configuration                      |
+| `deploy`                                                           | Complete application image build, deployment examples, Compose and Caddy configuration       |
 
 - Organize backend code by identity and room capabilities. Separate domain rules, application orchestration, and infrastructure where needed; do not create empty layers.
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
