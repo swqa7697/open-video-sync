@@ -426,6 +426,27 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await advance(1);
     expect(hidden()).toBe(true);
     expect(document.activeElement).toBe(stage.element);
+    // Window activation restores the same DOM focus without pointer activity.
+    for (const outside of [false, true]) {
+      if (outside) await stage.trigger('pointerleave', pointer);
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('focus'));
+      await stage.trigger('focusin', { relatedTarget: null });
+      expect(hidden()).toBe(true);
+      expect(document.activeElement).toBe(stage.element);
+    }
+    // Switching applications must not count as native Tab navigation.
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey']) {
+      await stage.trigger('keydown', { key: 'Tab', [modifier]: true });
+      expect(hidden()).toBe(true);
+    }
+    (seek.element as HTMLInputElement).focus();
+    await flushPromises();
+    expect(hidden()).toBe(false);
+    stage.element.focus();
+    await stage.trigger('pointerenter', pointer);
+    await advance(3000);
+    expect(hidden()).toBe(true);
     for (const key of ['ArrowUp', 'ArrowDown', 'm', 'm', 'z']) {
       await stage.trigger('keydown', { key });
       expect(hidden()).toBe(true);

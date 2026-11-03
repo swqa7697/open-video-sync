@@ -758,6 +758,22 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.screenshot({
       path: testInfo.outputPath('controls-playing-idle.png'),
     });
+    // Headless pages do not lose OS focus. Replay window focus restoration on
+    // the retained native focus target, with the pointer inside and outside.
+    for (const outside of [false, true]) {
+      if (outside) await page.mouse.move(0, 0);
+      await player.evaluate((element) => {
+        window.dispatchEvent(new Event('blur'));
+        window.dispatchEvent(new Event('focus'));
+        element.dispatchEvent(
+          new FocusEvent('focusin', { bubbles: true, relatedTarget: null }),
+        );
+      });
+      await expect(player).toBeFocused();
+      await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    }
+    await player.dispatchEvent('keydown', { key: 'Tab', altKey: true });
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
     await expect(page.locator('.volume-feedback')).toHaveText('70');

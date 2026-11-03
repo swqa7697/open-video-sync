@@ -240,6 +240,17 @@ const controlsPinned = computed(
 let idleTimer: ReturnType<typeof setTimeout> | undefined,
   seekReleaseTimer: ReturnType<typeof setTimeout> | undefined;
 let pointerOutside = false;
+let windowFocusTarget: Element | null = null;
+function rememberWindowFocus(): void {
+  windowFocusTarget = document.activeElement;
+}
+function focusStage(event: FocusEvent): void {
+  // Restoring the browser window repeats focusin on its retained active element.
+  const restored =
+    event.relatedTarget === null && event.target === windowFocusTarget;
+  windowFocusTarget = null;
+  if (!restored) wake();
+}
 function hideControls(): void {
   clearTimeout(idleTimer);
   idle.value = !controlsPinned.value;
@@ -251,6 +262,7 @@ function wake(): void {
     idleTimer = setTimeout(hideControls, 3000);
 }
 function pointerActivity(): void {
+  windowFocusTarget = null;
   pointerOutside = false;
   wake();
 }
@@ -1136,7 +1148,14 @@ function keyboard(event: KeyboardEvent): void {
     event.metaKey
   )
     return;
+  windowFocusTarget = null;
   const key = event.key.toLowerCase();
+  if (
+    key === 'tab' &&
+    event.target instanceof Node &&
+    stage.value?.contains(event.target)
+  )
+    wake();
   if (key === 'escape' && document.fullscreenElement) {
     event.preventDefault();
     if (!event.repeat) void fullscreen();
@@ -1383,6 +1402,7 @@ onMounted(() => {
     void sample();
   }, 250);
   document.addEventListener('visibilitychange', visibility);
+  window.addEventListener('blur', rememberWindowFocus);
   document.addEventListener('keydown', keyboard);
   document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('pointerdown', outsideQuality);
@@ -1397,6 +1417,7 @@ onUnmounted(() => {
   clearTimeout(commandDelayTimer);
   handoff = undefined;
   document.removeEventListener('visibilitychange', visibility);
+  window.removeEventListener('blur', rememberWindowFocus);
   document.removeEventListener('keydown', keyboard);
   document.removeEventListener('fullscreenchange', fullscreenChanged);
   releaseFullscreenKeyboard();
@@ -1429,8 +1450,7 @@ onUnmounted(() => {
       @pointerenter="pointerActivity"
       @pointermove="pointerActivity"
       @pointerdown="pointerActivity"
-      @focusin="wake"
-      @keydown.tab="wake"
+      @focusin="focusStage"
       @pointerleave="leaveStage"
     >
       <video
