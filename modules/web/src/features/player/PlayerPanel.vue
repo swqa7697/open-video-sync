@@ -58,6 +58,11 @@ import type {
   QuickCommand,
   VideoSelection,
 } from '../commands/search';
+import {
+  ImportHandoff,
+  type ImportRequest,
+  type ImportResult,
+} from '../import-handoff/handoff';
 import MediaPicker from '../media/MediaPicker.vue';
 import { phaseText, readinessText } from '../status-text';
 import DanmakuControl from './DanmakuControl.vue';
@@ -601,6 +606,8 @@ const transport = new RoomSocket(
         }, 3000);
     },
     result(command, accepted) {
+      if (command.commandId === importedCommand?.requestId)
+        finishImport({ status: accepted ? 'accepted' : 'rejected' });
       const attempt = episodeSelection.value;
       if (command.commandId !== episodeCommandId || !attempt) return;
       episodeCommandId = undefined;
@@ -619,6 +626,88 @@ const transport = new RoomSocket(
   },
   probe,
 );
+// Keep the original command after a timeout so a retry cannot select media twice.
+let importedCommand:
+  | {
+      requestId: string;
+      result?: ImportResult;
+      waiting?: Promise<ImportResult>;
+      resolve?: (result: ImportResult) => void;
+      timer?: ReturnType<typeof setTimeout>;
+    }
+  | undefined;
+function finishImport(result: ImportResult): void {
+  const pending = importedCommand;
+  if (!pending) return;
+  if (result.status !== 'outcome_unknown') pending.result = result;
+  clearTimeout(pending.timer);
+  pending.resolve?.(result);
+  delete pending.waiting;
+  delete pending.resolve;
+}
+function importMedia(request: ImportRequest): Promise<ImportResult> {
+  if (disposed) return Promise.resolve({ status: 'unavailable' });
+  const previous = importedCommand?.requestId === request.requestId;
+  if (previous && importedCommand?.result)
+    return Promise.resolve(importedCommand.result);
+  if (previous && importedCommand?.waiting) return importedCommand.waiting;
+  if (!previous) {
+    const s = current.value;
+    if (!host.value || !transport.active || !transport.connected)
+      return Promise.resolve({ status: 'unavailable' });
+    if (pendingCommand.value) return Promise.resolve({ status: 'busy' });
+    if (
+      s.roomId !== request.target.roomId ||
+      s.epoch !== request.target.epoch ||
+      s.mediaGeneration !== request.target.mediaGeneration ||
+      s.revision !== request.target.expectedRevision
+    )
+      return Promise.resolve({ status: 'stale' });
+    importedCommand = { requestId: request.requestId };
+  } else if (pendingCommand.value?.commandId !== request.requestId) {
+    return Promise.resolve({
+      status:
+        current.value.epoch !== request.target.epoch
+          ? 'stale'
+          : 'outcome_unknown',
+    });
+  }
+  const pending = importedCommand!;
+  const waiting = new Promise<ImportResult>((resolve) => {
+    pending.resolve = resolve;
+    pending.timer = setTimeout(
+      () => finishImport({ status: 'outcome_unknown' }),
+      12000,
+    );
+  });
+  pending.waiting = waiting;
+  if (previous) transport.resolveUncertain();
+  else if (
+    !transport.command(
+      { media: request.media },
+      {
+        commandId: request.requestId,
+        epoch: request.target.epoch,
+        mediaGeneration: request.target.mediaGeneration,
+        expectedRevision: request.target.expectedRevision,
+      },
+    )
+  )
+    finishImport({ status: 'rejected' });
+  return waiting;
+}
+const importHandoff = new ImportHandoff({
+  room: () =>
+    host.value && transport.active && transport.connected
+      ? {
+          roomId: current.value.roomId,
+          epoch: current.value.epoch,
+          mediaGeneration: current.value.mediaGeneration,
+          expectedRevision: current.value.revision,
+        }
+      : undefined,
+  execute: importMedia,
+});
 function clearMedia(): void {
   clearSeekPreview();
   endSeek();
@@ -1185,7 +1274,14 @@ const episodeActions = computed<EpisodeActions>(() => {
     },
   };
 });
-defineExpose({ commands, playlist, canReplace, selectEpisode, episodeActions });
+defineExpose({
+  commands,
+  playlist,
+  canReplace,
+  selectEpisode,
+  episodeActions,
+  importMedia,
+});
 async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
   if (
@@ -1513,6 +1609,8 @@ onMounted(() => {
 });
 onUnmounted(() => {
   disposed = true;
+  finishImport({ status: 'outcome_unknown' });
+  importHandoff.dispose();
   clearInterval(timer);
   clearTimeout(idleTimer);
   clearTimeout(volumeFeedbackTimer);

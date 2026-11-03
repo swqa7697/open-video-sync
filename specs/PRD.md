@@ -72,7 +72,8 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Local Files: Play user-selected files locally in the browser -- exchange media-matching metadata and playback state only
 - Bilibili Integration: Use a Tampermonkey companion userscript on the OVS page to access Bilibili from each participant's browser; watch video and danmaku in the OVS page's own player
   - Each Bilibili participant installs the helper; local-file playback does not require it
-  - The helper runs only on explicitly configured OVS pages, never on Bilibili pages or embedded frames
+  - The playback bridge runs only on explicitly configured OVS pages, never on Bilibili pages or embedded frames
+  - Offer one shared Watch in OVS entry on top-level Bilibili video and bangumi pages. Combine installed instance helpers into a menu of exact OVS origins. Import the current video and part or episode for preview and explicit creation or replacement in a room the current identity hosts. Keep room information and mutations inside OVS. Prefer the existing room tab for replacement; offer explicit opening and connection takeover when no tab responds. Keep unconfirmed submissions tied to their original request, and start replacements paused at zero.
 - Platform Sessions: Leave video-platform authentication and credentials on the participant's device
   - Exclude cookies, login tokens, and credential-bearing playback URLs from synchronization messages
 - **Bilibili Validation**: Before finalizing the Tampermonkey-assisted adapter, verify direct browser media delivery, playback control, state reporting, danmaku, and platform-session behavior in a separate proof of concept on HTTP and HTTPS OVS pages

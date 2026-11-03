@@ -28,6 +28,13 @@ import {
   type FailureContext,
 } from './features/failures';
 import IdentityPanel from './features/identity/IdentityPanel.vue';
+import {
+  ImportHandoff,
+  type ImportRequest,
+} from './features/import-handoff/handoff';
+import ImportPanel from './features/import/ImportPanel.vue';
+import { clearImport, type ImportEntry } from './features/import/entry';
+import type { ImportOutcome } from './features/import/types';
 import HelperNotice from './features/media/HelperNotice.vue';
 import MediaPicker from './features/media/MediaPicker.vue';
 import PlayerPanel from './features/player/PlayerPanel.vue';
@@ -50,10 +57,21 @@ import {
   type Invitation,
   type Snapshot,
 } from './transport/api';
-import { decodeRoomSettings, type RoomSettings } from './transport/contracts';
+import {
+  decodeRoomSettings,
+  type MediaDescriptor,
+  type RoomSettings,
+} from './transport/contracts';
 import type { EndReason } from './transport/room-socket';
 
-const props = defineProps<{ initialInvitation?: string | undefined }>();
+const props = defineProps<{
+  initialInvitation?: string | undefined;
+  initialImport?: ImportEntry | undefined;
+}>();
+const importEntry = ref(props.initialImport);
+const importClient = new ImportHandoff();
+let importAttempt: { signature: string; request: ImportRequest } | undefined;
+let openImport: { snapshot: Snapshot; media: MediaDescriptor } | undefined;
 const connection = useConnectionStore(),
   identity = useIdentityStore();
 const language = useLanguageStore();
@@ -104,7 +122,7 @@ const pendingLink = ref(props.initialInvitation);
 const commands = computed<QuickCommand[]>(() => [
   ...(room.value
     ? [...(player.value?.commands ?? []), ...(roomPanel.value?.commands ?? [])]
-    : identity.session
+    : identity.session && !importEntry.value
       ? [
           {
             id: 'video',
@@ -190,9 +208,11 @@ watchEffect(() => {
       ? t('app.titleRoom')
       : !identity.session && !busy.value
         ? t('app.titleConnection')
-        : pendingLink.value
-          ? t('app.titleJoin')
-          : t('common.watchTogether')
+        : importEntry.value
+          ? t('import.title')
+          : pendingLink.value
+            ? t('app.titleJoin')
+            : t('common.watchTogether')
   } · Open Video Sync`;
 });
 const api = (
@@ -330,11 +350,20 @@ async function submitAttempt(): Promise<void> {
 async function create(): Promise<void> {
   const selection = await picker.value?.prepare();
   if (!selection) return;
+  await createSelected(
+    selection,
+    title.value.trim() || t('app.defaultRoomName'),
+  );
+}
+async function createSelected(
+  selection: { media: MediaDescriptor; file?: File },
+  roomTitle: string,
+): Promise<void> {
   initialFile = selection.file;
   attempt.value = {
     path: '/rooms',
     payload: {
-      title: title.value.trim() || t('app.defaultRoomName'),
+      title: roomTitle,
       settings: { ...draftSettings.value },
       media: selection.media,
     },
@@ -343,6 +372,81 @@ async function create(): Promise<void> {
     sent: false,
   };
   await submitAttempt();
+}
+async function replaceImported(
+  snapshot: Snapshot,
+  media: MediaDescriptor,
+): Promise<ImportOutcome> {
+  if (media.kind !== 'bilibili') return { status: 'failed' };
+  const signature = JSON.stringify({ snapshot, media });
+  if (!importAttempt || importAttempt.signature !== signature) {
+    const target = await importClient.discover(
+      snapshot.roomId,
+      controller.signal,
+    );
+    if (controller.signal.aborted || !importEntry.value || room.value)
+      return { status: 'failed' };
+    if (!target) return { status: 'unavailable' };
+    if (
+      target.epoch !== snapshot.epoch ||
+      target.mediaGeneration !== snapshot.mediaGeneration ||
+      target.expectedRevision !== snapshot.revision
+    )
+      return { status: 'stale' };
+    importAttempt = {
+      signature,
+      request: { requestId: requestKey(), target, media },
+    };
+  }
+  const { request } = importAttempt;
+  const result = await importClient.submit(
+    request.target,
+    request.media,
+    request.requestId,
+    controller.signal,
+  );
+  if (result.status !== 'outcome_unknown') importAttempt = undefined;
+  if (result.status === 'accepted') {
+    clearImport();
+    return { status: 'accepted' };
+  }
+  return {
+    status:
+      result.status === 'outcome_unknown'
+        ? 'uncertain'
+        : result.status === 'unavailable' || result.status === 'stale'
+          ? result.status
+          : 'failed',
+  };
+}
+async function openImported(
+  snapshot: Snapshot,
+  media: MediaDescriptor,
+): Promise<ImportOutcome> {
+  if (media.kind !== 'bilibili') return { status: 'failed' };
+  const latest = decodeSnapshot(await api(`/rooms/${snapshot.roomId}`));
+  if (controller.signal.aborted || !importEntry.value || room.value)
+    return { status: 'failed' };
+  if (
+    latest.epoch !== snapshot.epoch ||
+    latest.mediaGeneration !== snapshot.mediaGeneration ||
+    latest.revision !== snapshot.revision
+  )
+    return { status: 'stale' };
+  openImport = { snapshot, media };
+  try {
+    await open(snapshot.roomId, true);
+  } catch (reason) {
+    openImport = undefined;
+    throw reason;
+  }
+  // open() installs the room across an async call; read its resulting state again.
+  const opened = room.value as Snapshot | undefined;
+  if (!opened || opened.roomId !== snapshot.roomId) {
+    openImport = undefined;
+    return { status: 'failed' };
+  }
+  return { status: 'accepted' };
 }
 function invitationInput(): { linkSecret: string } | { code: string } {
   const raw = code.value.trim();
@@ -465,6 +569,9 @@ async function share(): Promise<void> {
 async function back(): Promise<void> {
   leaveConfirmation.value = false;
   room.value = undefined;
+  openImport = undefined;
+  importEntry.value = undefined;
+  importAttempt = undefined;
   invitation.value = undefined;
   history.replaceState(null, '', '/');
   initialFile = undefined;
@@ -516,13 +623,50 @@ async function forget(): Promise<void> {
   invitation.value = undefined;
   attempt.value = undefined;
   pendingLink.value = undefined;
+  importEntry.value = undefined;
+  importAttempt = undefined;
+  openImport = undefined;
   history.replaceState(null, '', '/');
   await identity.bootstrap(controller.signal);
   message.value = msg('app.newIdentity');
   void focus('identity-title');
 }
-function connectionChanged(): void {
+function connectionChanged(connected: boolean): void {
   recheck();
+  const pending = openImport;
+  if (!connected || !pending || !player.value) return;
+  openImport = undefined;
+  const media = pending.media;
+  if (media.kind !== 'bilibili') return;
+  void nextTick(async () =>
+    player.value?.importMedia({
+      requestId: requestKey(),
+      target: {
+        tabId: requestKey(),
+        roomId: pending.snapshot.roomId,
+        epoch: pending.snapshot.epoch,
+        mediaGeneration: pending.snapshot.mediaGeneration,
+        expectedRevision: pending.snapshot.revision,
+      },
+      media,
+    }),
+  ).then((result) => {
+    if (!result || controller.signal.aborted) return;
+    if (result.status === 'accepted') {
+      importEntry.value = undefined;
+      message.value = msg('import.replaced');
+    } else {
+      failure.value = {
+        text: msg(
+          result.status === 'outcome_unknown'
+            ? 'import.uncertain'
+            : result.status === 'stale'
+              ? 'import.stale'
+              : 'import.failed',
+        ),
+      };
+    }
+  });
 }
 function visibility(): void {
   if (document.visibilityState === 'visible' && connection.status !== 'ready')
@@ -549,6 +693,9 @@ function goHome(): void {
     return;
   }
   pendingLink.value = undefined;
+  clearImport();
+  importEntry.value = undefined;
+  importAttempt = undefined;
   history.replaceState(null, '', '/');
   focusMain();
 }
@@ -601,6 +748,7 @@ onMounted(() => {
   });
 });
 onUnmounted(() => {
+  importClient.dispose();
   stopLanguage();
   document.removeEventListener('keydown', commandShortcut);
   document.removeEventListener('pointerdown', pointerInput, true);
@@ -763,6 +911,24 @@ onUnmounted(() => {
             "
           />
         </RoomPanel>
+        <ImportPanel
+          v-else-if="importEntry"
+          :initial-import="importEntry"
+          :disabled="busy || !!attempt"
+          :replace="replaceImported"
+          :open-room="openImported"
+          @create="
+            (selection) =>
+              perform(
+                () =>
+                  createSelected(
+                    selection,
+                    selection.title || t('app.defaultRoomName'),
+                  ),
+                'create',
+              )
+          "
+        />
         <div v-else class="home">
           <HomeIntro />
           <section class="create-card" aria-labelledby="create-title">

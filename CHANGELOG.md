@@ -8,6 +8,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Added
 
+- Import the current Bilibili video, part, or bangumi episode through a small OVS action in Bilibili's video toolbar, with a shared multi-site menu that follows the page's colors. Preview it in OVS, then create a room or confirm replacing a room you host. Keep the existing room tab active, recover unconfirmed requests without duplicate replacement, and offer explicit opening when no room tab responds. Replacements start paused at zero. Requires the updated helper.
 - Browse and switch episodes in Quick actions with `@`, filter titles with `@keywords`, or find an exact original list number with `@12`. Keep current-episode markers and member browsing, restrict switching to the host, and retain the search with an error when switching fails.
 - Support Bilibili bangumi SS/EP identifiers and links. Start season links at the first main episode, let the host switch episodes, and preserve the exact episode for joining and reloading members. Each participant uses their own platform access; restricted or trial-only playback stays unready. Requires the updated playback helper.
 - Show a subtle, translucent play icon while paused and a rotating ring during loading and buffering. Respect reduced motion and keep playback controls and clicks available.

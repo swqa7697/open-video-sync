@@ -2,8 +2,10 @@
 // @name OVS Bilibili {{ORIGIN}}
 // @namespace ovs-bilibili-{{ORIGIN}}
 // @version {{HELPER_VERSION}}
-// @description Browser-local Bilibili playback for one OVS instance
+// @description Browser-local Bilibili playback and video import for one OVS instance
 // @match {{MATCH}}
+// @match https://www.bilibili.com/video/*
+// @match https://www.bilibili.com/bangumi/play/*
 // @noframes
 // @run-at document-start
 // @sandbox JavaScript
@@ -19,12 +21,18 @@
 
 (() => {
   'use strict';
+  const ORIGIN = '{{ORIGIN}}';
+  const pageWindow = unsafeWindow;
+  if (pageWindow.top !== pageWindow.self) return;
+  if (location.origin === 'https://www.bilibili.com') {
+    /* OVS_BILIBILI_LAUNCHER */
+    mountBilibiliLauncher(ORIGIN);
+    return;
+  }
+  if (location.origin !== ORIGIN) return;
   /* OVS_BRIDGE_JSON */
   /* OVS_MEDIA_CODECS */
   /* OVS_MEDIA_DELIVERY */
-  const ORIGIN = '{{ORIGIN}}';
-  const pageWindow = unsafeWindow;
-  if (location.origin !== ORIGIN || pageWindow.top !== pageWindow.self) return;
   const MAX = 256 * 1024,
     DEADLINE = 12000,
     RESOLUTION_DEADLINE = 24000;

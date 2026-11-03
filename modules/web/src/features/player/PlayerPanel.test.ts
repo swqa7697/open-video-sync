@@ -7,6 +7,7 @@ import { FakeSocket, roomFixture } from '../../test-support/room';
 import { decodeSnapshot } from '../../transport/api';
 import { decodeReadiness } from '../../transport/protocol-values';
 import type { EpisodeActions } from '../commands/search';
+import type { ImportRequest, ImportResult } from '../import-handoff/handoff';
 import PlayerPanel from './PlayerPanel.vue';
 
 vi.mock('../../player/fingerprint', () => ({
@@ -1050,4 +1051,97 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   expect(document.activeElement?.id).toBe('player-title');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
+});
+
+test('imported media retains its guarded command until the matching server acknowledgement', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockRejectedValue(
+    new Error('Synthetic playback unavailable'),
+  );
+  const snapshot = decodeSnapshot(roomFixture);
+  const wrapper = mount(PlayerPanel, {
+    props: { room: snapshot },
+    attachTo: document.body,
+  });
+  const panel = wrapper.vm as unknown as {
+    importMedia(request: ImportRequest): Promise<ImportResult>;
+  };
+  const request: ImportRequest = {
+    requestId: 'a'.repeat(32),
+    target: {
+      tabId: 'f'.repeat(32),
+      roomId: snapshot.roomId,
+      epoch: snapshot.epoch,
+      mediaGeneration: snapshot.mediaGeneration,
+      expectedRevision: snapshot.revision,
+    },
+    media: {
+      kind: 'bilibili',
+      bvid: 'BV1hf4y1N75G',
+      cid: '1',
+      part: 1,
+      durationMs: 10000,
+    },
+  };
+  try {
+    fakeMedia(wrapper.get('video').element);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.welcome();
+    await flushPromises();
+    expect(
+      await panel.importMedia({
+        ...request,
+        target: { ...request.target, mediaGeneration: 1 },
+      }),
+    ).toEqual({ status: 'stale' });
+    const commands = () =>
+      socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((frame) => frame.type === 'media.select');
+    expect(commands()).toHaveLength(0);
+    let finished = false;
+    const importing = panel.importMedia(request).then((result) => {
+      finished = true;
+      return result;
+    });
+    const command = commands()[0];
+    expect(command).toMatchObject({
+      commandId: request.requestId,
+      epoch: request.target.epoch,
+      mediaGeneration: request.target.mediaGeneration,
+      expectedRevision: request.target.expectedRevision,
+      payload: { media: request.media },
+    });
+    expect(command.payload.autoPlay).toBeUndefined();
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      media: request.media,
+      revision: 2,
+      mediaGeneration: 1,
+      playback: { ...snapshot.playback, phase: 'paused' },
+    });
+    await flushPromises();
+    expect(finished).toBe(false);
+    socket.frame('command.result', {
+      commandId: 'e'.repeat(32),
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    await flushPromises();
+    expect(finished).toBe(false);
+    socket.frame('command.result', {
+      commandId: request.requestId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(await importing).toEqual({ status: 'accepted' });
+    expect(await panel.importMedia(request)).toEqual({ status: 'accepted' });
+    expect(commands()).toHaveLength(1);
+  } finally {
+    wrapper.unmount();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 });

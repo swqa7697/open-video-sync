@@ -253,7 +253,7 @@ Probe codec support using the actual player. Do not transcode or promise unteste
 
 ### 8.1 Selected path
 
-Use an OVS-page-only Tampermonkey helper and OVS-owned player. Do not use an iframe, platform tab, server resolver, or CORS proxy.
+Use an OVS-page-only Tampermonkey playback bridge and OVS-owned player. Do not use an iframe, platform tab, server resolver, or CORS proxy for playback. A separate launcher branch on top-level Bilibili video and bangumi pages only imports video identifiers into OVS.
 Each participant installs the helper and uses their own platform access. Support ordinary on-demand video, multipart selection, and text danmaku.
 Implement DASH AV1, HEVC, and AVC video with AAC audio. Require each exact codec string to pass the participant's MediaSource support check before selection. At the remembered playable quality or highest playable quality, prefer AV1, then HEVC (`hvc1` or `hev1`), then AVC (`avc1` or `avc3`). Share the video codec allowlist between helper selection and frontend metadata validation. Keep codec selection browser-local.
 Validate AVC, AV1, and HEVC separately against live platform delivery. Live streams, paid episodic formats, DRM, other codecs, and mobile require separate scope and validation.
@@ -261,6 +261,7 @@ Validate AVC, AV1, and HEVC separately against live platform delivery. Live stre
 ### 8.2 Helper scope and trust
 
 Generate instance-specific rules from validated `OVS_PUBLIC_ORIGIN`. Check exact scheme, host, port, and top-level window at runtime.
+Also match top-level `https://www.bilibili.com/video/*` and `/bangumi/play/*` for a lightweight launcher branch. Exit that branch before initializing the playback bridge. Share one versioned DOM menu across installed helpers and deduplicate entries by complete OVS origin. Each entry retains its installation origin and reads the current page URL on activation, including SPA changes. Transfer only a validated BV/part, EP, or SS selection through `/import#v=1&bvid=<BV>&part=<part>` or the corresponding `episodeId`/`seasonId` field with `part=1`. Do not transfer provider queries, platform responses, credentials, or room information through the Bilibili page.
 During frontend development, Vite serves the local generated helper and matching release metadata for the explicit `http://127.0.0.1:5173` and `http://localhost:5173` origins. Scope each download to its exact development origin; map only those origins in the API and WebSocket proxies. Production distribution continues to use `OVS_PUBLIC_ORIGIN`.
 Use narrow `@match`, `@noframes`, and reviewed `@connect` destinations. No arbitrary page-supplied URLs, headers, methods, cookies, or remote executable code.
 The versioned helper has explicit missing/incompatible/permission/access errors. Distribute it with OVS and keep updates manual and reviewable.
@@ -402,6 +403,18 @@ Drop slow clients and resynchronize instead of blocking a room. Never silently d
 No administrator-facing tuning dashboard or metrics endpoint is required.
 
 ## 12. User experience, packaging, and operations
+
+### Bilibili video imports
+
+Consume and scrub import fragments before mounting provider components. Strictly validate the bounded versioned selection, reject duplicate or unknown fields, and retain validated input only in the current history entry across helper installation and reload. Clear pending input after success or departure. Opening or reloading an import link performs no room mutation.
+
+Preview through the existing browser-local helper. List authorized rooms through HTTP, offer only the caller's host entries, and fetch the selected snapshot without connecting a room socket. Show the new video and target room before explicit replacement confirmation. Create rooms through the existing idempotent creation path with host controls and waiting enabled.
+
+After confirmation, discover the active same-origin host tab through `BroadcastChannel`. Use a versioned, strictly decoded message shape with bounded pending requests and in-memory receipts. Target its tab ID, room ID, epoch, media generation, and revision; submit through that tab's existing `media.select` socket path with the import request ID as command ID. The socket and server remain the authorization boundary. Only the matching server command result confirms success. Preserve the original envelope for uncertain retries, including after reconnect, and never reinterpret a timeout as permission to submit a fresh command or take over another tab. Reject changed room state and require refreshed confirmation. Release channels, listeners, and timers on disposal.
+
+If discovery has no response or cross-tab messaging is unavailable, explain connection takeover and offer explicit opening in the import tab. Recheck the confirmed snapshot before opening, then use the same guarded selection path after the room connection is ready. Keep this fallback usable on ordinary HTTP. A replacement persists the selected descriptor and starts everyone paused at zero through the existing media-generation and readiness reset.
+
+### Application interface
 
 The main journey is select media on home, create or automatically redeem an invitation, share, and watch.
 Home has inline Bilibili/local selection and invitation input, with no room directory. Room management uses accessible dialogs. The dark player integrates seeking, replay, volume, mute, fullscreen, danmaku, and real playable quality selection. Do not expose playback speed.

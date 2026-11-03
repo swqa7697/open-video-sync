@@ -10,9 +10,11 @@ pnpm --dir modules/helper run test
 ```
 
 The build reads `versions.helper` from root `versions.toml`. It writes `dist/helper.user.js` and `dist/release.json`.
-The script includes the bridge parser, codec allowlist, release version, and a SHA-256 build fingerprint. The frontend checks the fingerprint during handshake, including when development changes keep the same release version. Origin and match placeholders remain for the server to scope at delivery.
+The script includes the launcher, bridge parser, codec allowlist, release version, and a SHA-256 build fingerprint. The frontend checks the fingerprint during handshake, including when development changes keep the same release version. Origin and match placeholders remain for the server to scope at delivery.
 The package exports `@ovs/helper/bridge-json`, `@ovs/helper/media-codecs`, and `@ovs/helper/release` for the frontend.
 Generated metadata is not a second version source. The bridge protocol version remains separate from the release version.
+
+On top-level `https://www.bilibili.com/video/` and `/bangumi/play/` pages, the helper adds a small **OVS** action to the video's action bar. Use Bilibili's neutral text, surface, and hover colors; show the site menu only after activation. A compact neutral floating fallback remains available until an action bar appears. Follow delayed rendering and action-bar replacement during in-page navigation, dismiss the menu on outside input or Escape, and keep it within the viewport. Helpers from different OVS instances share one menu and register distinct full origins. Selecting a site opens its `/import` page with only the current BV and part, episode ID, or season ID in the fragment. The launcher reads the current URL at activation, so Bilibili navigation within the page uses the selected video. The Bilibili branch never registers the privileged playback bridge or makes provider requests. Install the updated helper from each OVS instance to add its menu entry.
 
 Candidate video previews use a read-only bridge operation. They return bounded metadata without taking playback ownership or creating a stream handle. Closing or rejecting a preview preserves the current player's requests and handle.
 

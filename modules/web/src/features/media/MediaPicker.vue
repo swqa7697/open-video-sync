@@ -20,7 +20,11 @@ import {
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
 
-const props = defineProps<{ disabled?: boolean; roomId: string }>();
+const props = defineProps<{
+  disabled?: boolean;
+  roomId: string;
+  bilibiliOnly?: boolean;
+}>();
 const source = ref<'bilibili' | 'local'>('bilibili');
 const url = ref(''),
   part = ref(1),
@@ -65,12 +69,13 @@ function drop(event: DragEvent): void {
   choose(event.dataTransfer?.files[0]);
 }
 async function prepare(): Promise<
-  { media: MediaDescriptor; file?: File } | undefined
+  { media: MediaDescriptor; file?: File; title?: string } | undefined
 > {
   if (working.value) return;
   if (prepared)
     return {
       media: prepared,
+      ...(summary.value ? { title: summary.value } : {}),
       ...(source.value === 'local' && file ? { file } : {}),
     };
   working.value = true;
@@ -128,7 +133,11 @@ async function prepare(): Promise<
     }
     if (signal.aborted) return;
     prepared = media;
-    return { media, ...(source.value === 'local' && file ? { file } : {}) };
+    return {
+      media,
+      ...(summary.value ? { title: summary.value } : {}),
+      ...(source.value === 'local' && file ? { file } : {}),
+    };
   } catch (reason) {
     if (!signal.aborted)
       error.value = errorMessage(reason, 'media.prepareFailed');
@@ -167,7 +176,12 @@ defineExpose({ prepare, selectBilibili, selectLocal });
 </script>
 <template>
   <div class="media-picker">
-    <div class="source-tabs" role="group" :aria-label="t('media.source')">
+    <div
+      v-if="!bilibiliOnly"
+      class="source-tabs"
+      role="group"
+      :aria-label="t('media.source')"
+    >
       <button
         type="button"
         :aria-pressed="source === 'bilibili'"

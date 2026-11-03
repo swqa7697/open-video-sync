@@ -45,13 +45,13 @@ export async function openQuickActions(page: Page, query = ''): Promise<void> {
   await page.bringToFront();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.keyboard.press('Control+k');
-  const input = page.getByRole('combobox');
+  const input = page.locator('.command-palette').getByRole('combobox');
   await expect(input).toBeFocused();
   if (query) await input.fill(query);
 }
 export async function runQuickAction(page: Page, query: string): Promise<void> {
   await openQuickActions(page, query);
-  await page.getByRole('combobox').press('Enter');
+  await page.locator('.command-palette').getByRole('combobox').press('Enter');
   await expect(page.locator('.command-palette')).toHaveCount(0);
 }
 export async function createLocalRoom(
