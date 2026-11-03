@@ -6,6 +6,7 @@ import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 import { FakeSocket, roomFixture } from '../../test-support/room';
 import { decodeSnapshot } from '../../transport/api';
 import { decodeReadiness } from '../../transport/protocol-values';
+import type { EpisodeActions } from '../commands/search';
 import PlayerPanel from './PlayerPanel.vue';
 
 vi.mock('../../player/fingerprint', () => ({
@@ -602,6 +603,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     playlist: Playlist | undefined;
     canReplace: boolean;
     selectEpisode: (episode: Episode) => Promise<void>;
+    episodeActions: EpisodeActions;
   };
   try {
     fakeMedia(wrapper.get('video').element);
@@ -621,6 +623,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     await flushPromises();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
     expect(panel.canReplace).toBe(false);
+    expect(panel.episodeActions.selection?.phase).toBe('loading');
     expect(panel.playlist).toEqual(playlist);
     finish?.();
     await selecting;
@@ -637,6 +640,42 @@ test('host episode selection publishes resolved metadata and retains the list du
       durationMs: 10000,
     });
     expect(JSON.stringify(commands)).not.toContain('playlist');
+    expect(panel.episodeActions.selection?.phase).toBe('pending');
+    socket.frame('command.result', {
+      commandId: 'f'.repeat(32),
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('pending');
+    socket.frame('command.result', {
+      commandId: commands[0].commandId,
+      accepted: false,
+      revision: null,
+      error: {
+        code: 'storage_unavailable',
+        message: 'Synthetic storage failure',
+        requestId: 'f'.repeat(32),
+        retryable: true,
+      },
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('failed');
+    expect(panel.episodeActions.selection?.error).toContain('save');
+    const retry = panel.selectEpisode(second);
+    await flushPromises();
+    finish?.();
+    await retry;
+    const retried = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'media.select')
+      .at(-1);
+    socket.frame('command.result', {
+      commandId: retried.commandId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('accepted');
     socket.frame('room.snapshot', {
       ...snapshot,
       revision: 2,
@@ -654,6 +693,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toBeUndefined();
+    expect(panel.episodeActions.selection).toBeUndefined();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
   } finally {
     wrapper.unmount();

@@ -3,7 +3,11 @@ import { nextTick, ref, watch } from 'vue';
 
 import Icon from '../../components/Icon.vue';
 import { t } from '../../i18n';
-import type { Episode, Playlist } from '../../player/bilibili/media';
+import {
+  sameEpisode,
+  type Episode,
+  type Playlist,
+} from '../../player/bilibili/media';
 import type { Snapshot } from '../../transport/api';
 import { settingsSummary } from '../status-text';
 import MembersPanel from './MembersPanel.vue';
@@ -50,9 +54,7 @@ function keydown(event: KeyboardEvent): void {
 function current(episode: Episode): boolean {
   return (
     props.room.media?.kind === 'bilibili' &&
-    props.room.media.bvid === episode.bvid &&
-    props.room.media.part === episode.part &&
-    props.room.media.episodeId === episode.episodeId
+    sameEpisode(props.room.media, episode)
   );
 }
 function showMembers(): void {

@@ -67,6 +67,11 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(input).not.toHaveAttribute('aria-activedescendant');
   await input.press('Enter');
   await expect(palette).toBeVisible();
+  await input.fill('@');
+  await expect(palette.getByRole('option')).toHaveCount(0);
+  await expect(palette.getByRole('status')).toContainText('Join a room');
+  await input.press('Enter');
+  await expect(palette).toBeVisible();
   await input.fill('$ https://example.com/private-video');
   await expect(palette.getByRole('option')).toHaveCount(0);
   await expect(palette.getByRole('status')).toBeVisible();

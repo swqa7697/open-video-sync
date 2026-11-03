@@ -867,6 +867,8 @@ onUnmounted(() => {
     <CommandPalette
       v-if="paletteOpen"
       :commands="commands"
+      :episodes="player?.episodeActions"
+      :context="room?.roomId ?? ''"
       @close="paletteOpen = false"
     />
     <Modal

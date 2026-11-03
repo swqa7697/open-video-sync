@@ -28,7 +28,12 @@ import {
 import { LocalAdapter, type PlayerAdapter } from '../../player/adapters/local';
 import { BilibiliAdapter } from '../../player/bilibili/adapter';
 import { HelperError } from '../../player/bilibili/bridge';
-import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
+import {
+  sameEpisode,
+  type Episode,
+  type MediaInfo,
+  type Playlist,
+} from '../../player/bilibili/media';
 import { localFingerprint } from '../../player/fingerprint';
 import {
   readPlayerPreferences,
@@ -48,7 +53,11 @@ import {
   type EndReason,
   type ProbeResult,
 } from '../../transport/room-socket';
-import type { QuickCommand, VideoSelection } from '../commands/search';
+import type {
+  EpisodeActions,
+  QuickCommand,
+  VideoSelection,
+} from '../commands/search';
 import MediaPicker from '../media/MediaPicker.vue';
 import { phaseText, readinessText } from '../status-text';
 import DanmakuControl from './DanmakuControl.vue';
@@ -335,6 +344,12 @@ const qualityName = (value: number): string =>
 const waitTimedOut = ref(false),
   replaced = ref(false);
 const current = ref(props.room);
+const episodeSelection = shallowRef<{
+  episode: Episode;
+  phase: 'loading' | 'pending' | 'accepted' | 'failed';
+  error?: Message;
+}>();
+let episodeCommandId: string | undefined;
 watch([isPlaying, controlsPinned], () => {
   if (pointerOutside) hideControls();
   else if (!idle.value || controlsPinned.value) wake();
@@ -344,12 +359,7 @@ watch(
   (media) => {
     if (
       media?.kind !== 'bilibili' ||
-      !playlist.value?.episodes.some(
-        (episode) =>
-          episode.bvid === media.bvid &&
-          episode.part === media.part &&
-          episode.episodeId === media.episodeId,
-      )
+      !playlist.value?.episodes.some((episode) => sameEpisode(media, episode))
     )
       playlist.value = undefined;
   },
@@ -484,6 +494,20 @@ const transport = new RoomSocket(
   props.room.roomId,
   {
     snapshot(snapshot) {
+      const incoming = snapshot.media;
+      const selectedEpisode = episodeSelection.value?.episode;
+      if (
+        snapshot.epoch !== current.value.epoch ||
+        (snapshot.mediaGeneration !== current.value.mediaGeneration &&
+          !(
+            incoming?.kind === 'bilibili' &&
+            selectedEpisode &&
+            sameEpisode(incoming, selectedEpisode)
+          ))
+      ) {
+        episodeSelection.value = undefined;
+        episodeCommandId = undefined;
+      }
       if (snapshot.epoch !== current.value.epoch) {
         sync.invalidate();
         lastReport = '';
@@ -557,12 +581,36 @@ const transport = new RoomSocket(
       if (!value && document.activeElement === commandRecovery.value)
         stage.value?.focus({ preventScroll: true });
       pendingCommand.value = value;
+      const attempt = episodeSelection.value;
+      if (value?.type === 'media.select' && attempt?.phase === 'loading') {
+        episodeCommandId = value.commandId;
+        episodeSelection.value = { ...attempt, phase: 'pending' };
+      } else if (!value && episodeCommandId && attempt) {
+        episodeCommandId = undefined;
+        episodeSelection.value = {
+          ...attempt,
+          phase: 'failed',
+          error: roomError.value || message('socket.stale'),
+        };
+      }
       commandDelayed.value = false;
       // Only the command round trip owns this timer. Media loading and readiness do not.
       if (value)
         commandDelayTimer = setTimeout(() => {
           commandDelayed.value = true;
         }, 3000);
+    },
+    result(command, accepted) {
+      const attempt = episodeSelection.value;
+      if (command.commandId !== episodeCommandId || !attempt) return;
+      episodeCommandId = undefined;
+      episodeSelection.value = {
+        ...attempt,
+        phase: accepted ? 'accepted' : 'failed',
+        ...(!accepted
+          ? { error: roomError.value || message('episodes.failed') }
+          : {}),
+      };
     },
     ended(reason) {
       if (reason === 'replaced') replaced.value = true;
@@ -819,7 +867,8 @@ async function chooseBilibili(
     );
     if (signal.aborted || generation !== selectionGeneration) return;
     streamInfo.value = local.mediaInfo;
-    playlist.value = local.mediaInfo?.playlist;
+    playlist.value =
+      local.mediaInfo?.playlist ?? (autoPlay ? playlist.value : undefined);
     videoTitle.value = local.mediaInfo?.title ?? selected.bvid;
     descriptor.value = media;
     subscription = local.subscribe(() => {
@@ -959,23 +1008,20 @@ async function replaceMedia(): Promise<void> {
 async function selectEpisode(episode: Episode): Promise<void> {
   if (
     !canReplace.value ||
-    !playlist.value?.episodes.some(
-      (entry) =>
-        entry.bvid === episode.bvid &&
-        entry.part === episode.part &&
-        entry.episodeId === episode.episodeId,
-    )
+    !playlist.value?.episodes.some((entry) => sameEpisode(entry, episode))
   )
     return;
   const media = current.value.media;
-  if (
-    media?.kind === 'bilibili' &&
-    media.bvid === episode.bvid &&
-    media.part === episode.part &&
-    media.episodeId === episode.episodeId
-  )
-    return;
+  if (media?.kind === 'bilibili' && sameEpisode(media, episode)) return;
+  const attempt = { episode, phase: 'loading' as const };
+  episodeSelection.value = attempt;
   await chooseBilibili(episode, true, undefined, true);
+  if (!disposed && episodeSelection.value === attempt)
+    episodeSelection.value = {
+      ...attempt,
+      phase: 'failed',
+      error: error.value || roomError.value || message('episodes.failed'),
+    };
 }
 function confirmMedia(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) {
@@ -1110,7 +1156,36 @@ const commands = computed<QuickCommand[]>(() => [
       ]
     : []),
 ]);
-defineExpose({ commands, playlist, canReplace, selectEpisode });
+const episodeActions = computed<EpisodeActions>(() => {
+  const media = current.value.media;
+  return {
+    playlist: playlist.value,
+    current:
+      media?.kind === 'bilibili'
+        ? { ...media, title: videoTitle.value }
+        : undefined,
+    canSelect: canReplace.value,
+    note: !host.value
+      ? t('episodes.viewerHint')
+      : controlNote.value ||
+        (loading.value ? t('common.preparingVideo') : t('episodes.hostHint')),
+    unavailable: !media
+      ? t('episodes.noMedia')
+      : media.kind === 'local'
+        ? t('episodes.localOnly')
+        : t('episodes.noList'),
+    selection: episodeSelection.value
+      ? {
+          ...episodeSelection.value,
+          error: translate(episodeSelection.value.error),
+        }
+      : undefined,
+    select: (episode) => {
+      void selectEpisode(episode);
+    },
+  };
+});
+defineExpose({ commands, playlist, canReplace, selectEpisode, episodeActions });
 async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
   if (

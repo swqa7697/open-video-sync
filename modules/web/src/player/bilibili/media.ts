@@ -23,6 +23,14 @@ export interface Playlist {
   title: string;
   episodes: Episode[];
 }
+export function sameEpisode(
+  a: Pick<Episode, 'bvid' | 'part' | 'episodeId'> | undefined,
+  b: Pick<Episode, 'bvid' | 'part' | 'episodeId'>,
+): boolean {
+  return (
+    !!a && a.bvid === b.bvid && a.part === b.part && a.episodeId === b.episodeId
+  );
+}
 export interface MediaPreview {
   bvid: string;
   episodeId?: string;

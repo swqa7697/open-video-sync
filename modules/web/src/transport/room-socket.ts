@@ -46,6 +46,7 @@ export interface SocketEvents {
     options?: { reload?: boolean; recheck?: boolean },
   ): void;
   pending(command: Command | undefined): void;
+  result?(command: Command, accepted: boolean): void;
   ended(reason: EndReason): void;
 }
 export class RoomSocket {
@@ -236,6 +237,7 @@ export class RoomSocket {
         this.publicError(object(p.error));
       }
       if (this.pending?.commandId === key) {
+        this.events.result?.(this.pending, p.accepted);
         this.pending = undefined;
         this.events.pending(undefined);
       }

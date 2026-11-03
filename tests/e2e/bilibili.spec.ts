@@ -9,6 +9,7 @@ import {
   closeRoom,
   invitationLink,
   observePageKeyboard,
+  openQuickActions,
   seekTo,
   settings,
 } from './flows';
@@ -59,6 +60,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     };
     const held = new Set();
     const heldThumbnails = new Set();
+    const heldEpisodes = new Set();
     let owner, traffic, trafficID = 100000;
     window.addEventListener('message', event => {
       if (typeof event.data !== 'string') return;
@@ -82,6 +84,10 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     document.addEventListener('resume-seek-downloads', () => {
       for (const resume of [...held]) resume();
     });
+    document.addEventListener('resume-episodes', () => {
+      sessionStorage.removeItem('hold-episodes');
+      for (const resume of [...heldEpisodes]) resume();
+    });
     const GM_xmlhttpRequest = (details) => {
       let cancelled = false;
       const url = new URL(details.url);
@@ -91,7 +97,12 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       const respond = () => {
         held.delete(respond);
         heldThumbnails.delete(respond);
+        heldEpisodes.delete(respond);
         if (cancelled) return;
+        if (url.pathname === '/pgc/view/web/season' && sessionStorage.getItem('fail-episode')) {
+          details.onload({ status: 403, finalUrl: details.url, responseText: '{}' });
+          return;
+        }
         if (details.headers.Range) {
           const track = tracks[Number(url.searchParams.get('track'))];
           const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
@@ -154,10 +165,11 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           heldThumbnails.add(respond);
           sessionStorage.setItem('thumbnail-held', '1');
         }
+        else if (url.pathname === '/pgc/view/web/season' && sessionStorage.getItem('hold-episodes')) heldEpisodes.add(respond);
         else if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
         else respond();
       }, details.headers.Range ? Number(sessionStorage.getItem('seek-delay') || 25) : url.hostname.endsWith('.hdslb.com') ? 500 : 0);
-      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); heldThumbnails.delete(respond); details.onabort(); } };
+      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); heldThumbnails.delete(respond); heldEpisodes.delete(respond); details.onabort(); } };
     };
     ${script}
   })();`,
@@ -350,7 +362,81 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'ready',
   );
   await page.getByRole('tab', { name: /Episodes/ }).click();
-  await page.getByRole('button', { name: /Finale/ }).click();
+  await openQuickActions(page, '换集');
+  const palette = page.locator('.command-palette'),
+    input = palette.getByRole('combobox');
+  await input.press('Enter');
+  await expect(input).toHaveValue('@');
+  await expect(input).toBeFocused();
+  await expect(palette.getByRole('option')).toHaveCount(2);
+  await expect(palette.locator('[aria-current="true"]')).toContainText(
+    'Opening',
+  );
+  await input.press('Enter');
+  await expect(palette).toBeVisible();
+  await input.fill('@3');
+  await expect(palette.getByRole('status')).toContainText('No item 3');
+  await input.fill('@fINaLE');
+  await expect(palette.getByRole('option')).toHaveCount(1);
+  await expect(palette.locator('.command-episode-number')).toHaveText('2');
+  await input.evaluate((node) =>
+    node.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+      }),
+    ),
+  );
+  await expect(palette).toBeVisible();
+  expect(
+    (await (await page.request.get(roomPath)).json()).media.episodeId,
+  ).toBe('103591');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await input.fill('@');
+  await page.screenshot({
+    path: testInfo.outputPath('episodes-quick-desktop.png'),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.screenshot({
+    path: testInfo.outputPath('episodes-quick-mobile.png'),
+  });
+  expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
+  const paletteBounds = (await palette.boundingBox())!;
+  expect(paletteBounds.x + paletteBounds.width).toBeLessThanOrEqual(390);
+  expect(paletteBounds.y + paletteBounds.height).toBeLessThanOrEqual(844);
+  await input.fill('@02');
+  await page.evaluate(() => sessionStorage.setItem('fail-episode', '1'));
+  await input.press('Enter');
+  await expect(palette.getByRole('alert')).toBeVisible();
+  await expect(input).toHaveValue('@02');
+  expect(
+    (await (await page.request.get(roomPath)).json()).media.episodeId,
+  ).toBe('103591');
+  await page.screenshot({
+    path: testInfo.outputPath('episodes-quick-failure.png'),
+  });
+  await page.evaluate(() => {
+    sessionStorage.removeItem('fail-episode');
+    sessionStorage.setItem('hold-episodes', '1');
+  });
+  await input.press('Enter');
+  await expect(palette.locator('[aria-busy="true"]')).toContainText(
+    'Switching',
+  );
+  await expect(palette.getByRole('option')).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await input.press('Enter');
+  await page.screenshot({
+    path: testInfo.outputPath('episodes-quick-pending.png'),
+  });
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event('resume-episodes')),
+  );
+  await expect(palette).toHaveCount(0);
   await expect
     .poll(
       async () =>
@@ -363,6 +449,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   );
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole('tab', { name: /Episodes/ }).click();
   await page.screenshot({
     path: testInfo.outputPath('episode-selected.png'),
     fullPage: true,
