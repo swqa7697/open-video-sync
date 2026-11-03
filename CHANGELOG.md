@@ -12,6 +12,10 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 - Show the full image reference under a shared build-information heading in the About header, above component versions. Hide the separate Git tag and show the Git commit only for development builds.
 - Use `caddy:alpine` for managed HTTPS deployments, proxy validation, and manual container deployment examples. Pull the latest Alpine-based Caddy image on each managed HTTPS deployment without a version pin.
 
+### Fixed
+
+- Improve Bilibili playback on high-latency connections with bounded read-ahead, overlapping downloads and player writes, automatic use of validated CDN alternatives, and buffering that adapts to delivery delays. Cancel obsolete media downloads immediately when seeking while preserving current-segment danmaku requests.
+
 ## [2026-11-02]
 
 ### Added

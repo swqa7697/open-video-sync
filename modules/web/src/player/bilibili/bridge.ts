@@ -273,6 +273,22 @@ export class HelperBridge {
       window.postMessage(request, location.origin);
     });
   }
+  seek(handle: string, generation: number, seek: number): void {
+    if (this.closed) return;
+    // Cancellation must bypass occupied byte-request slots.
+    window.postMessage(
+      JSON.stringify({
+        channel: 'ovs-bilibili-request',
+        client: this.client,
+        id: ++this.sequence,
+        op: 'seek',
+        handle,
+        generation,
+        seek,
+      }),
+      location.origin,
+    );
+  }
   close(generation: number, releaseOwner = true): void {
     if (this.closed) return;
     // Cancellation must remain available when all four request slots are occupied.

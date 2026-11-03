@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 
 import { BilibiliAdapter } from './adapter';
-import { HelperBridge } from './bridge';
+import { HelperBridge, HelperError } from './bridge';
 
 const chunkSize = 256 * 1024;
 type Range = { track: number; offset: number; length: number };
@@ -255,6 +255,7 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
     text: `Mode ${mode}`,
   }));
   const calls: number[] = [];
+  let busy = true;
   let release: ((value: unknown) => void) | undefined;
   const bridge = vi.spyOn(HelperBridge.prototype, 'call'),
     original = bridge.getMockImplementation()!;
@@ -262,6 +263,10 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
     if (op !== 'danmaku') return original(op, args);
     const segment = Number(args?.segment);
     calls.push(segment);
+    if (busy) {
+      busy = false;
+      return Promise.reject(new HelperError('busy'));
+    }
     if (segment === 1) return Promise.resolve({ comments });
     return new Promise((resolve) => {
       release = resolve;
@@ -277,7 +282,7 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
   try {
     await f.load();
     f.video.currentTime = 1;
-    await vi.advanceTimersByTimeAsync(16);
+    await vi.advanceTimersByTimeAsync(300);
     expect(f.overlay.children).toHaveLength(3);
     await f.adapter.pause();
     // A pause can correct the native position to the room's frozen timeline.
@@ -288,7 +293,7 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
     const paused = f.overlay.innerHTML;
     await vi.advanceTimersByTimeAsync(1000);
     expect(f.overlay.innerHTML).toBe(paused);
-    expect(calls).toEqual([1]);
+    expect(calls).toEqual([1, 1]);
 
     await seek(361);
     expect(f.overlay.children).toHaveLength(0);
@@ -298,7 +303,7 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
     });
     await vi.advanceTimersByTimeAsync(16);
     expect(f.overlay.textContent).toBe('Second segment');
-    expect(calls).toEqual([1, 2]);
+    expect(calls).toEqual([1, 1, 2]);
 
     await seek(1);
     await seek(361);
@@ -310,7 +315,7 @@ test('paused seeks reuse the current danmaku segment and reject replies from an 
     expect(f.overlay.textContent).toBe('Mode 1Mode 4Mode 5');
     f.adapter.reloadDanmaku();
     await vi.advanceTimersByTimeAsync(16);
-    expect(calls).toEqual([1, 2, 1, 2, 1, 1]);
+    expect(calls).toEqual([1, 1, 2, 1, 2, 1, 1]);
     expect(f.overlay.textContent).toBe('Mode 1Mode 4Mode 5');
     expect(f.onError).not.toHaveBeenCalled();
   } finally {
@@ -398,8 +403,31 @@ test.each(['timeout', 'error', 'dispose'] as const)(
 
 test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or assembling fragments', async () => {
   const f = fixture();
+  let release: (() => void) | undefined;
   try {
-    await expect(f.load()).resolves.toMatchObject({
+    let started: (() => void) | undefined;
+    const reading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.read((range) => {
+      if (
+        range.track === 0 &&
+        range.offset === f.segments[0]![0]!.offset + chunkSize
+      )
+        return new Promise<void>((resolve) => {
+          release = resolve;
+          started!();
+        });
+      return Promise.resolve();
+    });
+    const loading = f.load();
+    await reading;
+    await vi.advanceTimersByTimeAsync(0);
+    // An outstanding read must not hold the current append or starve audio.
+    expect(f.buffers[0]!.appends).toHaveLength(1);
+    expect(f.buffers[1]!.appends).toHaveLength(1);
+    release!();
+    await expect(loading).resolves.toMatchObject({
       kind: 'bilibili',
       durationMs: 5000,
     });
@@ -422,11 +450,32 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
       true,
     );
   } finally {
+    release?.();
     f.adapter.dispose();
   }
 });
 
 test('a paused high-bitrate fragment stops prefetch at the byte budget and resumes from its cursor', async () => {
+  for (const [latency, ahead] of [
+    [0, 15],
+    [4000, 20],
+  ]) {
+    const sample = fixture(Array<number>(12).fill(1024));
+    sample.read((range) =>
+      range.track === 0
+        ? new Promise((resolve) => setTimeout(resolve, latency))
+        : Promise.resolve(),
+    );
+    try {
+      const loading = sample.load();
+      await vi.advanceTimersByTimeAsync(25000);
+      await loading;
+      expect(sample.buffers[0]!.times).toEqual([[0, ahead]]);
+      expect(sample.onError).not.toHaveBeenCalled();
+    } finally {
+      sample.adapter.dispose();
+    }
+  }
   const f = fixture([128 * 1024 * 1024], true);
   try {
     await f.load();
@@ -436,7 +485,7 @@ test('a paused high-bitrate fragment stops prefetch at the byte budget and resum
     expect(f.ranges).toHaveLength(before);
     expect(
       f.buffers[0]!.appends.reduce((sum, r) => sum + r.length, 0),
-    ).toBeLessThanOrEqual(32 * 1024 * 1024);
+    ).toBeLessThanOrEqual(64 * 1024 * 1024);
     f.video.currentTime = 0.75;
     await f.until(() => f.ranges.length > before);
     expect(f.onError).not.toHaveBeenCalled();
@@ -451,7 +500,9 @@ test.each(['av01.0.08M.08', 'hvc1.1.6.L120.90', 'hev1.1.6.L120.90'])(
     const f = fixture([1024, 1024], false, codec, true);
     try {
       await f.load();
-      await f.until(() => f.adapter.getState().status === 'ready');
+      await f.until(() =>
+        f.buffers.every((buffer) => buffer.times.at(-1)?.[1] === 10),
+      );
       expect(f.adapter.mediaInfo?.tracks[0]?.codec).toBe(codec);
       expect(f.buffers.map((b) => b.initialized)).toEqual([true, true]);
       expect(f.buffers[0]!.times).toEqual([[0, 10]]);
@@ -501,7 +552,14 @@ test.each(['seek', 'dispose'] as const)(
       f.read(undefined);
       release!();
       await tick;
-      expect(f.buffers[0]!.appends).toHaveLength(before);
+      if (action === 'dispose')
+        expect(f.buffers[0]!.appends).toHaveLength(before);
+      else
+        expect(
+          f.buffers[0]!.appends.slice(before).every(
+            (range) => range.offset >= f.segments[0]![1]!.offset,
+          ),
+        ).toBe(true);
       if (action === 'seek') {
         await f.until(() => f.buffers[0]!.appends.length > before);
         expect(f.buffers[0]!.aborts).toBe(1);
@@ -509,6 +567,7 @@ test.each(['seek', 'dispose'] as const)(
           f.segments[0]![1]!.offset,
         );
         await vi.advanceTimersByTimeAsync(2000);
+        expect(f.onError).not.toHaveBeenCalled();
         expect(
           f.buffers[0]!.times.some(([start, end]) => start <= 9 && end > 9),
         ).toBe(true);
@@ -534,6 +593,7 @@ test('full buffers retain one chunk, then evict played data and retry without do
   const f = fixture([chunkSize, chunkSize, chunkSize, chunkSize]);
   try {
     await f.load();
+    await f.until(() => f.buffers[0]!.times.at(-1)![1] >= 10);
     f.video.currentTime = 4;
     f.full(true);
     const before = f.buffers[0]!.appends.length;
@@ -547,7 +607,7 @@ test('full buffers retain one chunk, then evict played data and retry without do
     f.video.currentTime = 6;
     f.full(true, true);
     await f.until(() => f.buffers[0]!.appends.length > before);
-    expect(f.buffers[0]!.removals).toContainEqual([0, 5]);
+    expect(f.buffers[0]!.times[0]![0]).toBe(5);
     expect(f.ranges.filter((r) => r.track === 0 && r.offset > 32)).toHaveLength(
       reads,
     );

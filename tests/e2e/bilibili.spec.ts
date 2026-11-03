@@ -42,7 +42,8 @@ test('previewing another Bilibili link preserves the active helper and room unti
         if (media) {
           const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
           const bytes = new Uint8Array(Number(range[2]) - Number(range[1]) + 1).fill(42);
-          details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer });
+          details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer,
+            responseHeaders: 'Content-Range: bytes ' + range[1] + '-' + range[2] + '/9007199254740991' });
           return;
         }
         const url = new URL(details.url);
@@ -156,6 +157,9 @@ test('previewing another Bilibili link preserves the active helper and room unti
     offset: 0,
     length: 32,
     generation: 1,
+    seek: 0,
+    end: 2 * 1024 * 1024 - 1,
+    rate: 2 * 1024 * 1024,
   };
   const roomPath = `/api/v2${new URL(page.url()).pathname}`;
   const before = await (await page.request.get(roomPath)).json();

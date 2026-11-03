@@ -65,7 +65,8 @@ function fixture(options = {}) {
     const url = new URL(details.url);
     let value,
       status = 200,
-      finalUrl = url.href;
+      finalUrl = url.href,
+      contentRange = '';
     if (url.pathname.endsWith('/view'))
       value = options.badJSON
         ? `invalid-json-${CANARY}`
@@ -131,6 +132,20 @@ function fixture(options = {}) {
       const match = details.headers.Range.match(/bytes=(\d+)-(\d+)/);
       status = 206;
       value = new Uint8Array(Number(match[2]) - Number(match[1]) + 1).fill(42);
+      contentRange = `\r\nContent-Range: bytes ${match[1]}-${match[2]}/9007199254740991`;
+      const change = options.media?.(details, value);
+      if (change?.timeout) {
+        details.ontimeout();
+        return;
+      }
+      if (change?.error) {
+        details.onerror();
+        return;
+      }
+      if (change?.bytes) value = change.bytes;
+      if (change?.status) status = change.status;
+      if (change?.contentRange !== undefined)
+        contentRange = change.contentRange;
       if (options.expired && mediaCalls === 1) {
         status = 403;
         value = new Uint8Array();
@@ -144,7 +159,7 @@ function fixture(options = {}) {
       status,
       finalUrl,
       readyState: 2,
-      responseHeaders: `Content-Length: ${bytes.length}`,
+      responseHeaders: `Content-Length: ${bytes.length}${contentRange}`,
       response: bytes.buffer,
       responseText: typeof value === 'string' ? value : undefined,
     };
@@ -172,7 +187,7 @@ function fixture(options = {}) {
     Map,
     Set,
     crypto,
-    performance: { now: () => 0 },
+    performance: { now: options.now || (() => 0) },
     setTimeout,
     clearTimeout,
     btoa,
@@ -536,6 +551,175 @@ test('provider failures and restricted access cannot leak raw canaries', async (
   const f = fixture({ loggedOut: true });
   assert.equal((await f.call('session')).value.loggedIn, false);
 });
+test('network windows preserve byte order, stay bounded, and cancel only obsolete media reads', async () => {
+  const chunk = 256 * 1024,
+    options = {
+      media: (details, bytes) => {
+        const start = Number(details.headers.Range.match(/bytes=(\d+)/)[1]);
+        return { bytes: bytes.map((_, i) => (start + i) % 251) };
+      },
+    },
+    f = fixture(options),
+    opened = await f.open(),
+    read = {
+      handle: opened.value.handle,
+      track: 0,
+      generation: 1,
+      seek: 0,
+      offset: 64,
+      length: chunk,
+      end: 64 + 2 * 1024 * 1024 - 1,
+      rate: 4 * 1024 * 1024,
+    };
+  for (let i = 0; i < 8; i++) {
+    const offset = 64 + i * chunk,
+      reply = await f.call('bytes', { ...read, offset });
+    assert.equal(reply.ok, true);
+    const bytes = Uint8Array.from(atob(reply.value.base64), (c) =>
+      c.charCodeAt(0),
+    );
+    assert(bytes.every((byte, at) => byte === (offset + at) % 251));
+  }
+  assert.equal(f.requests.filter((request) => request.headers.Range).length, 1);
+  assert.equal(
+    (await f.call('metrics')).value.maxResponseBytes,
+    2 * 1024 * 1024,
+  );
+  options.hold = true;
+  const old = f.call('bytes', {
+      ...read,
+      offset: read.end + 1,
+      end: read.end + 2 * 1024 * 1024,
+    }),
+    session = f.call('session');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.held.length, 2);
+  // An invalid request must not cancel work or advance the cursor.
+  assert.equal(
+    (await f.call('bytes', { ...read, seek: 1, length: chunk + 1 })).error,
+    'invalid-range',
+  );
+  assert.equal(f.aborted, 0);
+  assert.equal(
+    (await f.call('seek', { handle: read.handle, generation: 1, seek: 1 })).ok,
+    true,
+  );
+  assert.equal((await old).error, 'cancelled');
+  assert.equal(f.aborted, 1);
+  assert.equal((await f.call('bytes', read)).error, 'cancelled');
+  const api = f.held.find((request) => !request.headers.Range);
+  api.onload({
+    status: 200,
+    finalUrl: api.url,
+    responseText: JSON.stringify({ code: 0, data: { isLogin: true } }),
+  });
+  assert.equal((await session).value.loggedIn, true);
+  options.hold = false;
+  assert.equal((await f.call('bytes', { ...read, seek: 1 })).ok, true);
+  assert.equal(f.requests.filter((request) => request.headers.Range).length, 3);
+  assert(!JSON.stringify(f.replies).includes(CANARY));
+});
+
+test('slow or failed CDN locations switch only to mirrors with matching initialization and index bytes', async () => {
+  for (const failure of [
+    'slow',
+    'network',
+    'range',
+    'unusable',
+    'timeout',
+    'deadline',
+    'expired',
+  ]) {
+    let clock = 0;
+    let expire = true;
+    const f = fixture({
+        now: () => clock,
+        track: {
+          backupUrl: [
+            'https://wrong.bilivideo.com/upgcxcode/wrong.m4s',
+            'https://fast.bilivideo.com/upgcxcode/match.m4s',
+          ],
+        },
+        media(details, bytes) {
+          const url = new URL(details.url),
+            start = Number(details.headers.Range.match(/bytes=(\d+)/)[1]);
+          if (
+            url.hostname === 'wrong.bilivideo.com' ||
+            (['unusable', 'expired'].includes(failure) &&
+              url.hostname === 'fast.bilivideo.com')
+          )
+            return { bytes: bytes.fill(43) };
+          if (url.hostname === 'cdn.bilivideo.com' && start >= 64) {
+            if (failure === 'expired' && expire) {
+              expire = false;
+              return { status: 403 };
+            }
+            if (failure === 'timeout') {
+              clock += 4000;
+              return { timeout: true };
+            }
+            if (failure === 'deadline') {
+              clock += 13000;
+              return { error: true };
+            }
+            if (failure === 'network') return { error: true };
+            if (failure === 'range')
+              return { contentRange: '\r\nContent-Range: bytes 0-31/100' };
+            clock += 1000;
+          }
+        },
+      }),
+      opened = await f.open(),
+      read = { handle: opened.value.handle, track: 0, generation: 1, seek: 0 };
+    for (const offset of [0, 32])
+      assert.equal(
+        (await f.call('bytes', { ...read, offset, length: 32 })).ok,
+        true,
+      );
+    const count = ['slow', 'unusable'].includes(failure) ? 3 : 1;
+    for (let i = 0; i < count; i++) {
+      const reply = await f.call('bytes', {
+        ...read,
+        offset: 64 + i * 2 * 1024 * 1024,
+        length: 32,
+        end: 64 + 6 * 1024 * 1024 - 1,
+        rate: 4 * 1024 * 1024,
+      });
+      if (failure === 'deadline') {
+        assert.equal(reply.error, 'request-timeout');
+        break;
+      }
+      assert.equal(reply.ok, true, reply.error);
+      assert.equal(atob(reply.value.base64), '*'.repeat(32));
+    }
+    const media = f.requests.filter((request) => request.headers.Range);
+    if (failure === 'deadline') {
+      assert.equal(media.length, 3);
+      continue;
+    }
+    assert.equal(
+      new URL(media.at(-1).url).hostname,
+      ['unusable', 'expired'].includes(failure)
+        ? 'cdn.bilivideo.com'
+        : 'fast.bilivideo.com',
+    );
+    assert(
+      media.some(
+        (request) =>
+          new URL(request.url).hostname === 'wrong.bilivideo.com' &&
+          request.headers.Range === 'bytes=0-63',
+      ),
+    );
+    assert(
+      !media.some(
+        (request) =>
+          new URL(request.url).hostname === 'wrong.bilivideo.com' &&
+          request.headers.Range !== 'bytes=0-63',
+      ),
+    );
+    assert(!JSON.stringify(f.replies).includes(CANARY));
+  }
+});
 test('previews and opens select the best supported codec at the preferred or highest playable quality', async () => {
   const av1 = 'av01.0.08M.08',
     hevc = 'hev1.1.6.L120.90',
@@ -669,6 +853,52 @@ test('expired ranges refresh once through the same identity and return media byt
       keepOriginal ? 2 : 1,
     );
   }
+  for (const cancel of [true, false]) {
+    let expired = false;
+    const options = {
+        media(details, bytes) {
+          const offset = Number(details.headers.Range.match(/bytes=(\d+)/)[1]);
+          if (offset >= 64 && !expired) {
+            expired = true;
+            options.hold = cancel;
+            return { status: 403 };
+          }
+          if (expired && !cancel && offset === 0)
+            return { bytes: bytes.fill(43) };
+        },
+      },
+      f = fixture(options),
+      opened = await f.open(),
+      args = {
+        handle: opened.value.handle,
+        track: 0,
+        generation: 1,
+        length: 32,
+      };
+    for (const offset of [0, 32])
+      assert.equal((await f.call('bytes', { ...args, offset })).ok, true);
+    const reading = f.call('bytes', { ...args, offset: 64 });
+    if (cancel) {
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(f.held.length, 1);
+      assert.equal(
+        (await f.call('bytes', { ...args, offset: 64 })).error,
+        'busy',
+      );
+      assert.equal(
+        (await f.call('seek', { handle: args.handle, generation: 1, seek: 1 }))
+          .ok,
+        true,
+      );
+      assert.equal((await reading).error, 'cancelled');
+      options.hold = false;
+      assert.equal(
+        (await f.call('bytes', { ...args, offset: 64, seek: 1 })).ok,
+        true,
+      );
+      assert.equal((await f.call('metrics')).value.refreshes, 0);
+    } else assert.equal((await reading).error, 'media-changed');
+  }
 });
 test('oversized streams and unapproved final destinations fail without exposing bytes', async () => {
   for (const options of [{ oversize: true }, { redirect: true }]) {
@@ -708,6 +938,20 @@ test('bounded concurrency, flood rejection, disposal, and late callbacks preserv
   const flood = fixture();
   for (let i = 0; i < 100; i++) await flood.call('hello', { version: 1 });
   assert(flood.replies.filter((r) => r.error === 'rate-limited').length >= 68);
+  const media = fixture(),
+    opened = await media.open();
+  for (let i = 0; i < 140; i++)
+    await media.call('bytes', {
+      handle: opened.value.handle,
+      track: 0,
+      offset: 64,
+      length: 1,
+      generation: 1,
+    });
+  assert.equal(
+    media.replies.filter((reply) => reply.error === 'rate-limited').length,
+    12,
+  );
 });
 
 test('a replacement player channel cancels old work and refuses stale owners', async () => {
@@ -722,7 +966,8 @@ test('a replacement player channel cancels old work and refuses stale owners', a
     length: 32,
     generation: 1,
   });
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.held.length, 1);
   options.hold = false;
   const preview = await f.call('preview', {
     bvid: 'BV17Jx76CEje',

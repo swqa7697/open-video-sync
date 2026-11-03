@@ -14,6 +14,15 @@ interface Track {
   index: number;
   buffer: SourceBuffer;
   segments: Segment[];
+  delay: number;
+  measuredAt: number;
+  read?:
+    | {
+        offset: number;
+        seek: number;
+        result: Promise<{ data: Uint8Array<ArrayBuffer> } | { error: unknown }>;
+      }
+    | undefined;
   appended?: { seek: number; end: number };
   pending?:
     | {
@@ -34,7 +43,7 @@ export class BilibiliAdapter implements PlayerAdapter {
   private source: MediaSource | undefined;
   private url: string | undefined;
   private tracks: Track[] = [];
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ReturnType<typeof setTimeout>;
   private pumping = false;
   private seekGeneration = 0;
   private dmSegment = 0;
@@ -56,6 +65,13 @@ export class BilibiliAdapter implements PlayerAdapter {
       'seeking',
       () => {
         this.seekGeneration++;
+        for (const track of this.tracks) track.read = undefined;
+        if (this.info)
+          this.bridge.seek(
+            this.info.handle,
+            this.generation,
+            this.seekGeneration,
+          );
         this.danmaku.reset();
         void this.loadDanmaku(true);
       },
@@ -128,6 +144,8 @@ export class BilibiliAdapter implements PlayerAdapter {
           index,
           buffer,
           segments: parseIndex(indexData, track.index[0]),
+          delay: 0,
+          measuredAt: performance.now(),
         });
         initialization.push({ buffer, data });
       }
@@ -139,9 +157,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       await this.pump();
       this.assertOwned();
       this.loading = false;
-      this.timer = setInterval(() => {
-        void this.pump().catch((e: unknown) => this.fail(e));
-      }, 250);
+      this.schedule(0);
       return {
         kind: 'bilibili',
         bvid,
@@ -177,7 +193,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       error instanceof HelperError ? error : new HelperError('invalid-media');
     this.loading = false;
     this.video.pause();
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.onError(this.failure);
     this.dispose();
   }
@@ -186,10 +202,12 @@ export class BilibiliAdapter implements PlayerAdapter {
     offset: number,
     length: number,
     seek = this.seekGeneration,
+    segment?: Segment,
   ): Promise<Uint8Array<ArrayBuffer>> {
     if (length < 1 || length > CHUNK_BYTES)
       throw new HelperError('segment-limit');
     let reply: Record<string, unknown>;
+    const started = performance.now();
     for (let attempt = 0; ; attempt++) {
       this.assertSeek(seek);
       try {
@@ -200,6 +218,19 @@ export class BilibiliAdapter implements PlayerAdapter {
             offset,
             length,
             generation: this.generation,
+            seek,
+            ...(segment
+              ? {
+                  end: segment.offset + segment.length - 1,
+                  rate: Math.min(
+                    128 * 1024 * 1024,
+                    Math.max(
+                      1,
+                      Math.ceil(segment.length / (segment.end - segment.time)),
+                    ),
+                  ),
+                }
+              : {}),
           }),
         );
         break;
@@ -215,6 +246,15 @@ export class BilibiliAdapter implements PlayerAdapter {
       }
     }
     this.assertSeek(seek);
+    const trackState = this.tracks.find((state) => state.index === track);
+    if (trackState && segment) {
+      const now = performance.now();
+      trackState.delay = Math.max(
+        (now - started) / 1000,
+        trackState.delay * Math.exp(-(now - trackState.measuredAt) / 30000),
+      );
+      trackState.measuredAt = now;
+    }
     exact(reply, ['base64']);
     if (
       typeof reply.base64 !== 'string' ||
@@ -320,10 +360,14 @@ export class BilibiliAdapter implements PlayerAdapter {
     // byte budget between history and prefetch, and also cap both by time.
     let rate = 1;
     for (const segment of track.segments)
-      if (segment.end > target - 15 && segment.time < target + 12)
+      if (segment.end > target - 4 && segment.time < target + 30)
         rate = Math.max(rate, segment.length / (segment.end - segment.time));
-    const budget = (track.index === 0 ? 32 : 4) * 1024 * 1024;
-    return Math.min(12, Math.max(1, budget / 2 / rate));
+    const budget = (track.index === 0 ? 64 : 8) * 1024 * 1024;
+    const history = Math.min(4, budget / 8 / rate);
+    const desired = this.loading
+      ? Math.max(3, 2 + track.delay * 2)
+      : Math.max(12, 6 + track.delay * 3);
+    return Math.max(1, Math.min(30, desired, budget / rate - history));
   }
   private async trim(
     track: Track,
@@ -332,8 +376,8 @@ export class BilibiliAdapter implements PlayerAdapter {
   ): Promise<void> {
     this.assertSeek(seek);
     const target = this.video.currentTime;
-    const window = this.window(track, target);
-    const behind = pressure ? 1 : Math.min(15, window);
+    const ahead = this.window(track, target);
+    const behind = pressure ? 1 : Math.min(4, ahead / 7);
     const current = track.segments.find(
       (s) => s.time <= target && s.end > target,
     );
@@ -344,7 +388,8 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (ranges.length && ranges.start(0) < before)
       await this.update(track.buffer, () => track.buffer.remove(0, before));
     this.assertSeek(seek);
-    const end = ranges.length ? ranges.end(ranges.length - 1) : 0;
+    const remaining = track.buffer.buffered;
+    const end = remaining.length ? remaining.end(remaining.length - 1) : 0;
     const after = Math.max(target + 30, current?.end ?? target);
     if (end > after)
       await this.update(track.buffer, () => track.buffer.remove(after, end));
@@ -415,13 +460,42 @@ export class BilibiliAdapter implements PlayerAdapter {
       track.pending = { segment, at: 0, seek };
     }
     const pending = track.pending;
-    pending.data ??= await this.bytes(
-      track.index,
-      pending.segment.offset + pending.at,
-      Math.min(CHUNK_BYTES, pending.segment.length - pending.at),
-      seek,
-    );
+    if (!pending.data) {
+      const offset = pending.segment.offset + pending.at;
+      if (track.read?.offset === offset && track.read.seek === seek) {
+        const read = track.read;
+        const result = await read.result;
+        if (track.read === read) track.read = undefined;
+        if ('error' in result) throw result.error;
+        pending.data = result.data;
+      } else
+        pending.data = await this.bytes(
+          track.index,
+          offset,
+          Math.min(CHUNK_BYTES, pending.segment.length - pending.at),
+          seek,
+          pending.segment,
+        );
+    }
     this.assertSeek(seek);
+    const next = pending.at + pending.data.length;
+    if (!track.read && next < pending.segment.length) {
+      const offset = pending.segment.offset + next;
+      track.read = {
+        offset,
+        seek,
+        result: this.bytes(
+          track.index,
+          offset,
+          Math.min(CHUNK_BYTES, pending.segment.length - next),
+          seek,
+          pending.segment,
+        ).then(
+          (data) => ({ data }),
+          (error: unknown) => ({ error }),
+        ),
+      };
+    }
     if (!(await this.append(track, pending.data, seek))) return false;
     this.assertSeek(seek);
     pending.at += pending.data.length;
@@ -438,6 +512,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (this.pumping || this.disposed || this.failure || !this.tracks.length)
       return;
     this.pumping = true;
+    let progressed = false;
     try {
       const seek = this.seekGeneration;
       const blocked = new Set<Track>();
@@ -448,8 +523,10 @@ export class BilibiliAdapter implements PlayerAdapter {
         for (const track of this.tracks) {
           if (steps === 8) break;
           if (blocked.has(track)) continue;
-          if (await this.step(track, seek)) steps++;
-          else blocked.add(track);
+          if (await this.step(track, seek)) {
+            steps++;
+            progressed = true;
+          } else blocked.add(track);
         }
       if (
         this.info &&
@@ -467,7 +544,15 @@ export class BilibiliAdapter implements PlayerAdapter {
         throw error;
     } finally {
       this.pumping = false;
+      this.schedule(progressed ? 0 : 250);
     }
+  }
+  private schedule(delay: number): void {
+    if (this.loading || this.disposed || this.failure) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      void this.pump().catch((error: unknown) => this.fail(error));
+    }, delay);
   }
   private async loadDanmaku(seeking = false): Promise<void> {
     if (!this.info || this.disposed) return;
@@ -482,11 +567,27 @@ export class BilibiliAdapter implements PlayerAdapter {
     const request = ++this.dmRequest;
     this.onDanmaku(message('player.danmakuLoading'));
     try {
-      const reply = await this.bridge.call('danmaku', {
-        handle: this.info.handle,
-        segment,
-        generation: this.generation,
-      });
+      let reply: unknown;
+      for (let attempt = 0; ; attempt++) {
+        this.assertOwned();
+        if (request !== this.dmRequest) return;
+        try {
+          reply = await this.bridge.call('danmaku', {
+            handle: this.info.handle,
+            segment,
+            generation: this.generation,
+          });
+          break;
+        } catch (error) {
+          if (
+            !(error instanceof HelperError) ||
+            !['busy', 'rate-limited'].includes(error.code) ||
+            attempt >= 3
+          )
+            throw error;
+          await this.delay(250 * 2 ** attempt);
+        }
+      }
       if (this.disposed || request !== this.dmRequest) return;
       this.danmaku.comments = decodeComments(reply, this.info.duration);
       this.onDanmaku(
@@ -535,11 +636,13 @@ export class BilibiliAdapter implements PlayerAdapter {
     if (this.disposed) return;
     this.disposed = true;
     this.lifetime.abort();
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.dmRequest++;
     this.bridge.close(this.generation + 1);
     this.danmaku.dispose();
     for (const track of this.tracks) {
+      track.read = undefined;
+      track.pending = undefined;
       try {
         if (track.buffer.updating) track.buffer.abort();
       } catch {

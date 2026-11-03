@@ -87,6 +87,13 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   const rejected = pendingCalls.map((call) =>
     expect(call).rejects.toMatchObject({ name: 'AbortError' }),
   );
+  bridge.seek('h1-1234', 1, 2);
+  expect(posted.at(-1)).toMatchObject({
+    op: 'seek',
+    handle: 'h1-1234',
+    generation: 1,
+    seek: 2,
+  });
   bridge.close(2);
   await Promise.all(rejected);
   expect(posted.at(-1)?.op).toBe('dispose');

@@ -1,6 +1,6 @@
 # Helper module
 
-The private `@ovs/helper` pnpm package owns the instance-scoped Bilibili Tampermonkey script, bridge JSON parser, and shared video codec allowlist.
+The private `@ovs/helper` pnpm package owns the instance-scoped Bilibili Tampermonkey script, bounded media delivery, bridge JSON parser, and shared video codec allowlist.
 
 Run these commands from the repository root:
 
@@ -16,6 +16,10 @@ Generated metadata is not a second version source. The bridge protocol version r
 
 Candidate video previews use a read-only bridge operation. They return bounded metadata without taking playback ownership or creating a stream handle. Closing or rejecting a preview preserves the current player's requests and handle.
 Previews and opens check exact MediaSource codec support. Select the requested playable quality or the highest playable quality, then prefer AV1, HEVC, and AVC in that order. Keep the selected video and audio representations when refreshing expired locations.
+
+`media-delivery.js` keeps signed locations and one network window of at most 2 MiB per track in helper memory. Network reads respect the fragment boundary and deliver page chunks of at most 256 KiB. Retain up to three permitted provider locations, try unused mirrors on failure or sustained insufficient delivery, and verify initialization/index bytes before continuing on another source. Retain a usable current source if alternatives fail validation. Mirror attempts and expiry refresh share a 12-second byte-operation deadline. Exact Content-Range validation rejects shifted or incomplete responses.
+
+Byte requests can include a fragment `end`, byte `rate`, and `seek` generation. The nonblocking `seek` operation cancels obsolete media reads and refresh requests without cancelling unrelated API or danmaku requests. Keep two active requests, with separate per-second bounds of 128 byte calls and 32 other calls. The helper build fingerprint includes the delivery module; install the updated helper when OVS requests an update.
 
 `make helper-build` also copies the distribution into `modules/sync/internal/helper/dist/` for Go embedding.
 The server serves the script and release metadata under the existing `/userscripts/` routes.

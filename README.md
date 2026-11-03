@@ -80,6 +80,8 @@ Replace the example address with your server's address. Direct HTTP works withou
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
 
+OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
+
 ### Rooms and preferences
 
 Invitations remain reusable until the host replaces them or closes the room. A room closes when everyone leaves, with a short grace for disconnected pages. After a server restart, rooms resume paused at the beginning.
