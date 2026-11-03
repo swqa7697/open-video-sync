@@ -9,8 +9,119 @@ import {
   closeRoom,
   invitationLink,
   observePageKeyboard,
+  seekTo,
 } from './flows';
-import { generatedVideo } from './media';
+import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
+
+test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(60000);
+  const tracks = await generatedDASHMedia(browser);
+  const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
+  const script = await response.text();
+  await page.addInitScript({
+    content: `(() => {
+    const tracks = ${JSON.stringify(tracks)};
+    for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
+    const unsafeWindow = window;
+    const addBuffer = MediaSource.prototype.addSourceBuffer;
+    MediaSource.isTypeSupported = () => true;
+    MediaSource.prototype.addSourceBuffer = function(mime) {
+      return addBuffer.call(this, mime.startsWith('video/')
+        ? 'video/webm; codecs="vp8"' : 'audio/webm; codecs="opus"');
+    };
+    const held = new Set();
+    document.addEventListener('resume-seek-downloads', () => {
+      for (const resume of [...held]) resume();
+    });
+    const GM_xmlhttpRequest = (details) => {
+      let cancelled = false;
+      const url = new URL(details.url);
+      const respond = () => {
+        held.delete(respond);
+        if (cancelled) return;
+        if (details.headers.Range) {
+          const track = tracks[Number(url.searchParams.get('track'))];
+          const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
+          const start = Number(range[1]), end = Number(range[2]);
+          details.onload({ status: 206, finalUrl: details.url,
+            response: track.data.slice(start, end + 1).buffer,
+            responseHeaders: 'Content-Range: bytes ' + start + '-' + end + '/' + track.data.length });
+          return;
+        }
+        let data;
+        if (url.pathname.endsWith('/view')) data = { title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }] };
+        else if (url.pathname.endsWith('/playurl')) {
+          const media = tracks.map((track, i) => ({
+            id: i === 0 ? 120 : 30216,
+            codecs: i === 0 ? 'avc1.64001E' : 'mp4a.40.2',
+            mimeType: i === 0 ? 'video/mp4' : 'audio/mp4',
+            baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?track=' + i,
+            SegmentBase: { Initialization: track.init.join('-'), indexRange: track.index.join('-') }
+          }));
+          data = { timelength: 30000, dash: { video: [media[0]], audio: [media[1]] } };
+        } else if (url.pathname.endsWith('/seg.so')) {
+          details.onload({ status: 200, finalUrl: details.url, response: new ArrayBuffer(0) });
+          return;
+        } else data = { isLogin: false };
+        details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0, data }) });
+      };
+      const timer = setTimeout(() => {
+        if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
+        else respond();
+      }, details.headers.Range ? Number(sessionStorage.getItem('seek-delay') || 25) : 0);
+      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); details.onabort(); } };
+    };
+    ${script}
+  })();`,
+  });
+  await page.goto('/');
+  await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-preview')).toContainText(
+    'Streamed Bilibili seeks',
+  );
+  await page.getByRole('button', { name: 'Create room', exact: true }).click();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await clickPlayerControl(page, 'Play together');
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));
+  await seekTo(page, 20);
+  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).barrier?.reason,
+    )
+    .toBe('buffering');
+  await page.evaluate(() => {
+    sessionStorage.removeItem('hold-seek');
+    sessionStorage.setItem('seek-delay', '450');
+    document.dispatchEvent(new Event('resume-seek-downloads'));
+  });
+  for (const target of [20, 7.9, 23.9, 2.9]) {
+    if (target !== 20) await seekTo(page, target);
+    await expect
+      .poll(async () => {
+        const frame = await decodedFrame(page);
+        return frame > target * 30 + 5 && frame < (target + 3) * 30;
+      })
+      .toBe(true);
+    await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  }
+  await clickPlayerControl(page, 'Pause together');
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await seekTo(page, 10);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(300);
+  await closeRoom(page);
+});
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
   page,
@@ -40,6 +151,10 @@ test('previewing another Bilibili link preserves the active helper and room unti
       const respond = () => {
         if (cancelled) return;
         if (media) {
+          if (sessionStorage.getItem('cdn-failure') === new URL(details.url).hostname) {
+            details.onerror();
+            return;
+          }
           const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
           const bytes = new Uint8Array(Number(range[2]) - Number(range[1]) + 1).fill(42);
           details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer,
@@ -55,6 +170,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
         else if (url.pathname.endsWith('/playurl')) {
           const track = { id: 32, codecs: 'avc1.64001E', mimeType: 'video/mp4',
             baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY',
+            backupUrl: ['https://backup.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY'],
             SegmentBase: { Initialization: '0-31', indexRange: '32-63' }
           };
           data = { timelength: 5000, dash: { video: [track, { ...track, codecs: 'av01.0.08M.08' }], audio: [
@@ -237,6 +353,26 @@ test('previewing another Bilibili link preserves the active helper and room unti
   expect(await page.locator('body').innerText()).not.toContain(
     'SYNTHETIC_REPLACEMENT_CANARY',
   );
+  // Fail the primary, then the backup. Later reads must reuse the recovered primary.
+  for (const [index, host] of [
+    'cdn.bilivideo.com',
+    'backup.bilivideo.com',
+  ].entries()) {
+    await page.evaluate(
+      (value) => sessionStorage.setItem('cdn-failure', value),
+      host,
+    );
+    expect(
+      (
+        await helper('bytes', {
+          ...read,
+          offset: (index + 1) * 2 * 1024 * 1024,
+          end: (index + 2) * 2 * 1024 * 1024 - 1,
+        })
+      ).ok,
+    ).toBe(true);
+    await expectOriginalMedia();
+  }
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
   await page.locator('#create-local-video').setInputFiles({

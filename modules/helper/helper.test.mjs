@@ -738,6 +738,86 @@ test('slow or failed CDN locations switch only to mirrors with matching initiali
     assert(!JSON.stringify(f.replies).includes(CANARY));
   }
 });
+test('later CDN failures can reuse a recovered source without cycling within a read', async () => {
+  let failing = 'cdn.bilivideo.com';
+  const f = fixture({
+      track: {
+        backupUrl: ['https://backup.bilivideo.com/upgcxcode/match.m4s'],
+      },
+      media(details) {
+        if (failing === 'all' || new URL(details.url).hostname === failing)
+          return { error: true };
+      },
+    }),
+    opened = await f.open(),
+    args = { handle: opened.value.handle, track: 0, generation: 1, length: 32 };
+  assert.equal((await f.call('bytes', { ...args, offset: 0 })).ok, true);
+  failing = 'backup.bilivideo.com';
+  assert.equal((await f.call('bytes', { ...args, offset: 32 })).ok, true);
+  assert.equal(new URL(f.requests.at(-1).url).hostname, 'cdn.bilivideo.com');
+  failing = 'all';
+  // Both sources fail on the next operation. Each must be tried only once.
+  const before = f.requests.length;
+  assert.equal(
+    (await f.call('bytes', { ...args, offset: 64 })).error,
+    'network-or-permission-denied',
+  );
+  assert.equal(f.requests.length - before, 2);
+  assert(!JSON.stringify(f.replies).includes(CANARY));
+});
+
+test('timed-out high-bitrate read-ahead shrinks and regrows after recovery', async () => {
+  let clock = 0;
+  let recovered = false;
+  const chunk = 256 * 1024,
+    f = fixture({
+      now: () => clock,
+      media(details, bytes) {
+        if (!recovered && bytes.length > chunk) {
+          clock += details.timeout;
+          return { timeout: true };
+        }
+        if (!recovered) clock += details.timeout / 2;
+      },
+    }),
+    opened = await f.open(),
+    args = {
+      handle: opened.value.handle,
+      track: 0,
+      generation: 1,
+      offset: 64,
+      length: chunk,
+      end: 64 + 20 * 1024 * 1024 - 1,
+      rate: 4 * 1024 * 1024,
+    };
+  let reply;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    reply = await f.call('bytes', args);
+    if (reply.ok) break;
+    assert.equal(reply.error, 'request-timeout');
+  }
+  assert.equal(reply.ok, true);
+  assert.equal(atob(reply.value.base64).length, chunk);
+  assert.equal(
+    (await f.call('bytes', { ...args, offset: 64 + chunk })).ok,
+    true,
+  );
+  recovered = true;
+  for (let i = 0; i < 7; i++)
+    assert.equal(
+      (
+        await f.call('bytes', {
+          ...args,
+          offset: 64 + (i + 2) * 2 * 1024 * 1024,
+        })
+      ).ok,
+      true,
+    );
+  const range = f.requests.at(-1).headers.Range.match(/bytes=(\d+)-(\d+)/);
+  assert.equal(Number(range[2]) - Number(range[1]) + 1, 2 * 1024 * 1024);
+  assert(!JSON.stringify(f.replies).includes(CANARY));
+});
+
 test('previews and opens select the best supported codec at the preferred or highest playable quality', async () => {
   const av1 = 'av01.0.08M.08',
     hevc = 'hev1.1.6.L120.90',

@@ -16,6 +16,7 @@ function fixture(
   progressive = false,
   codec = 'avc1.640033',
   reordered = false,
+  indexOffsetMs = 0,
 ) {
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -34,6 +35,7 @@ function fixture(
     index.writeUInt32BE(index.length, 0);
     index.write('sidx', 4);
     index.writeUInt32BE(1000, 16);
+    index.writeUInt32BE(indexOffsetMs, 20);
     index.writeUInt16BE(sizes.length, 30);
     sizes.forEach((length, i) => {
       index.writeUInt32BE(length, 32 + i * 12);
@@ -454,6 +456,139 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
     f.adapter.dispose();
   }
 });
+
+test.each(['network-or-permission-denied', 'request-timeout', 'http-503'])(
+  'a transient %s during read-ahead resumes the same byte cursor',
+  async (code) => {
+    const f = fixture(Array<number>(5).fill(12 * chunkSize));
+    let failed: Range | undefined;
+    try {
+      await f.load();
+      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+      const source = f.video.src;
+      f.read(async (range) => {
+        if (
+          !failed &&
+          range.track === 0 &&
+          range.offset === f.segments[0]![3]!.offset + chunkSize
+        ) {
+          failed = range;
+          throw new HelperError(code);
+        }
+      });
+      f.video.currentTime = 12;
+      await f.until(() =>
+        f.buffers.every((buffer) => buffer.times.at(-1)?.[1] === 25),
+      );
+      expect(failed).toBeDefined();
+      expect(f.video.src).toBe(source);
+      expect(
+        f.buffers[0]!.appends.reduce((total, range) => total + range.length, 0),
+      ).toBe(5 * 12 * chunkSize);
+      expect(
+        f.buffers[0]!.appends.filter(
+          (range) => range.offset === failed!.offset,
+        ),
+      ).toHaveLength(1);
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.adapter.dispose();
+    }
+  },
+);
+
+test.each([
+  ['request-timeout', 4],
+  ['http-429', 1],
+  ['destination-denied', 1],
+] as const)(
+  'persistent %s stops after bounded attempts',
+  async (code, attempts) => {
+    const f = fixture([12 * chunkSize]);
+    f.read(async () => {
+      throw new HelperError(code);
+    });
+    try {
+      const loading = expect(f.load()).rejects.toMatchObject({ code });
+      await vi.advanceTimersByTimeAsync(10000);
+      await loading;
+      expect(f.ranges.filter((range) => range.offset > 32)).toHaveLength(
+        attempts,
+      );
+      expect(f.onError).toHaveBeenCalledTimes(1);
+    } finally {
+      f.adapter.dispose();
+    }
+  },
+);
+
+test('seeks preserve playable frames when SIDX boundaries round past keyframes', async () => {
+  const f = fixture(
+    Array<number>(8).fill(2 * chunkSize),
+    false,
+    'avc1.640033',
+    false,
+    1,
+  );
+  try {
+    await f.load();
+    await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+    for (const time of [7.9, 8.25, 9.75]) {
+      f.video.currentTime = time;
+      if (time === 7.9) f.video.dispatchEvent(new Event('seeking'));
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(
+        f.buffers.every((buffer) =>
+          buffer.times.some(
+            ([start, end]) => start <= time && end > time + 0.1,
+          ),
+        ),
+      ).toBe(true);
+    }
+    expect(f.onError).not.toHaveBeenCalled();
+  } finally {
+    f.adapter.dispose();
+  }
+});
+
+test.each(['seek', 'dispose'] as const)(
+  '%s invalidates a delayed network retry before another request or append',
+  async (action) => {
+    const f = fixture(Array<number>(8).fill(1024));
+    try {
+      await f.load();
+      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+      f.read(async (range) => {
+        if (range.track === 0) throw new HelperError('request-timeout');
+      });
+      f.video.currentTime = 12;
+      await vi.advanceTimersByTimeAsync(250);
+      const before = f.ranges.length;
+      const appends = f.buffers[0]!.appends.length;
+      if (action === 'seek') {
+        f.video.currentTime = 32;
+        f.video.dispatchEvent(new Event('seeking'));
+      } else f.adapter.dispose();
+      f.read(undefined);
+      await vi.advanceTimersByTimeAsync(2000);
+      if (action === 'seek') {
+        expect(
+          f.ranges
+            .slice(before)
+            .filter((range) => range.track === 0)
+            .every((range) => range.offset >= f.segments[0]![6]!.offset),
+        ).toBe(true);
+        expect(f.buffers[0]!.times.at(-1)?.[1]).toBe(40);
+      } else {
+        expect(f.ranges).toHaveLength(before);
+        expect(f.buffers[0]!.appends).toHaveLength(appends);
+      }
+      expect(f.onError).not.toHaveBeenCalled();
+    } finally {
+      f.adapter.dispose();
+    }
+  },
+);
 
 test('a paused high-bitrate fragment stops prefetch at the byte budget and resumes from its cursor', async () => {
   for (const [latency, ahead] of [

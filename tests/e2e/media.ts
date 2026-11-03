@@ -34,13 +34,18 @@ export async function generatedVideo(
   browser: Browser,
   seconds = 30,
   audio = false,
+  options: {
+    audioOnly?: boolean;
+    paddingBytes?: number;
+    keyframeSeconds?: number;
+  } = {},
 ): Promise<Buffer> {
   // The source encoder is Chromium for every project. Firefox must decode the same bytes;
   // its WebCodecs encoder availability must not determine playback coverage.
   if (browser.browserType().name() !== 'chromium') {
     const encoder = await chromium.launch();
     try {
-      return await generatedVideo(encoder, seconds, audio);
+      return await generatedVideo(encoder, seconds, audio, options);
     } finally {
       await encoder.close();
     }
@@ -56,7 +61,7 @@ export async function generatedVideo(
     );
     await page.goto('http://localhost/ovs-fixture');
     const chunks = await page.evaluate(
-      async ({ count, audio }) => {
+      async ({ count, audio, keyframeSeconds }) => {
         const canvas = document.createElement('canvas');
         canvas.width = 640;
         canvas.height = 360;
@@ -101,7 +106,9 @@ export async function generatedVideo(
             timestamp: Math.round((frame * 1000000) / 30),
             duration: Math.round(1000000 / 30),
           });
-          encoder.encode(source, { keyFrame: frame % 30 === 0 });
+          encoder.encode(source, {
+            keyFrame: frame % (30 * keyframeSeconds) === 0,
+          });
           source.close();
           if (encoder.encodeQueueSize > 30) await encoder.flush();
         }
@@ -147,7 +154,11 @@ export async function generatedVideo(
         }
         return { frames, sound };
       },
-      { count: seconds * 30, audio },
+      {
+        count: seconds * 30,
+        audio,
+        keyframeSeconds: options.keyframeSeconds ?? 1,
+      },
     );
     const duration = Buffer.alloc(8);
     duration.writeDoubleBE(seconds * 1000);
@@ -218,11 +229,15 @@ export async function generatedVideo(
       while (!(tracks[4]! & (1 << (8 - lengthWidth)))) lengthWidth++;
       tracks = ebml(
         0x1654ae6b,
-        Buffer.concat([tracks.subarray(4 + lengthWidth), track]),
+        options.audioOnly
+          ? track
+          : Buffer.concat([tracks.subarray(4 + lengthWidth), track]),
       );
     }
     const frames = [
-      ...chunks.frames.map((f) => ({ ...f, track: 1 })),
+      ...(options.audioOnly
+        ? []
+        : chunks.frames.map((f) => ({ ...f, track: 1 }))),
       ...chunks.sound.map((f) => ({ ...f, track: 2 })),
     ].sort((a, b) => a.timestamp - b.timestamp);
     const clusters: Buffer[] = [];
@@ -239,7 +254,16 @@ export async function generatedVideo(
         return ebml(0xa3, Buffer.concat([h, Buffer.from(frame.bytes)]));
       });
       clusters.push(
-        ebml(0x1f43b675, Buffer.concat([ebml(0xe7, uint(time)), ...blocks])),
+        ebml(
+          0x1f43b675,
+          Buffer.concat([
+            ebml(0xe7, uint(time)),
+            ...blocks,
+            ...(options.paddingBytes
+              ? [ebml(0xec, Buffer.alloc(options.paddingBytes))]
+              : []),
+          ]),
+        ),
       );
     }
     return Buffer.concat([
@@ -249,6 +273,59 @@ export async function generatedVideo(
   } finally {
     await context.close();
   }
+}
+
+// Synthetic DASH offsets wrap separately decoded WebM tracks. Browser fixtures
+// map only their declared MP4 MIME types to WebM; the real adapter owns delivery.
+export async function generatedDASHMedia(browser: Browser, seconds = 30) {
+  const files = await Promise.all([
+    generatedVideo(browser, seconds, false, {
+      paddingBytes: 128 * 1024,
+      keyframeSeconds: 5,
+    }),
+    generatedVideo(browser, seconds, true, { audioOnly: true }),
+  ]);
+  return files.map((file) => {
+    const marker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+    const first = file.indexOf(marker);
+    if (first < 0) throw new Error('Synthetic clusters missing');
+    const clusters: Buffer[] = [];
+    for (let at = first; at < file.length;) {
+      const start = at + 4;
+      let width = 1;
+      while (!(file[start]! & (1 << (8 - width)))) width++;
+      let length = file[start]! & ((1 << (8 - width)) - 1);
+      for (let byte = 1; byte < width; byte++)
+        length = length * 256 + file[start + byte]!;
+      const end = start + width + length;
+      clusters.push(file.subarray(at, end));
+      at = end;
+    }
+    const fragments = [];
+    for (let i = 0; i < clusters.length; i += 5)
+      fragments.push(Buffer.concat(clusters.slice(i, i + 5)));
+    const index = Buffer.alloc(32 + fragments.length * 12);
+    index.writeUInt32BE(index.length, 0);
+    index.write('sidx', 4);
+    index.writeUInt32BE(1000, 16);
+    // Native frame timestamps can precede a rounded SIDX boundary.
+    index.writeUInt32BE(1, 20);
+    index.writeUInt16BE(fragments.length, 30);
+    fragments.forEach((cluster, i) => {
+      index.writeUInt32BE(cluster.length, 32 + i * 12);
+      index.writeUInt32BE(5000, 36 + i * 12);
+    });
+    return {
+      bytes: Buffer.concat([
+        file.subarray(0, first),
+        index,
+        ...clusters,
+      ]).toString('base64'),
+      init: [0, first - 1],
+      index: [first, first + index.length - 1],
+      mediaOffset: first + index.length,
+    };
+  });
 }
 
 // Read the source-frame pixels, independently of currentTime and the room target.

@@ -238,7 +238,14 @@ export class BilibiliAdapter implements PlayerAdapter {
         this.assertSeek(seek);
         if (
           !(error instanceof HelperError) ||
-          !['busy', 'rate-limited'].includes(error.code) ||
+          (![
+            'busy',
+            'rate-limited',
+            'network-or-permission-denied',
+            'request-timeout',
+            'http-408',
+          ].includes(error.code) &&
+            !/^http-5[0-9]{2}$/.test(error.code)) ||
           attempt >= 3
         )
           throw error;
@@ -378,12 +385,20 @@ export class BilibiliAdapter implements PlayerAdapter {
     const target = this.video.currentTime;
     const ahead = this.window(track, target);
     const behind = pressure ? 1 : Math.min(4, ahead / 7);
-    const current = track.segments.find(
+    const currentIndex = track.segments.findIndex(
       (s) => s.time <= target && s.end > target,
     );
+    const current = track.segments[currentIndex];
+    const previous = track.segments[currentIndex - 1];
     // remove() also drops dependent frames up to the next random access point.
-    // Preserve the current fragment's keyframe even when its byte rate is high.
-    const before = Math.min(target - behind, current?.time ?? target);
+    // SIDX timestamps can round past the current keyframe. Cut within the
+    // preceding fragment so removal stops before that keyframe, not after it.
+    const dependencyStart = current
+      ? previous
+        ? (previous.time + previous.end) / 2
+        : 0
+      : target;
+    const before = Math.min(target - behind, dependencyStart);
     const ranges = track.buffer.buffered;
     if (ranges.length && ranges.start(0) < before)
       await this.update(track.buffer, () => track.buffer.remove(0, before));
