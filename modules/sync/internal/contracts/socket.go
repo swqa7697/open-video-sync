@@ -167,6 +167,9 @@ func CommandDigest(f ClientFrame) string {
 			d = []any{m.Kind, m.FingerprintVersion, m.Digest, m.SizeBytes, m.DurationMs, m.Label}
 		} else {
 			d = []any{m.Kind, m.BVID, m.CID, m.Part, m.DurationMs}
+			if m.EpisodeID != "" {
+				d = append(d, m.EpisodeID)
+			}
 		}
 		a = append(a, d)
 

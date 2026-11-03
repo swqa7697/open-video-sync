@@ -51,7 +51,8 @@ function current(episode: Episode): boolean {
   return (
     props.room.media?.kind === 'bilibili' &&
     props.room.media.bvid === episode.bvid &&
-    props.room.media.part === episode.part
+    props.room.media.part === episode.part &&
+    props.room.media.episodeId === episode.episodeId
   );
 }
 function showMembers(): void {

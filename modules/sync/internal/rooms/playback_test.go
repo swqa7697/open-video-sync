@@ -77,7 +77,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}
+	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000, EpisodeID: "103591"}}
 	repository.reject.Store(true)
 	err = service.Handle(ctx, bound, command)
 	expectCode(t, err, "busy")
@@ -96,6 +96,11 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	snap, err = service.Snapshot(ctx, host, snap.RoomID)
 	if err != nil || snap.MediaGeneration != 1 || snap.Revision != 2 {
 		t.Fatal("retry lost atomic outcome", err)
+	}
+	changedEpisode := command
+	changedEpisode.Media.EpisodeID = "250984"
+	if err := service.Handle(ctx, bound, changedEpisode); err == nil {
+		t.Fatal("changed episode reused the original command receipt")
 	}
 	play := contracts.ClientFrame{Type: "playback.command", CommandID: key(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, MediaGeneration: snap.MediaGeneration, Action: "play"}
 	if err := service.Handle(ctx, bound, play); err != nil {

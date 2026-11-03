@@ -12,7 +12,11 @@ import {
 } from '../../i18n';
 import { LocalAdapter } from '../../player/adapters/local';
 import { HelperBridge } from '../../player/bilibili/bridge';
-import { decodePreview, parseSelection } from '../../player/bilibili/media';
+import {
+  decodePreview,
+  parseSelection,
+  selectionInput,
+} from '../../player/bilibili/media';
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
 
@@ -106,17 +110,17 @@ async function prepare(): Promise<
       await inspection.hello(true);
       const info = decodePreview(
         await inspection.call('preview', selected),
-        selected.bvid,
-        selected.part,
+        selected,
       );
       if (signal.aborted) return;
-      url.value = info.bvid;
+      url.value = selectionInput(info);
       part.value = info.part;
       parts.value = info.parts;
       summary.value = info.title;
       media = {
         kind: 'bilibili',
         bvid: info.bvid,
+        ...(info.episodeId ? { episodeId: info.episodeId } : {}),
         cid: info.cid,
         part: info.part,
         durationMs: Math.round(info.duration * 1000),
@@ -146,7 +150,7 @@ async function selectBilibili(
   if (props.disabled || working.value) return;
   switchSource('bilibili');
   if (selection) {
-    url.value = selection.bvid;
+    url.value = selectionInput(selection);
     part.value = selection.part;
     parts.value = 0;
   }

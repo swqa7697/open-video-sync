@@ -383,5 +383,96 @@
       "controllers": "guest",
       "waitForAll": true
     }
+  },
+  {
+    "name": "bangumi episode matching metadata",
+    "contract": "media",
+    "valid": true,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": "103591"
+    }
+  },
+  {
+    "name": "invalid bangumi episode ID \"\"",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": ""
+    }
+  },
+  {
+    "name": "invalid bangumi episode ID \"0\"",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": "0"
+    }
+  },
+  {
+    "name": "invalid bangumi episode ID \"01\"",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": "01"
+    }
+  },
+  {
+    "name": "invalid bangumi episode ID \"https://example.invalid/ep103591\"",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": "https://example.invalid/ep103591"
+    }
+  },
+  {
+    "name": "invalid bangumi episode ID 103591",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 1,
+      "durationMs": 120000,
+      "episodeId": 103591
+    }
+  },
+  {
+    "name": "bangumi has no multipart selection",
+    "contract": "media",
+    "valid": false,
+    "input": {
+      "kind": "bilibili",
+      "bvid": "BV1wx411Q7kh",
+      "cid": "335952122",
+      "part": 2,
+      "durationMs": 120000,
+      "episodeId": "103591"
+    }
   }
 ]

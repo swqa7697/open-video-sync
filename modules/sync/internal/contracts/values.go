@@ -17,9 +17,10 @@ const (
 )
 
 var (
-	digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	bvidPattern   = regexp.MustCompile(`^BV[1-9A-HJ-NP-Za-km-z]{10}$`)
-	cidPattern    = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+	digestPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	bvidPattern    = regexp.MustCompile(`^BV[1-9A-HJ-NP-Za-km-z]{10}$`)
+	cidPattern     = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+	episodePattern = regexp.MustCompile(`^[1-9][0-9]{0,14}$`)
 )
 
 // ProfilePatch replaces the optional name; an empty string clears it.
@@ -46,6 +47,7 @@ type MediaDescriptor struct {
 	BVID               string `json:"bvid,omitempty"`
 	CID                string `json:"cid,omitempty"`
 	Part               int64  `json:"part,omitempty"`
+	EpisodeID          string `json:"episodeId,omitempty"`
 }
 
 // DecodeProfilePatch validates an exact profile mutation body.
@@ -110,10 +112,19 @@ func DecodeMedia(data []byte) (MediaDescriptor, error) {
 		}
 		media.FingerprintVersion, media.SizeBytes, media.Digest = version, size, digest
 	case "bilibili":
+		fields := []string{"kind", "bvid", "cid", "part", "durationMs"}
+		if episode, exists := object["episodeId"]; exists {
+			id, ok := episode.(string)
+			if !ok || !episodePattern.MatchString(id) {
+				return MediaDescriptor{}, ErrInvalidInput
+			}
+			media.EpisodeID = id
+			fields = append(fields, "episodeId")
+		}
 		bvid, b := object["bvid"].(string)
 		cid, c := object["cid"].(string)
 		part, p := integer(object["part"], 1, 10000)
-		if !shape(object, "kind", "bvid", "cid", "part", "durationMs") || !b || !c || !p || !bvidPattern.MatchString(bvid) || !cidPattern.MatchString(cid) {
+		if !shape(object, fields...) || !b || !c || !p || !bvidPattern.MatchString(bvid) || !cidPattern.MatchString(cid) || (media.EpisodeID != "" && part != 1) {
 			return MediaDescriptor{}, ErrInvalidInput
 		}
 		media.BVID, media.CID, media.Part = bvid, cid, part

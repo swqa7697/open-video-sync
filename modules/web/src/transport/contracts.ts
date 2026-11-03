@@ -21,6 +21,7 @@ export type MediaDescriptor =
   | {
       kind: 'bilibili';
       bvid: string;
+      episodeId?: string;
       cid: string;
       part: number;
       durationMs: number;
@@ -137,7 +138,22 @@ export function decodeMedia(value: unknown): MediaDescriptor {
     return media;
   }
   if (input.kind === 'bilibili') {
-    shape(input, ['kind', 'bvid', 'cid', 'part', 'durationMs']);
+    const episodeId = Object.hasOwn(input, 'episodeId')
+      ? text(input.episodeId, 15, 15)
+      : undefined;
+    shape(input, [
+      'kind',
+      'bvid',
+      'cid',
+      'part',
+      'durationMs',
+      ...(episodeId !== undefined ? ['episodeId'] : []),
+    ]);
+    if (
+      episodeId !== undefined &&
+      (!/^[1-9][0-9]{0,14}$/.test(episodeId) || input.part !== 1)
+    )
+      return invalid();
     const bvid = text(input.bvid, 12, 12);
     const cid = text(input.cid, 20, 20);
     if (!/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid)) {
@@ -147,6 +163,7 @@ export function decodeMedia(value: unknown): MediaDescriptor {
     return {
       kind: 'bilibili',
       bvid,
+      ...(episodeId !== undefined ? { episodeId } : {}),
       cid,
       part: integer(input.part, 1, 10_000),
       durationMs,

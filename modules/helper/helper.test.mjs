@@ -68,7 +68,17 @@ function fixture(options = {}) {
       status = 200,
       finalUrl = url.href,
       contentRange = '';
-    if (url.pathname.endsWith('/view'))
+    if (url.pathname === '/pgc/view/web/season')
+      value = JSON.stringify({
+        code: options.seasonCode || 0,
+        result: options.season,
+      });
+    else if (url.pathname === '/pgc/player/web/playurl')
+      value = JSON.stringify({
+        code: options.playCode || 0,
+        result: { ...play, ...options.pgcPlay },
+      });
+    else if (url.pathname.endsWith('/view'))
       value = options.badJSON
         ? `invalid-json-${CANARY}`
         : JSON.stringify({
@@ -699,6 +709,100 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     quality: 120,
   });
   assert.equal(unavailable.value.quality, 64);
+});
+test('bangumi pins the episode, keeps access local, and refreshes through the PGC endpoint', async () => {
+  const episodes = [
+    {
+      id: 103591,
+      bvid: 'BV1hf4y1N75G',
+      cid: 400306737,
+      title: '1',
+      long_title: 'Opening',
+      token: CANARY,
+    },
+    {
+      id: 250984,
+      bvid: 'BV17Jx76CEje',
+      cid: 400306738,
+      title: '2',
+      long_title: 'Finale',
+    },
+  ];
+  const season = {
+    season_id: 6038,
+    title: 'Season',
+    episodes,
+    credential: CANARY,
+  };
+  const f = fixture({ season, expired: true });
+  const preview = await f.call('preview', { seasonId: '6038', part: 1 });
+  assert.equal(preview.ok, true, preview.error);
+  assert.equal(preview.value.episodeId, '103591');
+  assert.equal(preview.value.bvid, episodes[0].bvid);
+  assert.equal(preview.value.title, 'Season · 1 · Opening');
+  assert.equal(preview.value.playlist.episodes[1].episodeId, '250984');
+  assert(!JSON.stringify(preview).includes(CANARY));
+  assert(!JSON.stringify(preview).includes('https://'));
+  const second = await f.call('preview', { episodeId: '250984', part: 1 });
+  assert.equal(second.value.bvid, episodes[1].bvid);
+  const open = await f.call('open', {
+    bvid: episodes[1].bvid,
+    episodeId: '250984',
+    part: 1,
+    generation: 1,
+  });
+  assert.equal(open.ok, true, open.error);
+  const bytes = await f.call('bytes', {
+    handle: open.value.handle,
+    track: 0,
+    offset: 0,
+    length: 32,
+    generation: 1,
+  });
+  assert.equal(bytes.ok, true, bytes.error);
+  const apiRequests = f.requests
+    .map((r) => new URL(r.url))
+    .filter((u) => u.hostname === 'api.bilibili.com');
+  assert(apiRequests.every((u) => u.pathname.startsWith('/pgc/')));
+  const plays = apiRequests.filter((u) => u.pathname.endsWith('/playurl'));
+  assert.equal(plays.at(-1).searchParams.get('ep_id'), '250984');
+  assert.equal(plays.at(-1).searchParams.get('cid'), '400306738');
+  assert.equal(plays.at(-1).searchParams.get('fnval'), '2064');
+  assert(
+    plays.every(
+      (u) => !u.searchParams.has('access_key') && !u.searchParams.has('area'),
+    ),
+  );
+  assert(!JSON.stringify(bytes).includes(CANARY));
+  for (const [options, expected] of [
+    [{ seasonCode: -101 }, 'login-required'],
+    [{ playCode: -10403 }, 'platform-access-denied'],
+    [{ pgcPlay: { is_preview: 1 } }, 'platform-access-denied'],
+  ]) {
+    const denied = fixture({ season, ...options });
+    const result = await denied.call('preview', {
+      episodeId: '103591',
+      part: 1,
+    });
+    assert.equal(result.error, expected);
+    assert(!JSON.stringify(result).includes(CANARY));
+    assert(
+      denied.requests.every(
+        (r) => new URL(r.url).hostname === 'api.bilibili.com',
+      ),
+    );
+  }
+  for (const selection of [
+    { episodeId: '0', part: 1 },
+    { seasonId: '6038', episodeId: '103591', part: 1 },
+    { bvid: episodes[0].bvid, episodeId: '250984', part: 1 },
+    { episodeId: '103591', part: 2 },
+    { episodeId: '999', part: 1 },
+  ])
+    assert.equal(
+      (await fixture({ season }).call('preview', selection)).ok,
+      false,
+    );
 });
 test('unapproved primary media locations use reviewed backups without exposing URLs', async () => {
   const backup = `https://backup.bilivideo.com/upgcxcode/fixture.m4s?upsig=${CANARY}`;

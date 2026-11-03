@@ -90,6 +90,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     part: number,
     signal: AbortSignal,
     quality?: number,
+    episodeId?: string,
   ): Promise<MediaDescriptor> {
     const abort = () => this.dispose();
     signal.addEventListener('abort', abort, { once: true });
@@ -106,11 +107,13 @@ export class BilibiliAdapter implements PlayerAdapter {
         await this.bridge.call('open', {
           bvid,
           part,
+          ...(episodeId ? { episodeId } : {}),
           generation: this.generation,
           ...(quality ? { quality } : {}),
         }),
         bvid,
         part,
+        episodeId,
       );
       this.assertOwned();
       if (typeof MediaSource === 'undefined')
@@ -169,6 +172,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       return {
         kind: 'bilibili',
         bvid,
+        ...(this.info.episodeId ? { episodeId: this.info.episodeId } : {}),
         cid: this.info.cid,
         part,
         durationMs: Math.round(this.info.duration * 1000),

@@ -17,7 +17,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   page,
   browser,
 }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   const tracks = await generatedDASHMedia(browser);
   const fixturePage = await browser.newPage();
   const sheets = await fixturePage.evaluate(() =>
@@ -101,7 +101,13 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           return;
         }
         let data;
-        if (url.pathname.endsWith('/view')) data = {
+        if (url.pathname === '/pgc/view/web/season') data = {
+          season_id: 6038, title: 'Synthetic bangumi', episodes: [
+            { id: 103591, bvid: 'BV1hf4y1N75G', cid: 1, title: '1', long_title: 'Opening' },
+            { id: 250984, bvid: 'BV17Jx76CEje', cid: 2, title: '2', long_title: 'Finale' }
+          ]
+        };
+        else if (url.pathname.endsWith('/view')) data = {
           title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }],
           ugc_season: { title: 'Large collection', sections: [{
             episodes: Array(929).fill({
@@ -139,7 +145,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           details.onload({ status: 200, finalUrl: details.url, response: new ArrayBuffer(0) });
           return;
         } else data = { isLogin: false };
-        details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0, data }) });
+        details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0,
+          [url.pathname.startsWith('/pgc/') ? 'result' : 'data']: data }) });
       };
       const timer = setTimeout(() => {
         if (thumbnail && sessionStorage.getItem('hold-thumbnails')) {
@@ -155,7 +162,9 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   })();`,
   });
   await page.goto('/');
-  await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+  await page
+    .getByLabel('Video URL or BV/SS/EP identifier')
+    .fill('BV17Jx76CEje');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();
@@ -303,6 +312,50 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   ).toBeVisible();
   await seekTo(page, 10);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(300);
+  // Reuse the actual decoder and helper to cover SS resolution, EP persistence,
+  // reloading the selected episode, and host episode changes.
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await page
+    .getByLabel('Video URL or BV/SS/EP identifier')
+    .fill('https://www.bilibili.com/bangumi/play/ss6038');
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-preview')).toContainText(
+    'Synthetic bangumi · 1 · Opening',
+  );
+  await page
+    .getByRole('button', { name: 'Use this video', exact: true })
+    .click();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('103591');
+  await page.reload();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await page.getByRole('tab', { name: /Episodes/ }).click();
+  await page.getByRole('button', { name: /Finale/ }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('250984');
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await clickPlayerControl(page, 'Play together');
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await closeRoom(page);
 });
 
@@ -480,7 +533,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
   };
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page
-    .getByLabel('Video URL or BV identifier')
+    .getByLabel('Video URL or BV/SS/EP identifier')
     .fill('https://www.bilibili.com/video/BV17Jx76CEje');
   const held = page.evaluate(
     () =>
@@ -520,7 +573,9 @@ test('previewing another Bilibili link preserves the active helper and room unti
       (mode) => sessionStorage.setItem('preview-failure', mode),
       failure,
     );
-    await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+    await page
+      .getByLabel('Video URL or BV/SS/EP identifier')
+      .fill('BV17Jx76CEje');
     await page
       .getByRole('button', { name: 'Preview video', exact: true })
       .click();
@@ -660,7 +715,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'Update helper',
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
-  await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
+  await page
+    .getByLabel('Video URL or BV/SS/EP identifier')
+    .fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   // The development version 0.0.0 has no older valid release. The component
@@ -685,7 +742,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('complementary', { name: 'Playback helper' }),
   ).toHaveCount(0);
-  await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
+  await page
+    .getByLabel('Video URL or BV/SS/EP identifier')
+    .fill('BV1hf4y1N75G');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();

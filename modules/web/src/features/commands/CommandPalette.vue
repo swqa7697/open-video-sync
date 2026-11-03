@@ -12,6 +12,7 @@ import {
 import Icon from '../../components/Icon.vue';
 import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 import { errorMessage, t, translate } from '../../i18n';
+import { selectionInput } from '../../player/bilibili/media';
 import { searchCommands, type CommandMatch, type QuickCommand } from './search';
 
 const props = defineProps<{ commands: QuickCommand[] }>();
@@ -201,7 +202,7 @@ onBeforeUnmount(() => {
             ><strong>{{ match.command.label }}</strong
             ><span v-if="match.selection || match.command.detail">{{
               match.selection
-                ? `${match.selection.bvid} · ${t('player.part', { part: match.selection.part })}`
+                ? `${selectionInput(match.selection)} · ${t('player.part', { part: match.selection.part })}`
                 : match.command.detail
             }}</span></span
           >

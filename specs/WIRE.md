@@ -18,7 +18,7 @@ Durations range from 1 ms to seven days. Local file sizes range from 1 byte to 1
 `RoomSettings` is exactly `{controllers:"host"|"everyone", waitForAll:boolean}`.
 Defaults are `host` and `true`. Reject unknown settings fields.
 Local descriptors are `{kind:"local",fingerprintVersion:1,digest,sizeBytes,durationMs,label?}`.
-Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs}`. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
+Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs,episodeId?}`. Bangumi includes `episodeId`, a positive decimal string of at most 15 digits without leading zeros, and uses `part:1`. Resolve season inputs to one concrete episode in the browser before sending a descriptor. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
 
 Errors are `{code,message,requestId,retryable}` with bounded safe messages.
 Use HTTP 400 for invalid input, 401 for authentication, 403 for authorization, 404 for missing resources, 409 for conflicts, 413 for oversized bodies, 415 for unsupported content types, 429 for rate or capacity limits, and 503 for unavailable persistence or a busy server.

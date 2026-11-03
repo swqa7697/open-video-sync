@@ -88,6 +88,18 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(page.locator('#bilibili-part')).toHaveValue('3');
   await runQuickAction(page, 'BV1hf4y1N75G');
   await expect(page.locator('#bilibili-part')).toHaveCount(0);
+  for (const [query, expected] of [
+    [
+      'https://www.bilibili.com/bangumi/play/ss6038?tracking=synthetic',
+      'ss6038',
+    ],
+    ['ss91812', 'ss91812'],
+    ['$ ep103591', 'ep103591'],
+  ]) {
+    await runQuickAction(page, query!);
+    await expect(page.locator('#bilibili-url')).toHaveValue(expected!);
+    await expect(page.locator('#bilibili-part')).toHaveCount(0);
+  }
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
   await expect(

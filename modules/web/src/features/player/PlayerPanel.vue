@@ -345,7 +345,10 @@ watch(
     if (
       media?.kind !== 'bilibili' ||
       !playlist.value?.episodes.some(
-        (episode) => episode.bvid === media.bvid && episode.part === media.part,
+        (episode) =>
+          episode.bvid === media.bvid &&
+          episode.part === media.part &&
+          episode.episodeId === media.episodeId,
       )
     )
       playlist.value = undefined;
@@ -611,7 +614,8 @@ function mediaMatches(
     local.kind === 'bilibili' &&
     selected.bvid === local.bvid &&
     selected.cid === local.cid &&
-    selected.part === local.part
+    selected.part === local.part &&
+    selected.episodeId === local.episodeId
   );
 }
 function danmakuPreferences(): void {
@@ -769,7 +773,7 @@ function showError(value: Message | '', reload = false): void {
   errorReload.value = reload;
 }
 async function chooseBilibili(
-  selected: Pick<Episode, 'bvid' | 'part'>,
+  selected: Pick<Episode, 'bvid' | 'part' | 'episodeId'>,
   publishMedia = false,
   quality?: number,
 ): Promise<void> {
@@ -810,6 +814,7 @@ async function chooseBilibili(
       selected.part,
       signal,
       quality ?? preferredQuality.value,
+      selected.episodeId,
     );
     if (signal.aborted || generation !== selectionGeneration) return;
     streamInfo.value = local.mediaInfo;
@@ -954,7 +959,10 @@ async function selectEpisode(episode: Episode): Promise<void> {
   if (
     !canReplace.value ||
     !playlist.value?.episodes.some(
-      (entry) => entry.bvid === episode.bvid && entry.part === episode.part,
+      (entry) =>
+        entry.bvid === episode.bvid &&
+        entry.part === episode.part &&
+        entry.episodeId === episode.episodeId,
     )
   )
     return;
@@ -962,7 +970,8 @@ async function selectEpisode(episode: Episode): Promise<void> {
   if (
     media?.kind === 'bilibili' &&
     media.bvid === episode.bvid &&
-    media.part === episode.part
+    media.part === episode.part &&
+    media.episodeId === episode.episodeId
   )
     return;
   await chooseBilibili(episode, true);

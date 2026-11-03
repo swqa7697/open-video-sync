@@ -84,6 +84,8 @@ Hover over the progress bar to preview the target frame and time. Bilibili uses 
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
 
+Paste a normal video link or BV identifier, or a bangumi link such as `https://www.bilibili.com/bangumi/play/ss6038`. Bare `ss6038` (season) and `ep103591` (episode) identifiers also work. Season links select the first main episode; the host can switch through Episodes. OVS preserves the selected episode when members join or reload. Each member needs their own access, including any required login, subscription, purchase, and region eligibility. A restricted or trial-only response leaves that member unready. Install the updated helper for bangumi support.
+
 OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
 
 ### Rooms and preferences

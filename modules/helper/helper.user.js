@@ -75,6 +75,8 @@
         '/x/web-interface/view',
         '/x/player/pagelist',
         '/x/player/playurl',
+        '/pgc/view/web/season',
+        '/pgc/player/web/playurl',
         '/x/web-interface/nav',
         '/x/v2/dm/web/seg.so',
         '/x/player/videoshot',
@@ -274,23 +276,24 @@
             ? 'login-required'
             : 'platform-access-denied',
       );
-    return x.data;
+    return path.startsWith('/pgc/') ? x.result : x.data;
+  }
+  function displayText(value) {
+    if (typeof value !== 'string') return '';
+    let result = '';
+    for (const c of value) {
+      const code = c.codePointAt(0);
+      if (code < 32 || (code >= 127 && code <= 159)) continue;
+      if (result.length + c.length > 160) break;
+      result += c;
+    }
+    return result;
   }
   // Return display/selection metadata only. Provider objects stay in the helper.
   function episodeList(view, bvid, part) {
     const episodes = [],
       seen = new Set();
-    const text = (value) => {
-      if (typeof value !== 'string') return '';
-      let result = '';
-      for (const c of value) {
-        const code = c.codePointAt(0);
-        if (code < 32 || (code >= 127 && code <= 159)) continue;
-        if (result.length + c.length > 160) break;
-        result += c;
-      }
-      return result;
-    };
+    const text = displayText;
     const add = (id, page, title) => {
       if (
         !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(id) ||
@@ -356,14 +359,7 @@
       return false;
     }
   }
-  async function resolve(
-    bvid,
-    part,
-    selectedQuality = 0,
-    currentTracks,
-    cancellations,
-    deadline = performance.now() + RESOLUTION_DEADLINE,
-  ) {
+  async function videoMetadata({ bvid, part }, cancellations, deadline) {
     if (
       !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
       !Number.isInteger(part) ||
@@ -405,11 +401,123 @@
       view.pages.length > 10000
     )
       throw Error('invalid-media');
+    const playlist = singleVideo ? undefined : episodeList(view, bvid, part);
+    return {
+      bvid,
+      cid: String(page.cid),
+      part,
+      title: displayText(singleVideo ? page.part || bvid : view.title),
+      parts: view.pages.length,
+      ...(playlist ? { playlist } : {}),
+    };
+  }
+  async function bangumiMetadata(selection, cancellations, deadline) {
+    const { episodeId, seasonId, bvid, part } = selection;
+    const validID = (id) =>
+      typeof id === 'string' && /^[1-9][0-9]{0,14}$/.test(id);
+    if (
+      part !== 1 ||
+      (seasonId !== undefined
+        ? !validID(seasonId) || episodeId !== undefined || bvid !== undefined
+        : !validID(episodeId)) ||
+      (bvid !== undefined && !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid))
+    )
+      throw Error('invalid-media');
+    const season = await api(
+      '/pgc/view/web/season',
+      seasonId ? { season_id: seasonId } : { ep_id: episodeId },
+      cancellations,
+      deadline,
+    );
+    if (
+      !Array.isArray(season?.episodes) ||
+      !season.episodes.length ||
+      season.episodes.length > 10000
+    )
+      throw Error('invalid-media');
+    if (seasonId && String(season.season_id) !== seasonId)
+      throw Error('invalid-media');
+    const entries = [...season.episodes];
+    if (season.section !== undefined) {
+      if (!Array.isArray(season.section) || season.section.length > 100)
+        throw Error('invalid-media');
+      for (const section of season.section) {
+        if (
+          !Array.isArray(section?.episodes) ||
+          entries.length + section.episodes.length > 10000
+        )
+          throw Error('invalid-media');
+        entries.push(...section.episodes);
+      }
+    }
+    // A season always starts at its first main episode, independent of account history.
+    const episode = seasonId
+      ? season.episodes[0]
+      : entries.find((e) => String(e?.id) === episodeId);
+    if (!episode) throw Error('unavailable');
+    const validEpisode = (e) =>
+      e &&
+      Number.isSafeInteger(e.id) &&
+      validID(String(e.id)) &&
+      typeof e.bvid === 'string' &&
+      /^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(e.bvid) &&
+      Number.isSafeInteger(e.cid) &&
+      e.cid > 0;
+    if (!validEpisode(episode) || (bvid !== undefined && episode.bvid !== bvid))
+      throw Error('invalid-media');
+    const title = (e) =>
+      displayText(
+        [displayText(e.title), displayText(e.long_title)]
+          .filter(Boolean)
+          .join(' · '),
+      );
+    const episodes = [],
+      seen = new Set();
+    for (const e of entries) {
+      if (!validEpisode(e) || seen.has(e.bvid)) continue;
+      seen.add(e.bvid);
+      episodes.push({
+        bvid: e.bvid,
+        part: 1,
+        episodeId: String(e.id),
+        title: title(e) || `EP${e.id}`,
+      });
+      if (episodes.length > 500) break;
+    }
+    const playlist =
+      episodes.length > 1 && episodes.length <= 500 && seen.has(episode.bvid)
+        ? { title: displayText(season.title), episodes }
+        : undefined;
+    return {
+      bvid: episode.bvid,
+      cid: String(episode.cid),
+      part: 1,
+      episodeId: String(episode.id),
+      parts: 1,
+      title: displayText(
+        [displayText(season.title), title(episode)].filter(Boolean).join(' · '),
+      ),
+      ...(playlist ? { playlist } : {}),
+    };
+  }
+  async function resolve(
+    selection,
+    selectedQuality = 0,
+    currentTracks,
+    cancellations,
+    deadline = performance.now() + RESOLUTION_DEADLINE,
+  ) {
+    const metadata =
+      selection.episodeId !== undefined || selection.seasonId !== undefined
+        ? await bangumiMetadata(selection, cancellations, deadline)
+        : await videoMetadata(selection, cancellations, deadline);
     const play = await api(
-      '/x/player/playurl',
+      metadata.episodeId ? '/pgc/player/web/playurl' : '/x/player/playurl',
       {
-        bvid,
-        cid: String(page.cid),
+        ...(metadata.episodeId
+          ? { ep_id: metadata.episodeId }
+          : { bvid: metadata.bvid }),
+        cid: metadata.cid,
         qn: String(selectedQuality || 127),
         // DASH plus AV1. DASH responses also include HEVC and AVC representations.
         fnval: String(16 | 2048),
@@ -418,6 +526,12 @@
       cancellations,
       deadline,
     );
+    // PGC may return a short trial for an account without full playback access.
+    if (
+      metadata.episodeId &&
+      (play?.is_preview === 1 || play?.is_preview === true)
+    )
+      throw Error('platform-access-denied');
     if (
       !Array.isArray(play.dash?.video) ||
       !play.dash.video.length ||
@@ -493,15 +607,9 @@
       )
     )
       throw Error('invalid-media');
-    const playlist = singleVideo ? undefined : episodeList(view, bvid, part);
     return {
-      bvid,
-      cid: String(page.cid),
-      part,
+      ...metadata,
       duration: play.timelength / 1000,
-      title: String(singleVideo ? page.part || bvid : view.title).slice(0, 160),
-      parts: view.pages.length,
-      ...(playlist ? { playlist } : {}),
       quality: video.id,
       qualities: [...new Set(playable.map((t) => t.id))].sort((a, b) => b - a),
       tracks,
@@ -635,12 +743,18 @@
     const allowed = {
       hello: ['version'],
       probe: ['version'],
-      preview: ['bvid', 'part'],
+      preview: [
+        'part',
+        ...['bvid', 'episodeId', 'seasonId'].filter((key) =>
+          Object.hasOwn(q, key),
+        ),
+      ],
       session: [],
       open: [
         'bvid',
         'part',
         'generation',
+        ...(Object.hasOwn(q, 'episodeId') ? ['episodeId'] : []),
         ...(Object.hasOwn(q, 'quality') ? ['quality'] : []),
       ],
       bytes: ['handle', 'track', 'offset', 'length', 'generation'],
@@ -679,7 +793,7 @@
       };
     }
     // Inspect a candidate without taking ownership, cancelling playback, or creating a handle.
-    if (q.op === 'preview') return describe(await resolve(q.bvid, q.part));
+    if (q.op === 'preview') return describe(await resolve(q));
     if (q.client !== client) throw Error('stale-generation');
     if (q.op === 'metrics') return metrics;
     if (q.op === 'session') {
@@ -704,7 +818,7 @@
       )
         throw Error('invalid-request');
       const mine = generation,
-        media = await resolve(q.bvid, q.part, q.quality);
+        media = await resolve(q, q.quality);
       if (mine !== generation) throw Error('stale-generation');
       const handle = `h${++serial}-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
       handles.set(handle, media);
@@ -828,8 +942,7 @@
         } catch (e) {
           if (e.message !== 'access-expired') throw e;
           const fresh = await resolve(
-            media.bvid,
-            media.part,
+            media,
             media.quality,
             media.tracks,
             reader.cancellations,

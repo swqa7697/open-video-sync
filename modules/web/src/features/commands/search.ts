@@ -23,7 +23,7 @@ export function searchCommands(
   query: string,
 ): CommandMatch[] {
   const raw = query.trim();
-  if (raw.startsWith('$') || /^(?:https?:\/\/|BV)/i.test(raw)) {
+  if (raw.startsWith('$') || /^(?:https?:\/\/|BV|ss[0-9]|ep[0-9])/i.test(raw)) {
     const input = raw.startsWith('$') ? raw.slice(1).trim() : raw;
     const command = commands.find((item) => item.id === 'video');
     if (!command) return [];
