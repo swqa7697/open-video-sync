@@ -628,6 +628,7 @@ test('host episode selection publishes resolved metadata and retains the list du
       .map((raw) => JSON.parse(raw))
       .filter((q) => q.type === 'media.select');
     expect(commands).toHaveLength(1);
+    expect(commands[0].payload.autoPlay).toBe(true);
     expect(commands[0].payload.media).toEqual({
       kind: 'bilibili',
       bvid: second.bvid,
@@ -893,7 +894,7 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
 });
-test('a playing seek reports buffering until the room can wait and resume without a manual pause', async () => {
+test('a playing seek waits for data at the paused target and stays paused when data arrives', async () => {
   vi.useFakeTimers();
   const { wrapper, socket, video, media } = await join('playing');
   try {
@@ -943,53 +944,33 @@ test('a playing seek reports buffering until the room can wait and resume withou
     socket.frame('room.snapshot', {
       ...playing,
       revision: 3,
-      playback: { ...playing.playback, positionMs: 5000 },
+      playback: {
+        ...playing.playback,
+        phase: 'paused',
+        desiredPlaying: false,
+        positionMs: 5000,
+      },
     });
     await vi.advanceTimersByTimeAsync(750);
     expect(video.seeking).toBe(true);
+    expect(video.paused).toBe(true);
+    expect(video.currentTime).toBe(5);
     expect(reported(socket).at(-1)).toBe('buffering');
     expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
       'Buffering…',
     );
-    const waiting = {
-      ...playing,
-      revision: 4,
-      barrier: {
-        ...room('waiting', 4).barrier!,
-        reason: 'buffering',
-        targetPositionMs: 5750,
-      },
-      playback: {
-        ...playing.playback,
-        phase: 'waiting',
-        positionMs: 5750,
-        anchorServerMs: 750,
-      },
-    };
-    socket.frame('room.snapshot', waiting);
-    await vi.advanceTimersByTimeAsync(1500);
-    expect(video.paused).toBe(true);
-    expect(video.currentTime).toBe(5.75);
     media.seeking = false;
     media.readyState = 4;
     video.dispatchEvent(new Event('seeked'));
     video.dispatchEvent(new Event('canplay'));
     await flushPromises();
     expect(reported(socket).at(-1)).toBe('ready');
-    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
-    await vi.advanceTimersByTimeAsync(1000);
-    socket.frame('room.snapshot', {
-      ...playing,
-      revision: 5,
-      playback: {
-        ...playing.playback,
-        positionMs: 5750,
-        anchorServerMs: performance.now(),
-      },
-    });
-    await flushPromises();
-    expect(video.paused).toBe(false);
-    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(video.paused).toBe(true);
+    expect(video.currentTime).toBe(5);
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Paused',
+    );
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     const commands = socket.sent
       .map((raw) => JSON.parse(raw))

@@ -14,6 +14,8 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Changed
 
+- Start playback automatically from the beginning when the host switches episodes in the room's episode list. Respect waiting for everyone and browser autoplay permission.
+- Pause everyone at the target after seeking during playback, pause, or waiting. Cancel pending automatic resume until a controller selects Play.
 - Use the exact valid `vYYYY-MM-DD` release tag for application images built on `main`; use `dev` otherwise. Keep local builds and SSH deployment consistent and retain explicit `IMAGE` overrides.
 - Show the full image reference under a shared build-information heading in the About header, above component versions. Hide the separate Git tag and show the Git commit only for development builds.
 - Use `caddy:alpine` for managed HTTPS deployments, proxy validation, and manual container deployment examples. Pull the latest Alpine-based Caddy image on each managed HTTPS deployment without a version pin.

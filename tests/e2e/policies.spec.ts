@@ -55,6 +55,12 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'waiting',
     );
     await seekTo(page, Number('5'));
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused',
+    );
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await clickPlayerControl(page, 'Play together');
     await expect(
       page
         .getByRole('status')

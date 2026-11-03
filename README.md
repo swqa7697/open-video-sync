@@ -80,6 +80,8 @@ A subtle, translucent play icon appears while paused. Loading and buffering show
 
 Hover over the progress bar to preview the target frame and time. Bilibili uses platform thumbnails; local files are decoded only in your browser. Bilibili thumbnails cache progressively in the background. Downloads from different CDNs run independently, and temporary thumbnail failures retry automatically. Video preparation and controls never wait for thumbnails. If a thumbnail is unavailable, the target time remains visible.
 
+Seeking with the progress bar or Left/Right pauses everyone at the target, including during playback or waiting. Select **Play** to resume.
+
 ### Bilibili
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
@@ -87,6 +89,8 @@ For Bilibili, each participant needs Tampermonkey and the instance-specific **OV
 Paste a normal video link or BV identifier, or a bangumi link such as `https://www.bilibili.com/bangumi/play/ss6038`. Bare `ss6038` (season) and `ep103591` (episode) identifiers also work. Season links select the first main episode; the host can switch through Episodes. OVS preserves the selected episode when members join or reload. Each member needs their own access, including any required login, subscription, purchase, and region eligibility. A restricted or trial-only response leaves that member unready. Install the updated helper for bangumi support.
 
 OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
+
+Selecting another episode from **Episodes** starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
 
 ### Rooms and preferences
 

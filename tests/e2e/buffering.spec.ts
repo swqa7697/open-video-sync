@@ -8,7 +8,7 @@ import {
 } from './flows';
 import { decodedFrame, generatedVideo } from './media';
 
-test('a playing MediaSource seek waits for data and resumes without a manual pause', async ({
+test('a playing MediaSource seek pauses at the target and stays paused when data arrives', async ({
   page,
   browser,
 }) => {
@@ -72,9 +72,10 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
       .toBeGreaterThan(0.2);
     await seekTo(page, 20);
     await expect
-      .poll(async () => (await snapshot()).barrier?.reason)
-      .toBe('buffering');
-    const target = (await snapshot()).barrier!.targetPositionMs / 1000;
+      .poll(async () => (await snapshot()).playback.phase)
+      .toBe('paused');
+    expect((await snapshot()).barrier).toBeNull();
+    expect((await snapshot()).playback.desiredPlaying).toBe(false);
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
     await stream.evaluate(
       async ({ source, buffer }, remaining) => {
@@ -91,19 +92,22 @@ test('a playing MediaSource seek waits for data and resumes without a manual pau
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
-      .toBeGreaterThan(target + 0.5);
-    await expect(page.locator('video')).toHaveJSProperty('paused', false);
-    expect(await decodedFrame(page)).toBeGreaterThan(600);
-    expect((await snapshot()).playback.phase).toBe('playing');
-    // A paused seek remains usable with the same native media source.
-    await clickPlayerControl(page, 'Pause together');
+      .toBeCloseTo(20, 1);
+    await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(600);
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    expect((await snapshot()).playback.phase).toBe('paused');
+    // A paused seek remains usable with the same native media source.
     await seekTo(page, 10);
     await expect
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
       )
       .toBeCloseTo(10, 1);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
     await clickPlayerControl(page, 'Play together');
     await expect
       .poll(() =>

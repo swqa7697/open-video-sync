@@ -24,7 +24,7 @@ export interface Command {
   payload:
     | { action: 'play' | 'pause' | 'replay' }
     | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor };
+    | { media: MediaDescriptor; autoPlay?: boolean };
 }
 // Why a room connection ended for good. Other closures reconnect with backoff.
 export type EndReason =
@@ -350,7 +350,12 @@ export class RoomSocket {
       return;
     }
     const safePayload =
-      'media' in payload ? { media: decodeMedia(payload.media) } : payload;
+      'media' in payload
+        ? {
+            media: decodeMedia(payload.media),
+            ...(payload.autoPlay === true ? { autoPlay: true } : {}),
+          }
+        : payload;
     const command: Command = {
       v: 2,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',

@@ -199,15 +199,31 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     expect(await background.evaluate((state) => state.pauses)).toBe(0);
     await background.dispose();
     await seekTo(page, Number('10'));
-    for (const player of [page, other])
+    for (const player of [page, other]) {
+      await expect(player.locator('video')).toHaveJSProperty('paused', true);
       await expect
         .poll(() =>
           player
             .locator('video')
             .evaluate((v) => (v as HTMLVideoElement).currentTime),
         )
-        .toBeGreaterThan(10);
-    await clickPlayerControl(page, 'Pause together');
+        .toBeCloseTo(10, 1);
+      await expect.poll(() => decodedFrame(player)).toBe(300);
+    }
+    const viewport = page.viewportSize()!;
+    for (const size of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(size);
+      await page.screenshot({
+        path: testInfo.outputPath(`seek-result-${size.width}.png`),
+        fullPage: true,
+      });
+    }
+    await page.setViewportSize(viewport);
+    // Seeking again while paused keeps both players at the new target.
+    await seekTo(page, 12);
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -216,6 +232,14 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             .evaluate((v) => (v as HTMLVideoElement).paused),
         )
         .toBe(true);
+    for (const player of [page, other])
+      await expect
+        .poll(() =>
+          player
+            .locator('video')
+            .evaluate((v: HTMLVideoElement) => v.currentTime),
+        )
+        .toBeCloseTo(12, 1);
     const positions = await Promise.all(
       [page, other].map((p) =>
         p.locator('video').evaluate((v) => (v as HTMLVideoElement).currentTime),
@@ -226,7 +250,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       decodedFrame(page),
       decodedFrame(other),
     ]);
-    expect(Math.min(...seekFrames)).toBeGreaterThanOrEqual(300);
+    expect(Math.min(...seekFrames)).toBeGreaterThanOrEqual(359);
     expect(Math.abs(seekFrames[0]! - seekFrames[1]!)).toBeLessThanOrEqual(3);
     // A connection drop keeps files in memory, recalibrates, and reconciles without replaying controls.
     socketAvailable = false;
@@ -254,7 +278,6 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await seekTo(other, Number('15'));
     for (const player of [page, other])
       await expect.poll(() => decodedFrame(player)).toBeGreaterThanOrEqual(450);
-    await clickPlayerControl(other, 'Pause together');
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -328,7 +351,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .evaluate((input) =>
         input.dispatchEvent(new Event('change', { bubbles: true })),
       );
-    await clickPlayerControl(other, 'Pause together');
+    await expect(other.locator('video')).toHaveJSProperty('paused', true);
     await other.reload();
     await dismissHelper(other);
     await expect(other.getByTestId('media-status')).toHaveAttribute(

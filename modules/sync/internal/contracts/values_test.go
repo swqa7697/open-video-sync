@@ -145,6 +145,30 @@ func TestLocalFingerprintVectors(t *testing.T) {
 	}
 }
 
+// Media selection accepts only a boolean playback intent, with omission meaning paused.
+func TestMediaSelectionPlaybackIntentBoundary(t *testing.T) {
+	media := `"media":{"kind":"bilibili","bvid":"BV1hf4y1N75G","cid":"400306737","part":1,"durationMs":60000}`
+	for _, tc := range []struct {
+		name, extra string
+		valid, play bool
+	}{
+		{"omitted", "", true, false},
+		{"paused", `,"autoPlay":false`, true, false},
+		{"playing", `,"autoPlay":true`, true, true},
+		{"string", `,"autoPlay":"true"`, false, false},
+		{"null", `,"autoPlay":null`, false, false},
+		{"unknown", `,"autoPlay":true,"extra":true`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"v":2,"type":"media.select","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":{` + media + tc.extra + `}}`
+			frame, err := DecodeClientFrame([]byte(raw))
+			if (err == nil) != tc.valid || frame.AutoPlay != tc.play {
+				t.Fatalf("accepted=%v, play=%v: %v", err == nil, frame.AutoPlay, err)
+			}
+		})
+	}
+}
+
 // Retired operations must fail at the frame boundary before reaching a room owner.
 func TestApplicationV2RejectsRetiredMessages(t *testing.T) {
 	for _, typ := range []string{"member.activate", "member.observation", "waiting.exclude"} {

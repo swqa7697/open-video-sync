@@ -10,13 +10,14 @@ import {
   invitationLink,
   observePageKeyboard,
   seekTo,
+  settings,
 } from './flows';
 import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
 
 test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
   page,
   browser,
-}) => {
+}, testInfo) => {
   test.setTimeout(90000);
   const tracks = await generatedDASHMedia(browser);
   const fixturePage = await browser.newPage();
@@ -271,9 +272,10 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect
     .poll(
       async () =>
-        (await (await page.request.get(roomPath)).json()).barrier?.reason,
+        (await (await page.request.get(roomPath)).json()).playback.phase,
     )
-    .toBe('buffering');
+    .toBe('paused');
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
   await expect(
     page.getByRole('img', { name: 'Buffering…', exact: true }),
   ).toBeVisible();
@@ -300,9 +302,14 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await expect
       .poll(async () => {
         const frame = await decodedFrame(page);
-        return frame > target * 30 + 5 && frame < (target + 3) * 30;
+        return Math.abs(frame - target * 30) <= 2;
       })
       .toBe(true);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await clickPlayerControl(page, 'Play together');
+    await expect
+      .poll(() => decodedFrame(page))
+      .toBeGreaterThan(target * 30 + 5);
     await expect(page.locator('video')).toHaveJSProperty('paused', false);
   }
   await clickPlayerControl(page, 'Pause together');
@@ -354,7 +361,23 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'data-state',
     'ready',
   );
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await page.screenshot({
+    path: testInfo.outputPath('episode-selected.png'),
+    fullPage: true,
+  });
+  await settings(page, 'host', false);
   await clickPlayerControl(page, 'Play together');
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await page.getByRole('button', { name: /Opening/ }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('103591');
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await closeRoom(page);
 });

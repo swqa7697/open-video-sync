@@ -118,8 +118,8 @@ The replaced page pauses and does not reconnect until explicitly reloaded or reo
 
 Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
-- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only.
-- `media.select`: `{media:MediaDescriptor}`. Host only; persist the descriptor, then reset runtime playback and advance media generation.
+- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent.
+- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Host only; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
 Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.
 Clock and heartbeat use `{v:2,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.

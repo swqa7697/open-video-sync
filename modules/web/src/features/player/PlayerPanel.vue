@@ -776,6 +776,7 @@ async function chooseBilibili(
   selected: Pick<Episode, 'bvid' | 'part' | 'episodeId'>,
   publishMedia = false,
   quality?: number,
+  autoPlay = false,
 ): Promise<void> {
   if (
     !video.value ||
@@ -826,7 +827,7 @@ async function chooseBilibili(
     });
     if (publishMedia && host.value) {
       publishing = true;
-      transport.command({ media });
+      transport.command({ media, ...(autoPlay ? { autoPlay: true } : {}) });
     }
     await sample();
   } catch (reason) {
@@ -974,7 +975,7 @@ async function selectEpisode(episode: Episode): Promise<void> {
     media.episodeId === episode.episodeId
   )
     return;
-  await chooseBilibili(episode, true);
+  await chooseBilibili(episode, true, undefined, true);
 }
 function confirmMedia(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) {
