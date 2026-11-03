@@ -6,6 +6,10 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+
+- Show target-frame thumbnails and time above the progress bar on hover, using Bilibili's platform thumbnails, including high-resolution previews, or browser-local extraction for local files. Follow the platform's returned image sizes, layouts, and CDN addresses. Progressively cache every compressed sheet in the background, refresh stationary previews as images arrive, reuse cached images across hover targets, and recover from temporary thumbnail failures. Schedule downloads independently by CDN so playback, seeking, and another source's delay do not repeatedly interrupt thumbnail loading. Video preparation, switching, and buffering never wait for thumbnails. Keep playback unchanged and retain the time when thumbnails are unavailable. Bilibili previews require the updated playback helper.
+
 ### Changed
 
 - Use the exact valid `vYYYY-MM-DD` release tag for application images built on `main`; use `dev` otherwise. Keep local builds and SSH deployment consistent and retain explicit `IMAGE` overrides.

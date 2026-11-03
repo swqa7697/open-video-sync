@@ -1442,10 +1442,24 @@ fieldset select {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 8px;
   font-size: 0.7rem;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+}
+.seek-preview.has-thumbnail {
+  width: 162px;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+}
+.seek-preview canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.seek-preview span {
+  display: block;
+  padding: 4px 8px;
 }
 .quality-trigger {
   font-size: 0.65rem;

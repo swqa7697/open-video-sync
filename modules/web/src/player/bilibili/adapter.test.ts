@@ -244,6 +244,102 @@ function fixture(
   };
 }
 
+test.each([
+  'ongoing media reads',
+  'metadata outage',
+  'image outage',
+  'another thumbnail CDN stalled',
+] as const)(
+  'background thumbnails progress and recover during %s',
+  async (mode) => {
+    const f = fixture([24 * chunkSize], true);
+    let unavailable = mode === 'metadata outage' || mode === 'image outage';
+    let release: (() => void) | undefined;
+    let painted = false;
+    const canvas = {
+      width: 160,
+      height: 90,
+      getContext: () => ({
+        fillStyle: '',
+        fillRect() {},
+        drawImage() {
+          painted = true;
+        },
+      }),
+    } as unknown as HTMLCanvasElement;
+    vi.stubGlobal('createImageBitmap', async () => ({
+      width: 160,
+      height: 90,
+      close() {},
+    }));
+    const bridge = vi.spyOn(HelperBridge.prototype, 'call');
+    const original = bridge.getMockImplementation()!;
+    bridge.mockImplementation(async (op, args) => {
+      if (op === 'thumbnails') {
+        if (unavailable && mode === 'metadata outage')
+          throw new HelperError('http-503');
+        return {
+          columns: 1,
+          rows: 1,
+          width: 160,
+          height: 90,
+          times: mode === 'another thumbnail CDN stalled' ? [0, 1] : [0],
+          sheets: mode === 'another thumbnail CDN stalled' ? 2 : 1,
+          sources: mode === 'another thumbnail CDN stalled' ? [0, 1] : [0],
+        };
+      }
+      if (op === 'thumbnail') {
+        if (mode === 'another thumbnail CDN stalled' && args?.sheet === 0)
+          return new Promise((resolve) => {
+            release = () => resolve({ base64: 'Kg==', total: 1 });
+          });
+        if (unavailable) throw new HelperError('http-503');
+        return { base64: 'Kg==', total: 1 };
+      }
+      return original(op, args);
+    });
+    try {
+      await f.load();
+      if (mode === 'ongoing media reads')
+        f.read(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(f.adapter.getState().status).toBe('ready');
+      if (unavailable) {
+        expect(
+          await f.adapter.drawThumbnail(
+            0,
+            canvas,
+            new AbortController().signal,
+          ),
+        ).toBe(false);
+        unavailable = false;
+        await vi.advanceTimersByTimeAsync(5000);
+      }
+      expect(
+        await f.adapter.drawThumbnail(
+          mode === 'another thumbnail CDN stalled' ? 1000 : 0,
+          canvas,
+          new AbortController().signal,
+        ),
+      ).toBe(true);
+      expect(painted).toBe(true);
+      expect(f.onError).not.toHaveBeenCalled();
+      f.adapter.dispose();
+      expect(
+        await f.adapter.drawThumbnail(0, canvas, new AbortController().signal),
+      ).toBe(false);
+    } finally {
+      f.adapter.dispose();
+      release?.();
+    }
+  },
+);
+
 test('paused seeks reuse the current danmaku segment and reject replies from an abandoned segment', async () => {
   const f = fixture(Array<number>(73).fill(1024));
   Object.defineProperties(f.overlay, {

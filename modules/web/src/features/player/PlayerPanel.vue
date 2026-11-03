@@ -158,6 +158,65 @@ const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
 const qualityTrigger = ref<HTMLButtonElement>(),
   qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
+const previewCanvas = ref<HTMLCanvasElement>();
+const thumbnailVisible = ref(false);
+let thumbnailTimer: ReturnType<typeof setTimeout> | undefined;
+let thumbnailRequest: AbortController | undefined;
+let thumbnailVersion = 0;
+let thumbnailRunning = false;
+let thumbnailPending = false;
+
+function clearSeekPreview(): void {
+  hoveredTime.value = undefined;
+  thumbnailVisible.value = false;
+  thumbnailVersion++;
+  thumbnailRequest?.abort();
+  clearTimeout(thumbnailTimer);
+  thumbnailTimer = undefined;
+  thumbnailPending = false;
+}
+function queueThumbnail(): void {
+  if (hoveredTime.value === undefined || !descriptor.value) return;
+  thumbnailPending = true;
+  if (!thumbnailTimer && !thumbnailRunning)
+    thumbnailTimer = setTimeout(() => {
+      thumbnailTimer = undefined;
+      void renderThumbnail();
+    }, 75);
+}
+async function renderThumbnail(): Promise<void> {
+  if (thumbnailRunning || !thumbnailPending) return;
+  thumbnailPending = false;
+  const local = adapter,
+    canvas = previewCanvas.value,
+    seconds = hoveredTime.value;
+  if (!local?.drawThumbnail || !canvas || seconds === undefined) return;
+  thumbnailRunning = true;
+  const version = thumbnailVersion,
+    controller = new AbortController();
+  thumbnailRequest = controller;
+  try {
+    const drawn = await local.drawThumbnail(
+      seconds * 1000,
+      canvas,
+      controller.signal,
+    );
+    if (
+      !controller.signal.aborted &&
+      adapter === local &&
+      version === thumbnailVersion
+    )
+      thumbnailVisible.value = drawn;
+  } catch {
+    // Optional previews do not change media readiness or interrupt room playback.
+    if (!controller.signal.aborted && version === thumbnailVersion)
+      thumbnailVisible.value = false;
+  } finally {
+    thumbnailRunning = false;
+    if (thumbnailRequest === controller) thumbnailRequest = undefined;
+    if (thumbnailPending) queueThumbnail();
+  }
+}
 const videoCodec = computed(() => {
   if (current.value.media?.kind !== 'bilibili') return undefined;
   return ['AV1', 'HEVC', 'AVC'][
@@ -198,6 +257,7 @@ function pointerActivity(): void {
 function leaveStage(event: PointerEvent): void {
   if (event.pointerType === 'touch') return;
   pointerOutside = true;
+  clearSeekPreview();
   controlsHovered.value = false;
   hideControls();
 }
@@ -281,6 +341,7 @@ watch(
 );
 // Rendered state must be reactive; the adapter itself stays outside reactivity.
 const descriptor = shallowRef<MediaDescriptor>();
+watch([hoveredTime, descriptor], queueThumbnail);
 const host = computed(
   () => current.value.selfMemberId === current.value.hostMemberId,
 );
@@ -479,6 +540,7 @@ const transport = new RoomSocket(
   probe,
 );
 function clearMedia(): void {
+  clearSeekPreview();
   endSeek();
   danmakuMenu.value = false;
   if (qualityOptions.value?.contains(document.activeElement))
@@ -705,6 +767,9 @@ async function chooseBilibili(
     },
     (failure) => {
       if (adapter === local) showError(failure.text, failure.reload);
+    },
+    () => {
+      if (adapter === local) queueThumbnail();
     },
   );
   adapter = local;
@@ -1021,6 +1086,7 @@ async function changeQuality(quality: number): Promise<void> {
   await chooseBilibili(selected, false, quality);
 }
 function hoverSeek(event: PointerEvent): void {
+  if (event.pointerType === 'touch') return;
   const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
   if (!bounds.width) return;
   seekTrackWidth.value = bounds.width;
@@ -1494,7 +1560,7 @@ onUnmounted(() => {
         <div
           class="seek-track"
           @pointermove="hoverSeek"
-          @pointerleave="hoveredTime = undefined"
+          @pointerleave="clearSeekPreview"
         >
           <div
             class="buffered-track"
@@ -1530,15 +1596,24 @@ onUnmounted(() => {
             @input="dragSeek"
             @change="seek"
           />
-          <span
+          <div
             v-if="hoveredTime !== undefined"
             class="seek-preview"
+            :class="{ 'has-thumbnail': thumbnailVisible }"
+            aria-hidden="true"
             :style="{
               '--seek-pointer-offset': `${seekPointerOffset}px`,
               '--seek-track-width': `${seekTrackWidth}px`,
             }"
-            >{{ formatTime(hoveredTime) }}</span
           >
+            <canvas
+              ref="previewCanvas"
+              v-show="thumbnailVisible"
+              width="160"
+              height="90"
+            />
+            <span>{{ formatTime(hoveredTime) }}</span>
+          </div>
         </div>
         <div class="control-bar">
           <div class="control-start">

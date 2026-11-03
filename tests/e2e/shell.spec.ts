@@ -18,7 +18,7 @@ import {
   runQuickAction,
   settings,
 } from './flows';
-import { generatedVideo } from './media';
+import { decodedFrame, generatedVideo } from './media';
 
 async function expectHeaderFits(page: Page): Promise<void> {
   const header = page.getByRole('banner');
@@ -604,6 +604,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
     const track = page.locator('.seek-track');
+    const frameBeforeHover = await decodedFrame(page);
     for (const viewport of [
       { width: 1440, height: 900 },
       { width: 390, height: 844 },
@@ -619,13 +620,33 @@ test('independent identities manage a private room over direct HTTP', async ({
         await page.mouse.move(pointerX, bounds.y + bounds.height / 2);
         const preview = page.locator('.seek-preview');
         await expect(preview).toBeVisible();
-        const time = Math.floor(
+        const seconds =
           (Number(await seek.getAttribute('max')) * (pointerX - bounds.x)) /
-            bounds.width,
-        );
+          bounds.width;
+        const time = Math.floor(seconds);
         await expect(preview).toHaveText(
           `${Math.floor(time / 60)}:${String(time % 60).padStart(2, '0')}`,
         );
+        const thumbnail = preview.locator('canvas');
+        await expect(thumbnail).toBeVisible();
+        // Read the fixture's frame pixels; a time label alone cannot prove the preview.
+        await expect
+          .poll(async () => {
+            const frame = await thumbnail.evaluate(
+              (canvas: HTMLCanvasElement) => {
+                const context = canvas.getContext('2d')!;
+                let frame = 0;
+                for (let bit = 0; bit < 16; bit++)
+                  if (
+                    context.getImageData(bit * 8 + 4, 68, 1, 1).data[0]! > 128
+                  )
+                    frame |= 1 << bit;
+                return frame;
+              },
+            );
+            return Math.abs(frame / 30 - seconds);
+          })
+          .toBeLessThan(0.08);
         const tooltip = (await preview.boundingBox())!;
         const center = Math.max(
           bounds.x + tooltip.width / 2,
@@ -643,6 +664,8 @@ test('independent identities manage a private room over direct HTTP', async ({
       await expect(page.locator('.seek-preview')).toHaveCount(0);
       await page.setViewportSize(previousViewport);
     }
+    expect(await decodedFrame(page)).toBe(frameBeforeHover);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
     await player.hover({ position: { x: 100, y: 100 } });
     const tabToSeek = async () => {
       await page.keyboard.press('Tab');

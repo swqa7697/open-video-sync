@@ -19,11 +19,35 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
 }) => {
   test.setTimeout(60000);
   const tracks = await generatedDASHMedia(browser);
+  const fixturePage = await browser.newPage();
+  const sheets = await fixturePage.evaluate(() =>
+    [0, 1].map((sheet) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 960;
+      canvas.height = 540;
+      const context = canvas.getContext('2d')!;
+      for (let cell = 0; cell < 4; cell++) {
+        context.fillStyle = `rgb(${24 + (sheet * 4 + cell) * 28},60,80)`;
+        const x = (cell % 2) * 480,
+          y = Math.floor(cell / 2) * 270;
+        context.fillRect(x, y, 480, 270);
+        context.fillStyle = '#fff';
+        context.font = '60px sans-serif';
+        context.fillText(`Scene ${sheet * 4 + cell + 1}`, x + 60, y + 150);
+      }
+      return canvas.toDataURL('image/png').split(',')[1]!;
+    }),
+  );
+  await fixturePage.close();
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   const script = await response.text();
   await page.addInitScript({
     content: `(() => {
+    sessionStorage.setItem('hold-thumbnails', '1');
+    sessionStorage.setItem('thumbnail-requests', '0');
+    sessionStorage.setItem('thumbnail-completed', '0');
     const tracks = ${JSON.stringify(tracks)};
+    const sheets = ${JSON.stringify(sheets)};
     for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
     const unsafeWindow = window;
     const addBuffer = MediaSource.prototype.addSourceBuffer;
@@ -33,14 +57,39 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         ? 'video/webm; codecs="vp8"' : 'audio/webm; codecs="opus"');
     };
     const held = new Set();
+    const heldThumbnails = new Set();
+    let owner, traffic, trafficID = 100000;
+    window.addEventListener('message', event => {
+      if (typeof event.data !== 'string') return;
+      try {
+        const request = JSON.parse(event.data);
+        if (request.channel === 'ovs-bilibili-request' && request.op === 'open') owner = request.client;
+      } catch {}
+    });
+    document.addEventListener('begin-thumbnail-competition', () => {
+      traffic = setInterval(() => {
+        if (owner) window.postMessage(JSON.stringify({
+          channel: 'ovs-bilibili-request', client: owner, id: ++trafficID, op: 'session'
+        }), location.origin);
+      }, 100);
+    });
+    document.addEventListener('end-thumbnail-competition', () => clearInterval(traffic));
+    document.addEventListener('resume-thumbnails', () => {
+      sessionStorage.removeItem('hold-thumbnails');
+      for (const resume of [...heldThumbnails]) resume();
+    });
     document.addEventListener('resume-seek-downloads', () => {
       for (const resume of [...held]) resume();
     });
     const GM_xmlhttpRequest = (details) => {
       let cancelled = false;
       const url = new URL(details.url);
+      const thumbnail = url.pathname.endsWith('/videoshot') || url.hostname.endsWith('.hdslb.com');
+      if (url.hostname.endsWith('.hdslb.com'))
+        sessionStorage.setItem('thumbnail-requests', String(Number(sessionStorage.getItem('thumbnail-requests')) + 1));
       const respond = () => {
         held.delete(respond);
+        heldThumbnails.delete(respond);
         if (cancelled) return;
         if (details.headers.Range) {
           const track = tracks[Number(url.searchParams.get('track'))];
@@ -53,6 +102,19 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         }
         let data;
         if (url.pathname.endsWith('/view')) data = { title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }] };
+        else if (url.pathname.endsWith('/videoshot')) data = {
+          img_x_len: 2, img_y_len: 2, img_x_size: 480, img_y_size: 270,
+          index: [0, 0, 3, 7, 11, 16, 21, 26, 29],
+          image: ['//bimp.hdslb.com/videoshotpvhdboss/1.png', '//bimp.hdslb.com/videoshotpvhdboss/1-1.png'],
+        };
+        else if (url.hostname.endsWith('.hdslb.com')) {
+          if (sessionStorage.getItem('fail-thumbnail')) sessionStorage.setItem('thumbnail-failures', String(Number(sessionStorage.getItem('thumbnail-failures')) + 1));
+          else sessionStorage.setItem('thumbnail-completed', String(Number(sessionStorage.getItem('thumbnail-completed')) + 1));
+          details.onload({ status: sessionStorage.getItem('fail-thumbnail') ? 404 : 200,
+            finalUrl: details.url,
+            response: Uint8Array.from(atob(sheets[url.pathname.endsWith('-1.png') ? 1 : 0]), c => c.charCodeAt(0)).buffer });
+          return;
+        }
         else if (url.pathname.endsWith('/playurl')) {
           const media = tracks.map((track, i) => ({
             id: i === 0 ? 120 : 30216,
@@ -69,10 +131,14 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0, data }) });
       };
       const timer = setTimeout(() => {
-        if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
+        if (thumbnail && sessionStorage.getItem('hold-thumbnails')) {
+          heldThumbnails.add(respond);
+          sessionStorage.setItem('thumbnail-held', '1');
+        }
+        else if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
         else respond();
-      }, details.headers.Range ? Number(sessionStorage.getItem('seek-delay') || 25) : 0);
-      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); details.onabort(); } };
+      }, details.headers.Range ? Number(sessionStorage.getItem('seek-delay') || 25) : url.hostname.endsWith('.hdslb.com') ? 500 : 0);
+      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); heldThumbnails.delete(respond); details.onabort(); } };
     };
     ${script}
   })();`,
@@ -90,6 +156,92 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'data-state',
     'ready',
   );
+  const stage = page.locator('.video-stage');
+  // Initial preparation and seeks complete while thumbnail metadata never replies.
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('thumbnail-held')))
+    .toBe('1');
+  await seekTo(page, 3);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(90);
+  await seekTo(page, 0);
+  await expect.poll(() => decodedFrame(page)).toBe(0);
+  await stage.hover({ position: { x: 100, y: 100 } });
+  const track = page.locator('.seek-track');
+  const bounds = (await track.boundingBox())!;
+  const hoverAt = (fraction: number) =>
+    page.mouse.move(
+      Math.round(bounds.x + bounds.width * fraction),
+      bounds.y + bounds.height / 2,
+    );
+  const frameBeforeHover = await decodedFrame(page);
+  await hoverAt(0.02);
+  await expect(page.locator('.seek-preview')).toBeVisible();
+  await expect(page.locator('.seek-preview canvas')).toBeHidden();
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event('begin-thumbnail-competition'));
+    document.dispatchEvent(new Event('resume-thumbnails'));
+  });
+  // Background work fills every sheet without requiring pointer movement.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Number(sessionStorage.getItem('thumbnail-completed')),
+      ),
+    )
+    .toBe(2);
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event('end-thumbnail-competition')),
+  );
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  const thumbnailRequests = await page.evaluate(() =>
+    Number(sessionStorage.getItem('thumbnail-requests')),
+  );
+  for (const [fraction, scene] of [
+    [0.02, 0],
+    [0.27, 2],
+    [0.45, 3],
+    [0.85, 5],
+    [0.98, 7],
+  ] as const) {
+    await hoverAt(fraction);
+    const thumbnail = page.locator('.seek-preview canvas');
+    await expect(thumbnail).toBeVisible();
+    await expect
+      .poll(() =>
+        thumbnail.evaluate(
+          (canvas: HTMLCanvasElement) =>
+            canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data[0],
+        ),
+      )
+      .toBe(24 + scene * 28);
+  }
+  // Cached sheets remain usable when the CDN becomes unavailable.
+  await page.evaluate(() => sessionStorage.setItem('fail-thumbnail', '1'));
+  await hoverAt(0.08);
+  await expect(page.locator('.seek-preview')).toHaveText('0:02');
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  await hoverAt(0.2);
+  await hoverAt(0.95);
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator('.seek-preview canvas')
+        .evaluate(
+          (canvas: HTMLCanvasElement) =>
+            canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data[0],
+        ),
+    )
+    .toBe(24 + 6 * 28);
+  expect(
+    await page.evaluate(() =>
+      Number(sessionStorage.getItem('thumbnail-requests')),
+    ),
+  ).toBe(thumbnailRequests);
+  expect(await decodedFrame(page)).toBe(frameBeforeHover);
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await page.mouse.move(0, 0);
+  await expect(page.locator('.seek-preview')).toHaveCount(0);
   await clickPlayerControl(page, 'Play together');
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));

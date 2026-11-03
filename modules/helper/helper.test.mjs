@@ -98,7 +98,28 @@ function fixture(options = {}) {
         code: options.loggedOut ? -101 : 0,
         data: { isLogin: true, credential: CANARY },
       });
-    else if (url.pathname.endsWith('/seg.so')) {
+    else if (url.pathname.endsWith('/videoshot'))
+      value = JSON.stringify({
+        code: 0,
+        data: {
+          img_x_len: 2,
+          img_y_len: 2,
+          img_x_size: 160,
+          img_y_size: 90,
+          index: [0, 0, 10, 20, 30, 40],
+          image: [
+            '//i0.hdslb.com/bfs/videoshot/fixture.jpg',
+            '//i1.hdslb.com/bfs/videoshot/fixture-1.jpg',
+          ],
+          credential: CANARY,
+          ...options.thumbnails,
+        },
+      });
+    else if (url.hostname.endsWith('.hdslb.com')) {
+      value = new Uint8Array(options.thumbnailBytes ?? 300000).fill(42);
+      if (options.thumbnailRedirect)
+        finalUrl = `https://evil.invalid/${CANARY}`;
+    } else if (url.pathname.endsWith('/seg.so')) {
       const varint = (n) => {
         const bytes = [];
         do {
@@ -297,6 +318,179 @@ test('exact activation and source checks reject origins, frames, and forged wind
     }
   }
 });
+test('thumbnail delivery validates boundaries and isolates source concurrency', async () => {
+  const options = {};
+  const f = fixture(options),
+    opened = await f.open();
+  const identity = { handle: opened.value.handle, generation: 1 };
+  const requestsBeforeInvalid = f.requests.length;
+  assert.equal(
+    (await f.call('thumbnail', { ...identity, sheet: 0, offset: 1 })).error,
+    'invalid-request',
+  );
+  assert.equal(f.requests.length, requestsBeforeInvalid);
+  const info = await f.call('thumbnails', identity);
+  assert.equal(info.ok, true);
+  assert.deepEqual(info.value.times, [0, 10, 20, 30, 40]);
+  assert.deepEqual(info.value.sources, [0, 1]);
+  assert(!JSON.stringify(info).includes(CANARY));
+  assert(!JSON.stringify(info).includes('hdslb'));
+  const head = await f.call('thumbnail', { ...identity, sheet: 0, offset: 0 });
+  const tail = await f.call('thumbnail', {
+    ...identity,
+    sheet: 0,
+    offset: 256 * 1024,
+  });
+  assert.equal(head.value.total, 300000);
+  assert.equal(atob(head.value.base64).length, 256 * 1024);
+  assert.equal(atob(tail.value.base64).length, 300000 - 256 * 1024);
+  assert.equal(
+    f.requests.filter((r) => r.url.includes('/bfs/videoshot/')).length,
+    1,
+  );
+  assert.equal(
+    (await f.call('thumbnail', { ...identity, sheet: 2, offset: 0 })).error,
+    'invalid-request',
+  );
+  assert.equal(
+    (await f.call('thumbnail', { ...identity, sheet: 0, offset: 1 })).error,
+    'invalid-request',
+  );
+
+  options.hold = true;
+  const thumbnail = f.call('thumbnail', { ...identity, sheet: 1, offset: 0 });
+  await new Promise(setImmediate);
+  const video = f.call('bytes', {
+    ...identity,
+    track: 0,
+    offset: 0,
+    length: 32,
+  });
+  await new Promise(setImmediate);
+  const audio = f.call('bytes', {
+    ...identity,
+    track: 1,
+    offset: 0,
+    length: 32,
+  });
+  await new Promise(setImmediate);
+  const otherImage = f.call('thumbnail', { ...identity, sheet: 0, offset: 0 });
+  await new Promise(setImmediate);
+  try {
+    // Separate CDNs progress together, including a long-running thumbnail.
+    const image = f.requests.find((r) => r.url.includes('fixture-1.jpg'));
+    assert.notEqual(image.cancelled, true);
+    assert.equal(f.held.filter((r) => r.headers.Range).length, 2);
+    const independent = f.held.find((r) => r.url.endsWith('/fixture.jpg'));
+    independent.onload({
+      status: 200,
+      finalUrl: independent.url,
+      response: new Uint8Array(32).buffer,
+    });
+    assert.equal((await otherImage).ok, true);
+    image.onload({
+      status: 200,
+      finalUrl: image.url,
+      response: new Uint8Array(300000).buffer,
+    });
+    assert.equal((await thumbnail).ok, true);
+    assert.equal((await f.call('metrics')).value.peakRequests, 4);
+  } finally {
+    await f.call('dispose', { generation: 2 });
+    await Promise.all([video, audio, otherImage]);
+  }
+
+  const quota = fixture(),
+    selected = await quota.open();
+  let limited = false;
+  for (let i = 0; i < 40 && !limited; i++)
+    limited =
+      (
+        await quota.call('thumbnails', {
+          handle: selected.value.handle,
+          generation: 1,
+        })
+      ).error === 'rate-limited';
+  assert(limited);
+  assert.equal(
+    (
+      await quota.call('danmaku', {
+        handle: selected.value.handle,
+        generation: 1,
+        segment: 1,
+      })
+    ).ok,
+    true,
+  );
+
+  // Platform-owned CDN subdomains, paths, queries, geometry, and time spacing vary.
+  for (const description of [
+    {
+      img_x_len: 10,
+      img_y_len: 10,
+      img_x_size: 480,
+      img_y_size: 270,
+      image: ['//bimp.hdslb.com/videoshotpvhdboss/43129635608_j9dm8b-0001.jpg'],
+      index: [0, 0, 5, 11],
+    },
+    {
+      img_x_len: 25,
+      img_y_len: 2,
+      img_x_size: 1024,
+      img_y_size: 576,
+      image: [
+        `https://preview-next.hdslb.com/snapshots/v3/sprite?token=${CANARY}`,
+      ],
+      index: [0, 0.5, 1.25],
+    },
+  ]) {
+    const varied = fixture({ thumbnails: description }),
+      media = await varied.open();
+    const identity = { handle: media.value.handle, generation: 1 };
+    const metadata = await varied.call('thumbnails', identity);
+    assert.equal(metadata.ok, true);
+    assert.equal(metadata.value.width, description.img_x_size);
+    assert.equal(metadata.value.height, description.img_y_size);
+    assert(!JSON.stringify(metadata).includes(CANARY));
+    assert(!JSON.stringify(metadata).includes('hdslb'));
+    assert.equal(
+      (await varied.call('thumbnail', { ...identity, sheet: 0, offset: 0 })).ok,
+      true,
+    );
+  }
+
+  for (const bad of [
+    { thumbnails: { index: [0, 0, 20, 10] } },
+    { thumbnails: { img_x_len: 0 } },
+    { thumbnails: { img_x_len: Number.MAX_SAFE_INTEGER } },
+    {
+      thumbnails: {
+        image: [
+          `https://i0.hdslb.com.evil.invalid/bfs/videoshot/${CANARY}.jpg`,
+        ],
+      },
+    },
+    {
+      thumbnails: {
+        image: [`https://hdslb.com.evil.invalid/bfs/videoshot/${CANARY}.jpg`],
+      },
+    },
+    { thumbnailRedirect: true },
+    { thumbnailBytes: 4 * 1024 * 1024 + 1 },
+  ]) {
+    const boundary = fixture(bad),
+      media = await boundary.open();
+    const result = await boundary.call('thumbnail', {
+      handle: media.value.handle,
+      generation: 1,
+      sheet: 0,
+      offset: 0,
+    });
+    assert.equal(result.ok, false);
+    assert(!JSON.stringify(result).includes(CANARY));
+  }
+});
+
 test('bridge returns opaque metadata and bounded bytes while excluding credentials and signed URLs', async () => {
   const f = fixture(),
     open = await f.open();

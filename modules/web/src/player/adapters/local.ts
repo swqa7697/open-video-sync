@@ -3,6 +3,7 @@ import type {
   PlayerCapabilities,
   ReadinessStatus,
 } from '../../transport/protocol-values';
+import { LocalThumbnails } from '../thumbnails';
 
 export interface PlayerObservation {
   positionMs: number;
@@ -19,6 +20,11 @@ export interface PlayerAdapter {
   setPlaybackRate?(rate: number): Promise<void>;
   getState(): PlayerObservation;
   subscribe(listener: () => void): () => void;
+  drawThumbnail?(
+    positionMs: number,
+    canvas: HTMLCanvasElement,
+    signal: AbortSignal,
+  ): Promise<boolean>;
   dispose(): void;
 }
 export class LocalAdapter implements PlayerAdapter {
@@ -33,6 +39,7 @@ export class LocalAdapter implements PlayerAdapter {
     positionResolutionMs: 40,
   };
   private url: string | undefined;
+  private thumbnails: LocalThumbnails | undefined;
   private disposed = false;
   private lifetime = new AbortController();
   private seekController: AbortController | undefined;
@@ -70,6 +77,7 @@ export class LocalAdapter implements PlayerAdapter {
   async load(file: File, signal: AbortSignal): Promise<void> {
     this.status = 'loading';
     this.url = URL.createObjectURL(file);
+    this.thumbnails = new LocalThumbnails(this.url);
     this.video.src = this.url;
     await this.wait('loadeddata', signal);
     if (this.disposed || signal.aborted)
@@ -153,10 +161,22 @@ export class LocalAdapter implements PlayerAdapter {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+  async drawThumbnail(
+    positionMs: number,
+    canvas: HTMLCanvasElement,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    return (
+      !this.disposed &&
+      ((await this.thumbnails?.draw(positionMs, canvas, signal)) ?? false)
+    );
+  }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.lifetime.abort();
+    this.thumbnails?.dispose();
+    this.thumbnails = undefined;
     this.listeners.clear();
     this.video.pause();
     this.video.removeAttribute('src');

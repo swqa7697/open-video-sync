@@ -12,6 +12,7 @@
 // @connect api.bilibili.com
 // @connect bilivideo.com
 // @connect upos-hz-mirrorakam.akamaized.net
+// @connect hdslb.com
 // @updateURL none
 // @downloadURL none
 // ==/UserScript==
@@ -29,6 +30,8 @@
     RESOLUTION_DEADLINE = 24000;
   const handles = new Map(),
     pending = new Set(),
+    activeOrigins = new Map(),
+    thumbnails = new WeakMap(),
     streams = new WeakMap();
   let client,
     generation = 0,
@@ -52,11 +55,14 @@
     )
       ? error.message
       : 'platform-response-invalid';
-  function safeURL(raw, media = false) {
+  function safeURL(raw, media = false, thumbnail = false) {
     const u = new URL(raw);
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hash)
       throw Error('destination-denied');
-    if (media) {
+    if (thumbnail) {
+      if (u.hostname !== 'hdslb.com' && !u.hostname.endsWith('.hdslb.com'))
+        throw Error('destination-denied');
+    } else if (media) {
       if (
         (!/(^|\.)bilivideo\.com$/.test(u.hostname) &&
           u.hostname !== 'upos-hz-mirrorakam.akamaized.net') ||
@@ -70,6 +76,7 @@
         '/x/player/playurl',
         '/x/web-interface/nav',
         '/x/v2/dm/web/seg.so',
+        '/x/player/videoshot',
       ].includes(u.pathname)
     )
       throw Error('destination-denied');
@@ -104,9 +111,10 @@
       cancellations,
       deadline = Infinity,
       timeout = DEADLINE,
+      thumbnail = false,
     } = {},
   ) {
-    safeURL(url, media);
+    safeURL(url, media, thumbnail);
     if (cancellations?.cancelled) throw Error('cancelled');
     const requestTimeout = Math.min(
       DEADLINE,
@@ -114,7 +122,10 @@
       deadline - performance.now(),
     );
     if (requestTimeout <= 0) throw Error('request-timeout');
-    if (active >= 2) throw Error('busy');
+    // Capacity belongs to each source; unrelated CDNs never cancel one another.
+    const origin = new URL(url).origin;
+    if ((activeOrigins.get(origin) || 0) >= 2) throw Error('busy');
+    activeOrigins.set(origin, (activeOrigins.get(origin) || 0) + 1);
     const mine = generation;
     active++;
     metrics.requests++;
@@ -130,6 +141,9 @@
         pending.delete(cancel);
         cancellations?.delete(cancel);
         active--;
+        const remaining = activeOrigins.get(origin) - 1;
+        if (remaining) activeOrigins.set(origin, remaining);
+        else activeOrigins.delete(origin);
         if (error) reject(Error(error));
         else if (mine !== generation) reject(Error('stale-generation'));
         else resolve(value);
@@ -186,7 +200,7 @@
           onabort: () => finish('cancelled'),
           onload: (r) => {
             try {
-              safeURL(r.finalUrl || url, media);
+              safeURL(r.finalUrl || url, media, thumbnail);
               if (
                 r.finalUrl &&
                 new URL(r.finalUrl).origin !== new URL(url).origin
@@ -480,6 +494,81 @@
       })),
     };
   }
+  async function thumbnailInfo(media) {
+    let state = thumbnails.get(media);
+    if (!state) {
+      state = {};
+      thumbnails.set(media, state);
+      state.info = (async () => {
+        const data = await api('/x/player/videoshot', {
+          bvid: media.bvid,
+          cid: media.cid,
+          index: '1',
+        });
+        const positive = (value) => Number.isSafeInteger(value) && value > 0;
+        if (
+          !data ||
+          !positive(data.img_x_len) ||
+          !positive(data.img_y_len) ||
+          !positive(data.img_x_size) ||
+          !positive(data.img_y_size) ||
+          !positive(data.img_x_len * data.img_y_len) ||
+          !positive(data.img_x_len * data.img_x_size) ||
+          !positive(data.img_y_len * data.img_y_size) ||
+          !Array.isArray(data.image) ||
+          data.image.length < 1 ||
+          !Array.isArray(data.index) ||
+          data.index.length < 1 ||
+          data.index.some(
+            (time, i) =>
+              !Number.isFinite(time) ||
+              time < 0 ||
+              time > 604800 ||
+              (i > 0 && time < data.index[i - 1]),
+          )
+        )
+          throw Error('invalid-media');
+        // Some responses include a leading zero sentinel before the first frame.
+        const times =
+          data.index[0] === 0 && data.index[1] === 0
+            ? data.index.slice(1)
+            : data.index;
+        if (
+          !positive(data.image.length * data.img_x_len * data.img_y_len) ||
+          times.length > data.image.length * data.img_x_len * data.img_y_len
+        )
+          throw Error('invalid-media');
+        state.urls = data.image.map((url) => {
+          if (typeof url !== 'string') throw Error('invalid-media');
+          return safeURL(
+            url.startsWith('//') ? `https:${url}` : url,
+            false,
+            true,
+          );
+        });
+        const origins = new Map();
+        const sources = state.urls.map((url) => {
+          const origin = new URL(url).origin;
+          if (!origins.has(origin)) origins.set(origin, origins.size);
+          return origins.get(origin);
+        });
+        return {
+          columns: data.img_x_len,
+          rows: data.img_y_len,
+          width: data.img_x_size,
+          height: data.img_y_size,
+          times,
+          sheets: state.urls.length,
+          sources,
+        };
+      })().catch((error) => {
+        thumbnails.delete(media);
+        throw error;
+      });
+    }
+    await state.info;
+    return state;
+  }
   function protobuf(bytes, maxFields = 30000) {
     let at = 0;
     const end = bytes.length;
@@ -532,6 +621,8 @@
       bytes: ['handle', 'track', 'offset', 'length', 'generation'],
       seek: ['handle', 'seek', 'generation'],
       danmaku: ['handle', 'segment', 'generation'],
+      thumbnails: ['handle', 'generation'],
+      thumbnail: ['handle', 'sheet', 'offset', 'generation'],
       dispose: ['generation'],
       metrics: [],
     };
@@ -612,6 +703,50 @@
     if (q.generation !== generation) throw Error('stale-generation');
     const media = handles.get(q.handle);
     if (!media) throw Error('unknown-handle');
+    if (q.op === 'thumbnails' || q.op === 'thumbnail') {
+      if (
+        q.op === 'thumbnail' &&
+        (!Number.isSafeInteger(q.sheet) ||
+          q.sheet < 0 ||
+          !Number.isSafeInteger(q.offset) ||
+          q.offset < 0 ||
+          q.offset >= 4 * 1024 * 1024 ||
+          q.offset % MAX !== 0)
+      )
+        throw Error('invalid-request');
+      const state = await thumbnailInfo(media);
+      const info = await state.info;
+      if (
+        q.generation !== generation ||
+        q.client !== client ||
+        handles.get(q.handle) !== media
+      )
+        throw Error('stale-generation');
+      if (q.op === 'thumbnails') return info;
+      if (q.sheet >= info.sheets) throw Error('invalid-request');
+      state.transfers ||= new Map();
+      let transfer = state.transfers.get(q.sheet);
+      if (!transfer) {
+        transfer = request(state.urls[q.sheet], {
+          binary: true,
+          limit: 4 * 1024 * 1024,
+          thumbnail: true,
+        })
+          .then((data) => new Uint8Array(data))
+          .catch((error) => {
+            state.transfers.delete(q.sheet);
+            throw error;
+          });
+        state.transfers.set(q.sheet, transfer);
+      }
+      const bytes = await transfer;
+      if (q.offset >= bytes.length) throw Error('invalid-range');
+      let text = '';
+      for (const byte of bytes.subarray(q.offset, q.offset + MAX))
+        text += String.fromCharCode(byte);
+      if (q.offset + MAX >= bytes.length) state.transfers.delete(q.sheet);
+      return { base64: btoa(text), total: bytes.length };
+    }
     const stream = streams.get(media);
     const advanceSeek = (seek) => {
       if (!Number.isSafeInteger(seek) || seek < 0)
@@ -790,6 +925,9 @@
     }
     let answer;
     try {
+      // Reserve non-byte call budget for playback setup, danmaku, and disposal.
+      if ((q.op === 'thumbnails' || q.op === 'thumbnail') && calls >= 24)
+        throw Error('rate-limited');
       if (
         (q.op === 'bytes' ? ++byteCalls > 128 : ++calls > 32) &&
         !(

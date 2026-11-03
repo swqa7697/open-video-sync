@@ -8,6 +8,7 @@ import {
 import { exact, HelperBridge, HelperError, object } from './bridge';
 import { DanmakuRenderer, decodeComments } from './danmaku';
 import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
+import { BilibiliThumbnails } from './thumbnails';
 
 const CHUNK_BYTES = 256 * 1024;
 interface Track {
@@ -52,11 +53,17 @@ export class BilibiliAdapter implements PlayerAdapter {
   private loading = true;
   private failure: HelperError | undefined;
   private readonly generation = 1;
+  private readonly thumbnails = new BilibiliThumbnails(
+    this.bridge,
+    this.generation,
+    () => this.onThumbnail(),
+  );
   constructor(
     private video: HTMLVideoElement,
     overlay: HTMLElement,
     private onDanmaku: (status: Message) => void,
     private onError: (failure: HelperError) => void,
+    private onThumbnail: () => void = () => {},
   ) {
     this.native = new LocalAdapter(video);
     this.capabilities = { ...this.native.capabilities, canShowDanmaku: true };
@@ -158,6 +165,7 @@ export class BilibiliAdapter implements PlayerAdapter {
       this.assertOwned();
       this.loading = false;
       this.schedule(0);
+      this.thumbnails.start(this.info.handle);
       return {
         kind: 'bilibili',
         bvid,
@@ -174,6 +182,17 @@ export class BilibiliAdapter implements PlayerAdapter {
   }
   get mediaInfo(): MediaInfo | undefined {
     return this.info;
+  }
+  async drawThumbnail(
+    positionMs: number,
+    canvas: HTMLCanvasElement,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    return (
+      !!this.info &&
+      !this.disposed &&
+      this.thumbnails.draw(positionMs, canvas, signal)
+    );
   }
   private assertOwned(): void {
     if (this.disposed) throw new DOMException('Cancelled', 'AbortError');
@@ -648,6 +667,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     return this.native.subscribe(listener);
   }
   dispose(): void {
+    this.thumbnails.dispose();
     if (this.disposed) return;
     this.disposed = true;
     this.lifetime.abort();
