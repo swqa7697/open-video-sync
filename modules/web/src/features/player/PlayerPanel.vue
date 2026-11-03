@@ -1764,7 +1764,7 @@ onUnmounted(() => {
       :title="t('player.changeTitle')"
       @close="replaceOpen = false"
       @keydown.enter="confirmMedia"
-      ><form @submit.prevent="replaceMedia">
+      ><form autocomplete="off" @submit.prevent="replaceMedia">
         <MediaPicker
           ref="mediaPicker"
           :room-id="current.roomId"

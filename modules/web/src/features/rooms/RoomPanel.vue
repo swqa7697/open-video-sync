@@ -235,6 +235,7 @@ defineExpose({ commands });
           <input
             id="invite-link"
             :value="shareURL"
+            autocomplete="off"
             readonly
             @focus="selectLink"
           /><button
@@ -251,6 +252,7 @@ defineExpose({ commands });
             id="invite-code"
             class="invite-code"
             :value="invitation.code.match(/.{4}/g)?.join(' ')"
+            autocomplete="off"
             readonly
             @focus="selectLink"
           /><button

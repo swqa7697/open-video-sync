@@ -189,6 +189,7 @@ defineExpose({ prepare, selectBilibili, selectLocal });
           v-model="url"
           :readonly="disabled || working"
           maxlength="2048"
+          autocomplete="off"
           :placeholder="t('media.urlPlaceholder')"
           @input="invalidate"
         /><button
@@ -206,6 +207,7 @@ defineExpose({ prepare, selectBilibili, selectLocal });
           id="bilibili-part"
           v-model.number="part"
           type="number"
+          autocomplete="off"
           min="1"
           :max="parts || 10000"
           :readonly="disabled || working"

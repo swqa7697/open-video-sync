@@ -43,7 +43,10 @@ watch(
       {{ identity.session?.identity.displayName || t('common.guest') }} ·
       {{ t('identity.browser') }}
     </p>
-    <form @submit.prevent="!props.busy && emit('rename', name)">
+    <form
+      autocomplete="off"
+      @submit.prevent="!props.busy && emit('rename', name)"
+    >
       <label for="display-name">{{ t('identity.name') }}</label>
       <div class="form-row">
         <input
@@ -51,7 +54,7 @@ watch(
           v-model="name"
           :readonly="props.busy"
           maxlength="96"
-          autocomplete="nickname"
+          autocomplete="off"
           :aria-invalid="props.invalid || undefined"
           :aria-describedby="props.invalid ? 'app-alert' : 'display-name-hint'"
           @input="emit('edit')"

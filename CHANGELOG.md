@@ -14,6 +14,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Fixed
 
+- Disable browser autofill and input-history suggestions for video links, display names, room names, and invitations.
 - Improve Bilibili playback on high-latency connections with bounded read-ahead, overlapping downloads and player writes, automatic use of validated CDN alternatives, and buffering that adapts to delivery delays. Cancel obsolete media downloads immediately when seeking while preserving current-segment danmaku requests. Allow sequential platform requests for previewing and opening a video to complete before the page times out.
 
 ## [2026-11-02]

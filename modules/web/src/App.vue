@@ -774,7 +774,10 @@ onUnmounted(() => {
                 }}</span
               >
             </div>
-            <form @submit.prevent="!attempt && perform(create, 'create')">
+            <form
+              autocomplete="off"
+              @submit.prevent="!attempt && perform(create, 'create')"
+            >
               <MediaPicker
                 ref="picker"
                 :room-id="creationKey"
@@ -789,6 +792,7 @@ onUnmounted(() => {
                   v-model="title"
                   :readonly="busy || !!attempt"
                   maxlength="120"
+                  autocomplete="off"
                   :placeholder="t('app.roomPlaceholder')"
                   :aria-invalid="invalidField === 'room-name' || undefined"
                   @input="invalidField = undefined"
@@ -826,6 +830,7 @@ onUnmounted(() => {
             <h2 id="join-title">{{ t('app.haveInvitation') }}</h2>
             <form
               class="input-action"
+              autocomplete="off"
               @submit.prevent="!attempt && perform(join, 'join')"
             >
               <input
