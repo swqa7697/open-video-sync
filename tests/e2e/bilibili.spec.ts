@@ -562,6 +562,16 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('slider', { name: 'Danmaku density', exact: true }),
   ).toBeFocused();
+  const density = page.getByRole('slider', {
+    name: 'Danmaku density',
+    exact: true,
+  });
+  const size = page.getByRole('slider', {
+    name: 'Danmaku text size',
+    exact: true,
+  });
+  await density.press('End');
+  await size.press('End');
   const speed = page.getByRole('slider', {
     name: 'Danmaku speed',
     exact: true,
@@ -643,6 +653,8 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(false);
+  await danmaku.press('Enter');
+  await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
@@ -662,6 +674,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await danmaku.focus();
     await danmaku.press('ArrowDown');
     await expect(preferences).toBeVisible();
+    await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
+    await expect(density).toHaveValue('40');
+    await expect(size).toHaveValue('32');
+    await expect(speed).toHaveValue('0.6');
     await expect(area).toHaveValue('0.25');
     expect(
       await preferences.evaluate(
@@ -684,6 +700,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await expect(danmaku).toBeFocused();
     await expect(preferences).toHaveCount(0);
   }
+  await danmaku.press('Enter');
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   const enabledIcon = await danmaku.locator('path').getAttribute('d');
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });

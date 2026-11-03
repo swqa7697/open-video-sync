@@ -1429,8 +1429,16 @@ fieldset select {
 }
 .seek-preview {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: 28px;
+  /* Transform percentages use the tooltip width, keeping both edges on track. */
+  transform: translateX(
+    clamp(
+      0px,
+      calc(var(--seek-pointer-offset) - 50%),
+      calc(var(--seek-track-width) - 100%)
+    )
+  );
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;

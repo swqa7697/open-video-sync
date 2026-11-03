@@ -76,10 +76,10 @@ let wasFullscreen = false;
 let exitingFullscreen = false;
 const preferences = readPlayerPreferences();
 const danmakuStatus = ref<Message | ''>(''),
-  showDanmaku = ref(true),
-  density = ref(20),
-  danmakuSize = ref(20),
-  danmakuSpeed = ref(1),
+  showDanmaku = ref(preferences.danmakuVisible),
+  density = ref(preferences.danmakuDensity),
+  danmakuSize = ref(preferences.danmakuSize),
+  danmakuSpeed = ref(preferences.danmakuSpeed),
   danmakuArea = ref(preferences.danmakuArea);
 let publishing = false;
 const video = ref<HTMLVideoElement>(),
@@ -119,13 +119,28 @@ function showVolumeFeedback(): void {
   }, 1200);
 }
 const preferredQuality = ref(preferences.quality);
-watch([volume, muted, preferredQuality, danmakuArea], () =>
-  savePlayerPreferences({
-    volume: volume.value,
-    muted: muted.value,
-    danmakuArea: danmakuArea.value,
-    ...(preferredQuality.value ? { quality: preferredQuality.value } : {}),
-  }),
+watch(
+  [
+    volume,
+    muted,
+    preferredQuality,
+    showDanmaku,
+    density,
+    danmakuSize,
+    danmakuSpeed,
+    danmakuArea,
+  ],
+  () =>
+    savePlayerPreferences({
+      volume: volume.value,
+      muted: muted.value,
+      danmakuVisible: showDanmaku.value,
+      danmakuDensity: density.value,
+      danmakuSize: danmakuSize.value,
+      danmakuSpeed: danmakuSpeed.value,
+      danmakuArea: danmakuArea.value,
+      ...(preferredQuality.value ? { quality: preferredQuality.value } : {}),
+    }),
 );
 const position = ref(0),
   buffered = ref(0),
@@ -135,6 +150,8 @@ const position = ref(0),
   qualityMenu = ref(false),
   replaceOpen = ref(false),
   hoveredTime = ref<number>(),
+  seekPointerOffset = ref(0),
+  seekTrackWidth = ref(0),
   idle = ref(false),
   controlsHovered = ref(false);
 const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
@@ -1004,15 +1021,15 @@ async function changeQuality(quality: number): Promise<void> {
   await chooseBilibili(selected, false, quality);
 }
 function hoverSeek(event: PointerEvent): void {
-  const box = event.currentTarget as HTMLElement;
-  hoveredTime.value = Math.max(
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  if (!bounds.width) return;
+  seekTrackWidth.value = bounds.width;
+  seekPointerOffset.value = Math.max(
     0,
-    Math.min(
-      totalSeconds.value,
-      ((event.clientX - box.getBoundingClientRect().left) / box.clientWidth) *
-        totalSeconds.value,
-    ),
+    Math.min(bounds.width, event.clientX - bounds.left),
   );
+  hoveredTime.value =
+    (seekPointerOffset.value / bounds.width) * totalSeconds.value;
 }
 function dragSeek(event: Event): void {
   if (!canControl.value) return;
@@ -1513,9 +1530,15 @@ onUnmounted(() => {
             @input="dragSeek"
             @change="seek"
           />
-          <span v-if="hoveredTime !== undefined" class="seek-preview">{{
-            formatTime(hoveredTime)
-          }}</span>
+          <span
+            v-if="hoveredTime !== undefined"
+            class="seek-preview"
+            :style="{
+              '--seek-pointer-offset': `${seekPointerOffset}px`,
+              '--seek-track-width': `${seekTrackWidth}px`,
+            }"
+            >{{ formatTime(hoveredTime) }}</span
+          >
         </div>
         <div class="control-bar">
           <div class="control-start">

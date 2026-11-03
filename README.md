@@ -87,6 +87,7 @@ OVS automatically adjusts buffering and tries available CDN alternatives when de
 Invitations remain reusable until the host replaces them or closes the room. A room closes when everyone leaves, with a short grace for disconnected pages. After a server restart, rooms resume paused at the beginning.
 
 Volume, mute, quality, danmaku, language, and appearance affect only your browser. Use **Settings** in the header to change application preferences.
+Danmaku visibility, density, text size, scrolling speed, and display area are remembered across reloads and rooms in the same browser.
 
 ### Keyboard shortcuts
 

@@ -603,6 +603,47 @@ test('independent identities manage a private room over direct HTTP', async ({
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
+    const track = page.locator('.seek-track');
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      const previousViewport = page.viewportSize()!;
+      await page.setViewportSize(viewport);
+      await player.hover({ position: { x: 100, y: 100 } });
+      await track.scrollIntoViewIfNeeded();
+      const bounds = (await track.boundingBox())!;
+      for (const fraction of [0.02, 0.25, 0.75, 0.98]) {
+        // Firefox rounds native pointer coordinates to whole CSS pixels.
+        const pointerX = Math.round(bounds.x + bounds.width * fraction);
+        await page.mouse.move(pointerX, bounds.y + bounds.height / 2);
+        const preview = page.locator('.seek-preview');
+        await expect(preview).toBeVisible();
+        const time = Math.floor(
+          (Number(await seek.getAttribute('max')) * (pointerX - bounds.x)) /
+            bounds.width,
+        );
+        await expect(preview).toHaveText(
+          `${Math.floor(time / 60)}:${String(time % 60).padStart(2, '0')}`,
+        );
+        const tooltip = (await preview.boundingBox())!;
+        const center = Math.max(
+          bounds.x + tooltip.width / 2,
+          Math.min(bounds.x + bounds.width - tooltip.width / 2, pointerX),
+        );
+        expect(Math.abs(tooltip.x + tooltip.width / 2 - center)).toBeLessThan(
+          2,
+        );
+        expect(tooltip.x).toBeGreaterThanOrEqual(bounds.x - 1);
+        expect(tooltip.x + tooltip.width).toBeLessThanOrEqual(
+          bounds.x + bounds.width + 1,
+        );
+      }
+      await page.mouse.move(0, 0);
+      await expect(page.locator('.seek-preview')).toHaveCount(0);
+      await page.setViewportSize(previousViewport);
+    }
+    await player.hover({ position: { x: 100, y: 100 } });
     const tabToSeek = async () => {
       await page.keyboard.press('Tab');
       // Firefox includes the video itself in the native Tab order.

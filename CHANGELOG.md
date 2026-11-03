@@ -15,6 +15,8 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 ### Fixed
 
 - Disable browser autofill and input-history suggestions for video links, display names, room names, and invitations.
+- Remember all local danmaku settings across reloads and rooms, including visibility, density, text size, scrolling speed, and display area.
+- Keep the seek preview time above the pointer, within the progress bar's edges.
 - Improve Bilibili playback on high-latency connections with bounded read-ahead, overlapping downloads and player writes, automatic use of validated CDN alternatives, and buffering that adapts to delivery delays. Recover from brief network failures without restarting playback, reuse recovered CDN sources, and reduce read-ahead after timeouts so high-bitrate downloads can complete within request deadlines. Preserve decoding keyframes during buffer reclamation so seeking during playback can recover without a manual pause. Cancel obsolete media downloads immediately when seeking while preserving current-segment danmaku requests. Allow sequential platform requests for previewing and opening a video to complete before the page times out.
 
 ## [2026-11-02]

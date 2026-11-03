@@ -163,13 +163,21 @@ beforeEach(() => {
 
 // A component scenario owns player menus and the browser preference lifecycle. The
 // helper regressions separately verify highest/fallback selection from synthetic metadata.
-test('quality and danmaku area choices survive player recreation', async () => {
+test('quality and all danmaku choices survive player recreation', async () => {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('hover: hover'),
   }));
   localStorage.setItem(
     'ovs.player',
-    JSON.stringify({ volume: 0.4, muted: false, danmakuArea: 0.75 }),
+    JSON.stringify({
+      volume: 0.4,
+      muted: false,
+      danmakuVisible: 'false',
+      danmakuDensity: 99,
+      danmakuSize: 12,
+      danmakuSpeed: -1,
+      danmakuArea: 0.75,
+    }),
   );
   const media = {
     kind: 'bilibili' as const,
@@ -285,6 +293,15 @@ test('quality and danmaku area choices survive player recreation', async () => {
       .trigger('pointerenter', { pointerType: 'mouse' });
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('20');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
+    ).toBe('20');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
+    ).toBe('1');
     await wrapper
       .get('.video-stage')
       .trigger('pointerleave', { pointerType: 'mouse' });
@@ -337,6 +354,9 @@ test('quality and danmaku area choices survive player recreation', async () => {
     wrapper.unmount();
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.get('.danmaku-toggle').attributes('aria-pressed')).toBe(
+      'false',
+    );
     expect(wrapper.get<HTMLInputElement>('.volume-slider').element.value).toBe(
       '0.4',
     );
@@ -346,11 +366,24 @@ test('quality and danmaku area choices survive player recreation', async () => {
     await flushPromises();
     const restored = wrapper.get<HTMLSelectElement>('select[id$="-area"]');
     expect(restored.element.value).toBe('0.25');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('12');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
+    ).toBe('24');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
+    ).toBe('0.7');
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage blocked', 'SecurityError');
     });
     await restored.setValue('1');
     expect(restored.element.value).toBe('1');
+    await wrapper.get('input[id$="-density"]').setValue(8);
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('8');
   } finally {
     wrapper.unmount();
   }
