@@ -62,6 +62,7 @@ function fixture(options = {}) {
     token: CANARY,
   };
   function respond(details) {
+    if (details.cancelled) return;
     const url = new URL(details.url);
     let value,
       status = 200,
@@ -195,6 +196,11 @@ function fixture(options = {}) {
     GM_xmlhttpRequest(details) {
       requests.push(details);
       if (options.hold) held.push(details);
+      else if (options.delay)
+        setTimeout(
+          () => respond(details),
+          options.delay(new URL(details.url).pathname),
+        );
       else queueMicrotask(() => respond(details));
       return {
         abort() {
@@ -629,6 +635,12 @@ test('slow or failed CDN locations switch only to mirrors with matching initiali
     'timeout',
     'deadline',
     'expired',
+    'rate-limited',
+    404,
+    408,
+    501,
+    503,
+    599,
   ]) {
     let clock = 0;
     let expire = true;
@@ -650,6 +662,8 @@ test('slow or failed CDN locations switch only to mirrors with matching initiali
           )
             return { bytes: bytes.fill(43) };
           if (url.hostname === 'cdn.bilivideo.com' && start >= 64) {
+            if (Number.isInteger(failure)) return { status: failure };
+            if (failure === 'rate-limited') return { status: 429 };
             if (failure === 'expired' && expire) {
               expire = false;
               return { status: 403 };
@@ -689,11 +703,15 @@ test('slow or failed CDN locations switch only to mirrors with matching initiali
         assert.equal(reply.error, 'request-timeout');
         break;
       }
+      if (failure === 'rate-limited') {
+        assert.equal(reply.error, 'http-429');
+        break;
+      }
       assert.equal(reply.ok, true, reply.error);
       assert.equal(atob(reply.value.base64), '*'.repeat(32));
     }
     const media = f.requests.filter((request) => request.headers.Range);
-    if (failure === 'deadline') {
+    if (['deadline', 'rate-limited'].includes(failure)) {
       assert.equal(media.length, 3);
       continue;
     }
@@ -899,6 +917,62 @@ test('expired ranges refresh once through the same identity and return media byt
       assert.equal((await f.call('metrics')).value.refreshes, 0);
     } else assert.equal((await reading).error, 'media-changed');
   }
+});
+test('slow resolution completes while request and media-operation deadlines remain bounded', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const op of ['preview', 'open']) {
+    let clock = 0;
+    const options = { now: () => clock, delay: () => 11000 },
+      f = fixture(options),
+      resolving = f.call(op, {
+        bvid: 'BV1hf4y1N75G',
+        part: 1,
+        ...(op === 'open' ? { generation: 1 } : {}),
+      });
+    const advance = async (milliseconds) => {
+      clock += milliseconds;
+      t.mock.timers.tick(milliseconds);
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    await new Promise((resolve) => setImmediate(resolve));
+    await advance(11000);
+    await advance(11000);
+    const reply = await resolving;
+    assert.equal(reply.ok, true);
+    assert.equal(reply.value.bvid, 'BV1hf4y1N75G');
+    assert(!JSON.stringify(f.replies).includes(CANARY));
+    // An individual request still cannot consume the full resolution budget.
+    options.delay = () => 30000;
+    const stalled = f.call('preview', { bvid: 'BV1hf4y1N75G', part: 1 });
+    await new Promise((resolve) => setImmediate(resolve));
+    await advance(12000);
+    assert.equal((await stalled).error, 'request-timeout');
+    assert.equal(f.aborted, 1);
+  }
+  let clock = 0;
+  const options = { now: () => clock, expired: true },
+    f = fixture(options),
+    opened = await f.open();
+  options.delay = () => 11000;
+  const reading = f.call('bytes', {
+    handle: opened.value.handle,
+    track: 0,
+    offset: 0,
+    length: 32,
+    generation: 1,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  clock += 11000;
+  t.mock.timers.tick(11000);
+  await new Promise((resolve) => setImmediate(resolve));
+  // Expiry refresh has only the remaining second of the byte-operation budget.
+  clock += 1000;
+  t.mock.timers.tick(1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await reading).error, 'request-timeout');
+  assert.equal(f.requests.filter((request) => request.headers.Range).length, 1);
+  assert.equal((await f.call('metrics')).value.refreshes, 0);
+  assert(!JSON.stringify(f.replies).includes(CANARY));
 });
 test('oversized streams and unapproved final destinations fail without exposing bytes', async () => {
   for (const options of [{ oversize: true }, { redirect: true }]) {

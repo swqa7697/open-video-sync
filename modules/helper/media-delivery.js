@@ -114,14 +114,11 @@ export function createMediaReader(urls, identityRanges, request, now) {
                 ![
                   'network-or-permission-denied',
                   'request-timeout',
-                  'http-500',
-                  'http-502',
-                  'http-503',
-                  'http-504',
                   'access-expired',
                   'media-changed',
                   'invalid-range-response',
-                ].includes(error.message)
+                ].includes(error.message) &&
+                !/^http-(404|408|5[0-9]{2})$/.test(error.message)
               )
                 throw error;
               if (!(next() || fallback))

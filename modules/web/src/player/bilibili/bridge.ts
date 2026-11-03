@@ -243,7 +243,8 @@ export class HelperBridge {
   call(
     op: string,
     args: Record<string, unknown> = {},
-    deadline = 15000,
+    // Resolving metadata needs two sequential requests within the helper budget.
+    deadline = ['preview', 'open'].includes(op) ? 30000 : 15000,
   ): Promise<unknown> {
     if (this.closed)
       return Promise.reject(new DOMException('Cancelled', 'AbortError'));

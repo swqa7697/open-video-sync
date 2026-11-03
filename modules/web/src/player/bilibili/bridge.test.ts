@@ -99,6 +99,39 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   expect(posted.at(-1)?.op).toBe('dispose');
 });
 
+test('slow resolution replies arrive without extending byte-request deadlines', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(window, 'postMessage').mockImplementation((raw) => {
+    const request = JSON.parse(raw as string) as Record<string, unknown>;
+    setTimeout(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: window,
+          origin: location.origin,
+          data: JSON.stringify({
+            channel: 'ovs-bilibili-response',
+            client: request.client,
+            id: request.id,
+            ok: true,
+            value: { completed: true },
+          }),
+        }),
+      );
+    }, 22000);
+  });
+  const bridge = new HelperBridge(),
+    resolving = ['preview', 'open'].map((op) =>
+      expect(bridge.call(op)).resolves.toEqual({ completed: true }),
+    ),
+    reading = expect(bridge.call('bytes')).rejects.toMatchObject({
+      code: 'bridge-timeout',
+    });
+  await vi.advanceTimersByTimeAsync(15000);
+  await reading;
+  await vi.advanceTimersByTimeAsync(7000);
+  await Promise.all(resolving);
+  bridge.close(2, false);
+});
 test('startup waits for late manager registration without opening media first', async () => {
   vi.useFakeTimers();
   let requests = 0;

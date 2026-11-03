@@ -25,7 +25,8 @@
   const pageWindow = unsafeWindow;
   if (location.origin !== ORIGIN || pageWindow.top !== pageWindow.self) return;
   const MAX = 256 * 1024,
-    DEADLINE = 12000;
+    DEADLINE = 12000,
+    RESOLUTION_DEADLINE = 24000;
   const handles = new Map(),
     pending = new Set(),
     streams = new WeakMap();
@@ -339,7 +340,7 @@
     selectedQuality = 0,
     currentTracks,
     cancellations,
-    deadline,
+    deadline = performance.now() + RESOLUTION_DEADLINE,
   ) {
     if (
       !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
