@@ -504,11 +504,16 @@ test('thumbnail delivery validates boundaries and isolates source concurrency', 
 });
 
 test('bridge returns opaque metadata and bounded bytes while excluding credentials and signed URLs', async () => {
-  const f = fixture(),
+  const f = fixture({
+      track: { bandwidth: 2183000, frame_rate: '60000/1001' },
+    }),
     open = await f.open();
   assert.equal(open.ok, true);
   assert.equal(open.value.tracks.length, 2);
   assert.equal(open.value.quality, 64);
+  assert.equal(open.value.tracks[0].bitrate, 2183000);
+  assert.equal(open.value.tracks[0].frameRate, 60000 / 1001);
+  assert.equal(open.value.tracks[1].frameRate, undefined);
   assert.deepEqual(Array.from(open.value.qualities), [64, 32]);
   // A different inspection channel must not invalidate the active media owner.
   const inspection = {
@@ -656,6 +661,12 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     generation: 1,
   });
   assert.equal(atob(data.value.base64).length, 32);
+  const statistics = await f.call('statistics', {
+    handle: open.value.handle,
+    generation: 1,
+  });
+  assert.deepEqual(statistics.value, { downloadedBytes: 32, sampledAtMs: 0 });
+  assert(!JSON.stringify(statistics).includes(CANARY));
   for (const args of [
     { url: 'https://evil.invalid', headers: { Cookie: CANARY } },
     {
@@ -695,6 +706,25 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   });
   assert.equal(switched.value.quality, 32);
   assert.equal(switched.value.tracks[0].id, 32);
+  assert.equal(
+    (
+      await f.call('statistics', {
+        handle: switched.value.handle,
+        generation: 2,
+      })
+    ).value.downloadedBytes,
+    0,
+  );
+  assert.equal(
+    (await f.call('statistics', { handle: open.value.handle, generation: 1 }))
+      .error,
+    'stale-generation',
+  );
+  assert.equal(
+    (await f.call('statistics', { handle: open.value.handle, generation: 2 }))
+      .error,
+    'unknown-handle',
+  );
   assert.equal(
     new URL(
       f.requests.filter((r) => r.url.includes('/playurl')).at(-1).url,
@@ -939,6 +969,9 @@ test('network windows preserve byte order, stay bounded, and cancel only obsolet
     assert(bytes.every((byte, at) => byte === (offset + at) % 251));
   }
   assert.equal(f.requests.filter((request) => request.headers.Range).length, 1);
+  const statistics = () =>
+    f.call('statistics', { handle: read.handle, generation: 1 });
+  assert.equal((await statistics()).value.downloadedBytes, 2 * 1024 * 1024);
   assert.equal(
     (await f.call('metrics')).value.maxResponseBytes,
     2 * 1024 * 1024,
@@ -952,6 +985,13 @@ test('network windows preserve byte order, stay bounded, and cancel only obsolet
     session = f.call('session');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.held.length, 2);
+  const pendingMedia = f.held.find((request) => request.headers.Range);
+  pendingMedia.onprogress({ loaded: 123, lengthComputable: false });
+  pendingMedia.onprogress({ loaded: 123, lengthComputable: false });
+  assert.equal(
+    (await statistics()).value.downloadedBytes,
+    2 * 1024 * 1024 + 123,
+  );
   // An invalid request must not cancel work or advance the cursor.
   assert.equal(
     (await f.call('bytes', { ...read, seek: 1, length: chunk + 1 })).error,
@@ -963,6 +1003,11 @@ test('network windows preserve byte order, stay bounded, and cancel only obsolet
     true,
   );
   assert.equal((await old).error, 'cancelled');
+  pendingMedia.onprogress({ loaded: 456, lengthComputable: false });
+  assert.equal(
+    (await statistics()).value.downloadedBytes,
+    2 * 1024 * 1024 + 123,
+  );
   assert.equal(f.aborted, 1);
   assert.equal((await f.call('bytes', read)).error, 'cancelled');
   const api = f.held.find((request) => !request.headers.Range);
@@ -975,6 +1020,10 @@ test('network windows preserve byte order, stay bounded, and cancel only obsolet
   options.hold = false;
   assert.equal((await f.call('bytes', { ...read, seek: 1 })).ok, true);
   assert.equal(f.requests.filter((request) => request.headers.Range).length, 3);
+  assert.equal(
+    (await statistics()).value.downloadedBytes,
+    4 * 1024 * 1024 + 123,
+  );
   assert(!JSON.stringify(f.replies).includes(CANARY));
 });
 

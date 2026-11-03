@@ -123,6 +123,7 @@
       deadline = Infinity,
       timeout = DEADLINE,
       thumbnail = false,
+      network,
     } = {},
   ) {
     safeURL(url, media, thumbnail);
@@ -144,7 +145,23 @@
     return new Promise((resolve, reject) => {
       let settled = false,
         timer,
-        controller;
+        controller,
+        received = 0;
+      const account = (loaded) => {
+        if (
+          !network ||
+          settled ||
+          !Number.isSafeInteger(loaded) ||
+          loaded < received ||
+          loaded > limit
+        )
+          return;
+        network.bytes = Math.min(
+          Number.MAX_SAFE_INTEGER,
+          network.bytes + loaded - received,
+        );
+        received = loaded;
+      };
       const finish = (error, value) => {
         if (settled) return;
         settled = true;
@@ -170,6 +187,8 @@
         controller?.abort();
       }, requestTimeout);
       function bounds(event) {
+        if (settled) return;
+        account(event.loaded);
         if (
           event.loaded > limit ||
           (event.lengthComputable && event.total > limit)
@@ -210,6 +229,7 @@
           ontimeout: () => finish('request-timeout'),
           onabort: () => finish('cancelled'),
           onload: (r) => {
+            if (settled) return;
             try {
               safeURL(r.finalUrl || url, media, thumbnail);
               if (
@@ -251,6 +271,7 @@
                   throw Error('invalid-range-response');
               }
               metrics.bytes += size;
+              account(size);
               finish(undefined, data);
             } catch (e) {
               finish(e.message);
@@ -583,22 +604,44 @@
       play.timelength > 604800000
     )
       throw Error('invalid-media');
-    const tracks = [video, audio].map((t) => ({
-      urls: mediaURLs(t),
-      id: t.id,
-      codec: t.codecs,
-      mime: t.mimeType || t.mime_type,
-      init: (
-        t.SegmentBase?.Initialization ||
-        t.segment_base?.initialization ||
-        ''
+    const frameRate = (raw) => {
+      if (typeof raw === 'number') return raw;
+      if (
+        typeof raw !== 'string' ||
+        raw.length > 32 ||
+        !/^\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)?$/.test(raw)
       )
-        .split('-')
-        .map(Number),
-      index: (t.SegmentBase?.indexRange || t.segment_base?.index_range || '')
-        .split('-')
-        .map(Number),
-    }));
+        return NaN;
+      const [numerator, denominator = 1] = raw.split('/').map(Number);
+      return numerator / denominator;
+    };
+    const tracks = [video, audio].map((t) => {
+      const rate = frameRate(t.frameRate || t.frame_rate);
+      return {
+        urls: mediaURLs(t),
+        id: t.id,
+        codec: t.codecs,
+        mime: t.mimeType || t.mime_type,
+        ...(Number.isSafeInteger(t.bandwidth) &&
+        t.bandwidth > 0 &&
+        t.bandwidth <= 1073741824
+          ? { bitrate: t.bandwidth }
+          : {}),
+        ...(t === video && Number.isFinite(rate) && rate > 0 && rate <= 1000
+          ? { frameRate: rate }
+          : {}),
+        init: (
+          t.SegmentBase?.Initialization ||
+          t.segment_base?.initialization ||
+          ''
+        )
+          .split('-')
+          .map(Number),
+        index: (t.SegmentBase?.indexRange || t.segment_base?.index_range || '')
+          .split('-')
+          .map(Number),
+      };
+    });
     if (
       tracks.some(
         (t) =>
@@ -632,6 +675,8 @@
         mime: t.mime,
         init: t.init,
         index: t.index,
+        ...(t.bitrate !== undefined ? { bitrate: t.bitrate } : {}),
+        ...(t.frameRate !== undefined ? { frameRate: t.frameRate } : {}),
       })),
     };
   }
@@ -770,6 +815,7 @@
       danmaku: ['handle', 'segment', 'generation'],
       thumbnails: ['handle', 'generation'],
       thumbnail: ['handle', 'sheet', 'offset', 'generation'],
+      statistics: ['handle', 'generation'],
       dispose: ['generation'],
       metrics: [],
     };
@@ -830,14 +876,16 @@
       if (mine !== generation) throw Error('stale-generation');
       const handle = `h${++serial}-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
       handles.set(handle, media);
+      const network = { bytes: 0 };
       streams.set(media, {
+        network,
         seek: 0,
         operations: new Map(),
         readers: media.tracks.map((track) =>
           createMediaReader(
             track.urls,
             [track.init, track.index],
-            request,
+            (url, options) => request(url, { ...options, network }),
             () => performance.now(),
           ),
         ),
@@ -850,6 +898,11 @@
     if (q.generation !== generation) throw Error('stale-generation');
     const media = handles.get(q.handle);
     if (!media) throw Error('unknown-handle');
+    if (q.op === 'statistics')
+      return {
+        downloadedBytes: streams.get(media).network.bytes,
+        sampledAtMs: performance.now(),
+      };
     if (q.op === 'thumbnails' || q.op === 'thumbnail') {
       if (
         q.op === 'thumbnail' &&

@@ -82,6 +82,8 @@ Hover over the progress bar to preview the target frame and time. Bilibili uses 
 
 Seeking with the progress bar or Left/Right pauses everyone at the target, including during playback or waiting. Select **Play** to resume.
 
+Right-click the video, or focus the player and press Shift + F10, to open its menu. Open **Video statistics** to inspect this browser's resolution, frame rate, available track bitrates and segments, forward buffer, and real-time media download activity. Unsupported fields stay hidden. The panel remains visible during playback; close it with its close button or Esc. Copy or download a statistics snapshot locally. Statistics never go to the OVS server. **Video statistics** and **Keyboard shortcuts** are also available in Quick actions.
+
 ### Bilibili
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
@@ -93,6 +95,8 @@ Paste a normal video link or BV identifier, or a bangumi link such as `https://w
 OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
 
 Selecting another episode from **Episodes** starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
+
+The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Reload danmaku is available in this menu; hovering the danmaku toggle opens its display preferences and status.
 
 Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Only the host can switch; members can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
 

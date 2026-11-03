@@ -3,6 +3,7 @@ import type {
   PlayerCapabilities,
   ReadinessStatus,
 } from '../../transport/protocol-values';
+import { forwardBuffer, type PlayerStatistics } from '../statistics';
 import { LocalThumbnails } from '../thumbnails';
 
 export interface PlayerObservation {
@@ -19,6 +20,7 @@ export interface PlayerAdapter {
   seek(positionMs: number): Promise<void>;
   setPlaybackRate?(rate: number): Promise<void>;
   getState(): PlayerObservation;
+  getStatistics?(): PlayerStatistics | Promise<PlayerStatistics>;
   subscribe(listener: () => void): () => void;
   drawThumbnail?(
     positionMs: number,
@@ -45,6 +47,8 @@ export class LocalAdapter implements PlayerAdapter {
   private seekController: AbortController | undefined;
   private status: ReadinessStatus = 'no_media';
   private listeners = new Set<() => void>();
+  private frameSample: { position: number; frames: number } | undefined;
+  private estimatedFrameRate: number | undefined;
   constructor(private video: HTMLVideoElement) {
     for (const event of [
       'loadeddata',
@@ -61,6 +65,7 @@ export class LocalAdapter implements PlayerAdapter {
         event,
         () => {
           if (this.disposed) return;
+          if (event === 'seeking') this.frameSample = undefined;
           if (event === 'error') this.status = 'unsupported';
           // Only waiting means playback lacks data. Firefox fires stalled for MediaSource when
           // appends pause with enough data buffered, and no event would clear that state.
@@ -75,6 +80,8 @@ export class LocalAdapter implements PlayerAdapter {
       );
   }
   async load(file: File, signal: AbortSignal): Promise<void> {
+    this.frameSample = undefined;
+    this.estimatedFrameRate = undefined;
     this.status = 'loading';
     this.url = URL.createObjectURL(file);
     this.thumbnails = new LocalThumbnails(this.url);
@@ -93,6 +100,40 @@ export class LocalAdapter implements PlayerAdapter {
       throw new LocalizedError(message('local.unsupported'));
     }
     this.status = 'ready';
+  }
+  getStatistics(): PlayerStatistics {
+    if (this.disposed) throw new DOMException('Disposed', 'AbortError');
+    const snapshot: PlayerStatistics = {
+      bufferAheadSeconds: forwardBuffer(this.video),
+      ...(this.video.videoWidth > 0 && this.video.videoHeight > 0
+        ? { width: this.video.videoWidth, height: this.video.videoHeight }
+        : {}),
+    };
+    if (typeof this.video.getVideoPlaybackQuality === 'function') {
+      const quality = this.video.getVideoPlaybackQuality(),
+        frames = quality.totalVideoFrames - quality.droppedVideoFrames,
+        position = this.video.currentTime,
+        previous = this.frameSample;
+      this.frameSample = { position, frames };
+      if (
+        previous &&
+        !this.video.paused &&
+        !this.video.seeking &&
+        position > previous.position &&
+        position - previous.position <= 3 &&
+        frames > previous.frames
+      ) {
+        const rate =
+          (frames - previous.frames) / (position - previous.position);
+        if (Number.isFinite(rate) && rate > 0 && rate <= 1000)
+          this.estimatedFrameRate = rate;
+      }
+    }
+    if (this.estimatedFrameRate !== undefined) {
+      snapshot.frameRate = this.estimatedFrameRate;
+      snapshot.frameRateEstimated = true;
+    }
+    return snapshot;
   }
   async play(): Promise<void> {
     if (this.disposed) throw new DOMException('Disposed', 'AbortError');

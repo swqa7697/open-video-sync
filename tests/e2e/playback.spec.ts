@@ -10,6 +10,8 @@ import {
   createLocalRoom,
   dismissHelper,
   invitationLink,
+  openPlayerMenu,
+  openQuickActions,
   seekTo,
   settings,
 } from './flows';
@@ -138,6 +140,76 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       fullPage: true,
     });
     await page.setViewportSize({ width: 1280, height: 1000 });
+    const stage = page.locator('.video-stage');
+    // The player menu provides local tools without sending a playback command.
+    await openPlayerMenu(page, 'keyboard');
+    const playerMenu = page.getByRole('menu', { name: 'Player menu' });
+    await expect(playerMenu).toBeVisible();
+    await expect(playerMenu.getByRole('menuitem')).toHaveCount(2);
+    await expect(
+      playerMenu.getByRole('menuitem', { name: 'Open on Bilibili' }),
+    ).toHaveCount(0);
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Enter');
+    const shortcuts = page.getByRole('dialog', {
+      name: 'Keyboard shortcuts',
+      exact: true,
+    });
+    await expect(shortcuts).toBeVisible();
+    const volumeBeforeHelp = await page.locator('#local-volume').inputValue();
+    await page.keyboard.press('k');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('m');
+    await expect(shortcuts).toBeVisible();
+    await expect(page.locator('#local-volume')).toHaveValue(volumeBeforeHelp);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await page.keyboard.press('Escape');
+    await expect(shortcuts).toHaveCount(0);
+    await expect(stage).toBeFocused();
+    await openPlayerMenu(page);
+    await playerMenu
+      .getByRole('menuitem', { name: 'Video statistics', exact: true })
+      .click();
+    const statistics = page.getByRole('region', {
+      name: 'Video statistics',
+      exact: true,
+    });
+    await expect(statistics).toBeVisible();
+    await expect(statistics).toContainText(/640\s*[×x]\s*360/);
+    await expect(statistics).toContainText('Buffered ahead');
+    await expect(statistics).not.toContainText('Network activity');
+    await expect(statistics).not.toContainText('Video segments');
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await page.keyboard.press('Escape');
+    await expect(statistics).toHaveCount(0);
+    // Quick actions is the searchable path to the same local tool.
+    await openQuickActions(page, 'Video statistics');
+    await page.locator('.command-palette').getByRole('combobox').press('Enter');
+    await expect(statistics).toBeVisible();
+    await statistics
+      .getByRole('button', { name: 'Close video statistics', exact: true })
+      .click();
+    await expect(statistics).toHaveCount(0);
+    // Clamp to the visible viewport even when the video extends below it.
+    await page.setViewportSize({ width: 390, height: 360 });
+    await page.evaluate(() => {
+      scrollTo(0, 0);
+      return new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    });
+    const clippedStage = (await stage.boundingBox())!;
+    await page.mouse.click(
+      clippedStage.x + clippedStage.width - 20,
+      clippedStage.y + clippedStage.height / 2,
+      { button: 'right' },
+    );
+    await expect(playerMenu).toBeVisible();
+    const clippedMenu = (await playerMenu.boundingBox())!;
+    expect(clippedMenu.x + clippedMenu.width).toBeLessThanOrEqual(390);
+    expect(clippedMenu.y + clippedMenu.height).toBeLessThanOrEqual(360);
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 1280, height: 1000 });
     const pausedIndicator = page.getByRole('img', {
       name: 'Paused',
       exact: true,
@@ -163,6 +235,24 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         )
         .toBe(true);
     await expect(page.locator('.playback-indicator')).toHaveCount(0);
+    await openPlayerMenu(page);
+    await playerMenu
+      .getByRole('menuitem', { name: 'Video statistics', exact: true })
+      .click();
+    await expect(statistics).toBeVisible();
+    const observedPosition = await page
+      .locator('video')
+      .evaluate((video: HTMLVideoElement) => video.currentTime);
+    await expect
+      .poll(() =>
+        page
+          .locator('video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      )
+      .toBeGreaterThan(observedPosition + 0.25);
+    await expect(page.locator('video')).toHaveJSProperty('paused', false);
+    await page.keyboard.press('Escape');
+    await expect(statistics).toHaveCount(0);
     // Headless windows stay visible. Exercise visibility events on actual playing media;
     // both the event and later sampling must preserve playback, including on return.
     const background = await page.evaluateHandle(() => {

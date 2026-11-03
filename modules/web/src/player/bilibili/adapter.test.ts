@@ -53,6 +53,7 @@ function fixture(
   });
   const ranges: Range[] = [];
   let onRead: ((range: Range) => Promise<void>) | undefined;
+  const network = { downloadedBytes: 0, sampledAtMs: 0 };
   let quota = false;
   let freeOnRemove = false;
   const buffers: FakeBuffer[] = [];
@@ -192,9 +193,12 @@ function fixture(
             mime: i === 0 ? 'video/mp4' : 'audio/mp4',
             init: [0, 31],
             index: [32, 31 + index.length],
+            bitrate: i === 0 ? 2183000 : 177000,
+            ...(i === 0 ? { frameRate: 60000 / 1001 } : {}),
           })),
         };
       if (op === 'danmaku') return { comments: [] };
+      if (op === 'statistics') return { ...network };
       if (op !== 'bytes') throw new Error('Unexpected operation');
       const range = {
         track: Number(args.track),
@@ -229,6 +233,7 @@ function fixture(
     overlay,
     buffers,
     ranges,
+    network,
     segments,
     onError,
     opening,
@@ -535,6 +540,31 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
     expect(f.buffers[1]!.appends).toHaveLength(1);
     await f.until(() => f.adapter.getState().status === 'ready');
     expect(f.adapter.mediaInfo?.quality).toBe(120);
+    const statistics = await f.adapter.getStatistics();
+    expect(statistics).toMatchObject({
+      frameRate: 60000 / 1001,
+      frameRateEstimated: false,
+      videoBitrate: 2183000,
+      audioBitrate: 177000,
+      videoSegment: { current: 1, total: 1 },
+      audioSegment: { current: 1, total: 1 },
+    });
+    expect(statistics.downloadBytesPerSecond).toBeUndefined();
+    f.network.downloadedBytes = 1024 * 1024;
+    f.network.sampledAtMs = 1000;
+    expect((await f.adapter.getStatistics()).downloadBytesPerSecond).toBe(
+      1024 * 1024,
+    );
+    f.network.sampledAtMs = 2000;
+    expect((await f.adapter.getStatistics()).downloadBytesPerSecond).toBe(0);
+    f.network.sampledAtMs = 6000;
+    expect(
+      (await f.adapter.getStatistics()).downloadBytesPerSecond,
+    ).toBeUndefined();
+    f.network.downloadedBytes = NaN;
+    expect(
+      (await f.adapter.getStatistics()).downloadBytesPerSecond,
+    ).toBeUndefined();
     expect(f.onError).not.toHaveBeenCalled();
     for (const [track, buffer] of f.buffers.entries()) {
       expect(buffer.appends).toEqual(

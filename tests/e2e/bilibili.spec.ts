@@ -9,6 +9,7 @@ import {
   closeRoom,
   invitationLink,
   observePageKeyboard,
+  openPlayerMenu,
   openQuickActions,
   seekTo,
   settings,
@@ -48,6 +49,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     sessionStorage.setItem('hold-thumbnails', '1');
     sessionStorage.setItem('thumbnail-requests', '0');
     sessionStorage.setItem('thumbnail-completed', '0');
+    sessionStorage.setItem('danmaku-requests', '0');
     const tracks = ${JSON.stringify(tracks)};
     const sheets = ${JSON.stringify(sheets)};
     for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
@@ -149,11 +151,14 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
             id: i === 0 ? 120 : 30216,
             codecs: i === 0 ? 'avc1.64001E' : 'mp4a.40.2',
             mimeType: i === 0 ? 'video/mp4' : 'audio/mp4',
+            bandwidth: i === 0 ? 2183000 : 177000,
+            ...(i === 0 ? { frameRate: '30000/1001' } : {}),
             baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?track=' + i,
             SegmentBase: { Initialization: track.init.join('-'), indexRange: track.index.join('-') }
           }));
           data = { timelength: 30000, dash: { video: [media[0]], audio: [media[1]] } };
         } else if (url.pathname.endsWith('/seg.so')) {
+          sessionStorage.setItem('danmaku-requests', String(Number(sessionStorage.getItem('danmaku-requests')) + 1));
           details.onload({ status: 200, finalUrl: details.url, response: new ArrayBuffer(0) });
           return;
         } else data = { isLogin: false };
@@ -189,8 +194,107 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'data-state',
     'ready',
   );
+  const notifications = page.getByRole('button', {
+    name: 'Dismiss notification',
+    exact: true,
+  });
+  while (await notifications.count()) await notifications.first().click();
   await expect(page.getByRole('tab', { name: /Episodes/ })).toHaveCount(0);
   const stage = page.locator('.video-stage');
+  const playerMenu = page.getByRole('menu', { name: 'Player menu' });
+  const statistics = page.getByRole('region', {
+    name: 'Video statistics',
+    exact: true,
+  });
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    await openPlayerMenu(page);
+    const original = playerMenu.getByRole('menuitem', {
+      name: 'Open on Bilibili',
+      exact: true,
+    });
+    await expect(original).toHaveAttribute(
+      'href',
+      'https://www.bilibili.com/video/BV17Jx76CEje?p=1',
+    );
+    await expect(original).toHaveAttribute('target', '_blank');
+    const menuBox = (await playerMenu.boundingBox())!;
+    const stageBox = (await stage.boundingBox())!;
+    expect(menuBox.x).toBeGreaterThanOrEqual(stageBox.x);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(
+      stageBox.x + stageBox.width + 1,
+    );
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(
+      stageBox.y + stageBox.height + 1,
+    );
+    expect(menuBox.x).toBeGreaterThanOrEqual(0);
+    expect(menuBox.y).toBeGreaterThanOrEqual(0);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height);
+    await page.screenshot({
+      path: testInfo.outputPath(`player-menu-${viewport.width}.png`),
+    });
+    await playerMenu
+      .getByRole('menuitem', { name: 'Video statistics', exact: true })
+      .click();
+    await expect(statistics).toBeVisible();
+    await expect(statistics).toContainText(/640\s*[×x]\s*360/);
+    await expect(statistics).toContainText('Video bitrate');
+    await expect(statistics).toContainText('Audio bitrate');
+    await expect(statistics).toContainText('Video segments');
+    await expect(statistics).toContainText('Audio segments');
+    await expect(statistics).toContainText('Network activity');
+    await expect(statistics.locator('.network-graph')).toBeVisible();
+    await expect(statistics).not.toContainText('Video Host');
+    expect(
+      await statistics.evaluate(
+        (panel) => panel.scrollWidth - panel.clientWidth,
+      ),
+    ).toBe(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`player-statistics-${viewport.width}.png`),
+    });
+    if (viewport.width === 1440) {
+      const pendingDownload = page.waitForEvent('download');
+      await statistics
+        .getByRole('button', { name: 'Download statistics', exact: true })
+        .click();
+      const download = await pendingDownload;
+      const stream = await download.createReadStream();
+      if (!stream) throw new Error('The statistics download must have a body.');
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      const snapshot = Buffer.concat(chunks).toString('utf8');
+      expect(() => JSON.parse(snapshot)).not.toThrow();
+      expect(snapshot).toContain('2183000');
+      expect(snapshot).not.toContain('bilivideo.com');
+      expect(snapshot).not.toContain('blob:');
+      expect(snapshot).not.toContain('handle');
+    }
+    await page.keyboard.press('Escape');
+    await expect(statistics).toHaveCount(0);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openPlayerMenu(page);
+  const danmakuRequests = await page.evaluate(() =>
+    Number(sessionStorage.getItem('danmaku-requests')),
+  );
+  await playerMenu
+    .getByRole('menuitem', { name: 'Reload danmaku', exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => Number(sessionStorage.getItem('danmaku-requests'))),
+    )
+    .toBeGreaterThan(danmakuRequests);
   // Initial preparation and seeks complete while thumbnail metadata never replies.
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem('thumbnail-held')))
@@ -1002,10 +1106,34 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(preferences).toHaveCount(0);
   await expect(danmaku).toBeFocused();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await openPlayerMenu(page, 'keyboard');
+  await page
+    .getByRole('menuitem', { name: 'Video statistics', exact: true })
+    .click();
+  const fullscreenStatistics = page.getByRole('region', {
+    name: 'Video statistics',
+    exact: true,
+  });
+  await expect(fullscreenStatistics).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(fullscreenStatistics).toHaveCount(0);
+  expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await page.keyboard.press('Escape');
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(false);
+  await clickPlayerControl(page, 'Fullscreen locally');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await openPlayerMenu(page, 'keyboard');
+  await page
+    .getByRole('menuitem', { name: 'Video statistics', exact: true })
+    .click();
+  await expect(fullscreenStatistics).toBeVisible();
+  // Browser-owned fullscreen exits must also dismiss the floating panel.
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(fullscreenStatistics).toHaveCount(0);
   await danmaku.press('Enter');
   await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
   await page.reload();
@@ -1043,12 +1171,9 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
           (panel) => panel.scrollHeight - panel.clientHeight,
         ),
       ).toBe(0);
-    const reload = preferences.getByRole('button', {
-      name: 'Reload danmaku',
-      exact: true,
-    });
-    await reload.scrollIntoViewIfNeeded();
-    await expect(reload).toBeInViewport();
+    await expect(
+      preferences.getByRole('button', { name: 'Reload danmaku', exact: true }),
+    ).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(danmaku).toBeFocused();
     await expect(preferences).toHaveCount(0);

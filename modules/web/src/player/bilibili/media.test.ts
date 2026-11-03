@@ -317,6 +317,32 @@ test('helper metadata and display comments reject foreign payload fields and scr
     ],
   };
   expect(decodePreview(preview, first)).toEqual(preview);
+  const statistics = {
+    ...preview,
+    tracks: [
+      { ...preview.tracks[0], bitrate: 2183000, frameRate: 60000 / 1001 },
+      preview.tracks[1],
+    ],
+  };
+  expect(decodePreview(statistics, first)).toEqual(statistics);
+  for (const fields of [
+    { bitrate: -1 },
+    { bitrate: 1073741825 },
+    { bitrate: '2183000' },
+    { frameRate: NaN },
+    { frameRate: 0 },
+    { frameRate: 1001 },
+    { host: 'credential.invalid' },
+  ])
+    expect(() =>
+      decodePreview(
+        {
+          ...preview,
+          tracks: [{ ...preview.tracks[0], ...fields }, preview.tracks[1]],
+        },
+        first,
+      ),
+    ).toThrow();
   const bangumi = {
     ...preview,
     episodeId: '103591',

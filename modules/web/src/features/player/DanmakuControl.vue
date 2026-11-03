@@ -22,7 +22,6 @@ const emit = defineEmits<{
   'update:speed': [value: number];
   'update:area': [value: number];
   toggle: [];
-  reload: [];
 }>();
 const root = ref<HTMLElement>(),
   trigger = ref<HTMLButtonElement>(),
@@ -270,9 +269,6 @@ onUnmounted(() => {
       <p class="hint" role="status">
         {{ visible ? status : t('player.hiddenDanmaku', { status }) }}
       </p>
-      <button type="button" class="quiet" @click="emit('reload')">
-        {{ t('player.reloadDanmaku') }}
-      </button>
     </div>
   </div>
 </template>

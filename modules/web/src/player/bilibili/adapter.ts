@@ -5,6 +5,7 @@ import {
   type PlayerAdapter,
   type PlayerObservation,
 } from '../adapters/local';
+import type { PlayerStatistics } from '../statistics';
 import { exact, HelperBridge, HelperError, object } from './bridge';
 import { DanmakuRenderer, decodeComments } from './danmaku';
 import { decodeInfo, parseIndex, type MediaInfo, type Segment } from './media';
@@ -53,6 +54,7 @@ export class BilibiliAdapter implements PlayerAdapter {
   private loading = true;
   private failure: HelperError | undefined;
   private readonly generation = 1;
+  private networkSample: { bytes: number; at: number } | undefined;
   private readonly thumbnails = new BilibiliThumbnails(
     this.bridge,
     this.generation,
@@ -186,6 +188,76 @@ export class BilibiliAdapter implements PlayerAdapter {
   }
   get mediaInfo(): MediaInfo | undefined {
     return this.info;
+  }
+  async getStatistics(): Promise<PlayerStatistics> {
+    this.assertOwned();
+    const info = this.info;
+    const snapshot = this.native.getStatistics();
+    if (!info) return snapshot;
+    const videoTrack = info.tracks[0]!,
+      audioTrack = info.tracks[1]!;
+    snapshot.videoCodec = videoTrack.codec;
+    snapshot.audioCodec = audioTrack.codec;
+    if (videoTrack.bitrate !== undefined)
+      snapshot.videoBitrate = videoTrack.bitrate;
+    if (audioTrack.bitrate !== undefined)
+      snapshot.audioBitrate = audioTrack.bitrate;
+    if (videoTrack.frameRate !== undefined) {
+      snapshot.frameRate = videoTrack.frameRate;
+      snapshot.frameRateEstimated = false;
+    }
+    for (const track of this.tracks) {
+      const segments = track.segments;
+      if (!segments.length) continue;
+      const current = segments.findIndex(
+        (segment) => this.video.currentTime < segment.end,
+      );
+      const progress = {
+        current: current < 0 ? segments.length : current + 1,
+        total: segments.length,
+      };
+      if (track.index === 0) snapshot.videoSegment = progress;
+      else snapshot.audioSegment = progress;
+    }
+    try {
+      const reply = object(
+        await this.bridge.call('statistics', {
+          handle: info.handle,
+          generation: this.generation,
+        }),
+      );
+      this.assertOwned();
+      exact(reply, ['downloadedBytes', 'sampledAtMs']);
+      const bytes =
+        typeof reply.downloadedBytes === 'number' &&
+        Number.isSafeInteger(reply.downloadedBytes) &&
+        reply.downloadedBytes >= 0
+          ? reply.downloadedBytes
+          : undefined;
+      const at =
+        typeof reply.sampledAtMs === 'number' &&
+        Number.isFinite(reply.sampledAtMs) &&
+        reply.sampledAtMs <= Number.MAX_SAFE_INTEGER &&
+        reply.sampledAtMs >= 0
+          ? reply.sampledAtMs
+          : undefined;
+      if (bytes === undefined || at === undefined)
+        throw new HelperError('invalid-reply');
+      const previous = this.networkSample;
+      this.networkSample = { bytes, at };
+      if (
+        previous &&
+        at > previous.at &&
+        at - previous.at <= 3000 &&
+        bytes >= previous.bytes
+      )
+        snapshot.downloadBytesPerSecond =
+          ((bytes - previous.bytes) * 1000) / (at - previous.at);
+    } catch {
+      this.assertOwned();
+      this.networkSample = undefined;
+    }
+    return snapshot;
   }
   async drawThumbnail(
     positionMs: number,

@@ -8,6 +8,8 @@ export interface TrackInfo {
   mime: string;
   init: [number, number];
   index: [number, number];
+  bitrate?: number;
+  frameRate?: number;
 }
 export interface Episode {
   bvid: string;
@@ -224,7 +226,14 @@ export function decodePreview(
   };
   const tracks = v.tracks.map((value, index) => {
     const t = object(value);
-    exact(t, ['id', 'codec', 'mime', 'init', 'index']);
+    exact(t, [
+      'id',
+      'codec',
+      'mime',
+      'init',
+      'index',
+      ...['bitrate', 'frameRate'].filter((key) => Object.hasOwn(t, key)),
+    ]);
     const codec = boundedText(t.codec, 60);
     if (
       t.mime !== (index === 0 ? 'video/mp4' : 'audio/mp4') ||
@@ -239,6 +248,12 @@ export function decodePreview(
       mime: t.mime as string,
       init: range(t.init),
       index: range(t.index),
+      ...(Object.hasOwn(t, 'bitrate')
+        ? { bitrate: integer(t.bitrate, 1, 1073741824) }
+        : {}),
+      ...(Object.hasOwn(t, 'frameRate')
+        ? { frameRate: decodeFrameRate(t.frameRate) }
+        : {}),
     };
   });
   const quality = integer(v.quality, 1, 127);
@@ -269,6 +284,16 @@ export function decodePreview(
       ? { playlist: decodePlaylist(v.playlist, bvid, part, episodeId) }
       : {}),
   };
+}
+function decodeFrameRate(value: unknown): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > 1000
+  )
+    throw new HelperError('invalid-reply');
+  return value;
 }
 // Parse a bounded ISO-BMFF SIDX. Nested indexes and unsafe offsets are unsupported.
 export function parseIndex(data: Uint8Array, offset: number): Segment[] {

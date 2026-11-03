@@ -240,8 +240,61 @@ test('quality and all danmaku choices survive player recreation', async () => {
     await flushPromises();
     return wrapper;
   }
+  const reloadComments = vi
+    .spyOn(BilibiliAdapter.prototype, 'reloadDanmaku')
+    .mockImplementation(() => {});
   let wrapper = await open();
   try {
+    const sent = FakeSocket.instances.at(-1)!.sent.length;
+    const nativeMenu = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    });
+    wrapper.get('.quality-trigger').element.dispatchEvent(nativeMenu);
+    expect(nativeMenu.defaultPrevented).toBe(false);
+    await wrapper
+      .get('video')
+      .trigger('contextmenu', { clientX: 600, clientY: 300 });
+    await flushPromises();
+    const playerMenu = wrapper.get('.player-context-menu');
+    expect(playerMenu.get('a').attributes('href')).toBe(
+      'https://www.bilibili.com/video/BV1hf4y1N75G?p=1',
+    );
+    expect(playerMenu.get('a').attributes('rel')).toBe('noopener noreferrer');
+    await playerMenu
+      .findAll('button')
+      .find((item) => item.text() === 'Reload danmaku')!
+      .trigger('click');
+    expect(reloadComments).toHaveBeenCalledOnce();
+    expect(wrapper.find('.player-context-menu').exists()).toBe(false);
+    await wrapper
+      .get('.video-stage')
+      .trigger('keydown', { key: 'F10', shiftKey: true });
+    await flushPromises();
+    await wrapper
+      .get('.player-context-menu')
+      .trigger('keydown', { key: 'End' });
+    expect(document.activeElement?.textContent).toContain('Video statistics');
+    await wrapper
+      .get('.player-context-menu')
+      .trigger('keydown', { key: 'ArrowUp' });
+    expect(document.activeElement?.textContent).toContain('Keyboard shortcuts');
+    await wrapper
+      .findAll('.player-context-menu button')
+      .find((item) => item.text() === 'Keyboard shortcuts')!
+      .trigger('click');
+    expect(wrapper.get('.player-shortcuts').text()).toContain(
+      'Seek 5 seconds together',
+    );
+    await wrapper
+      .get('.player-shortcuts button')
+      .trigger('keydown', { key: 'k' });
+    expect(FakeSocket.instances.at(-1)!.sent.length).toBe(sent);
+    await wrapper
+      .get('.player-shortcuts')
+      .trigger('keydown', { key: 'Escape' });
+    expect(wrapper.find('.player-shortcuts').exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get('.video-stage').element);
     expect(wrapper.get('.quality-trigger').text()).toBe('4K');
     expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AV1');
     await wrapper.get('.quality-trigger').trigger('click');
@@ -295,6 +348,7 @@ test('quality and all danmaku choices survive player recreation', async () => {
       .trigger('pointerenter', { pointerType: 'mouse' });
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
+    expect(wrapper.get('.danmaku-menu').text()).not.toContain('Reload danmaku');
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
     ).toBe('20');

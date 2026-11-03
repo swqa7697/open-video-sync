@@ -40,6 +40,22 @@ export async function clickPlayerControl(
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page.getByRole('button', { name, exact: true }).click();
 }
+export async function openPlayerMenu(
+  page: Page,
+  input: 'pointer' | 'keyboard' = 'pointer',
+): Promise<void> {
+  await page.bringToFront();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
+  const stage = page.locator('.video-stage');
+  if (input === 'keyboard') {
+    await stage.focus();
+    await page.keyboard.press('Shift+F10');
+  } else await stage.click({ button: 'right', position: { x: 80, y: 60 } });
+  await expect(page.getByRole('menu', { name: 'Player menu' })).toBeVisible();
+}
 export async function openQuickActions(page: Page, query = ''): Promise<void> {
   // Native actions require the foreground page, as with real keyboard input.
   await page.bringToFront();

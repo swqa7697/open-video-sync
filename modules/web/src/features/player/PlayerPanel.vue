@@ -39,6 +39,7 @@ import {
   readPlayerPreferences,
   savePlayerPreferences,
 } from '../../player/preferences';
+import type { PlayerStatistics as StatisticsSnapshot } from '../../player/statistics';
 import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
 import { reportedReadiness, SyncController } from '../../sync/controller';
 import { APIError, request, type Snapshot } from '../../transport/api';
@@ -66,6 +67,10 @@ import {
 import MediaPicker from '../media/MediaPicker.vue';
 import { phaseText, readinessText } from '../status-text';
 import DanmakuControl from './DanmakuControl.vue';
+import type { PlayerMenuItem } from './player-menu';
+import PlayerContextMenu from './PlayerContextMenu.vue';
+import PlayerShortcuts from './PlayerShortcuts.vue';
+import PlayerStatistics from './PlayerStatistics.vue';
 
 const props = defineProps<{
   room: Snapshot;
@@ -169,6 +174,124 @@ const position = ref(0),
   idle = ref(false),
   controlsHovered = ref(false);
 const mediaPicker = ref<InstanceType<typeof MediaPicker>>();
+const contextPosition = ref<{ x: number; y: number }>();
+const statisticsOpen = ref(false),
+  shortcutsOpen = ref(false),
+  statisticsVersion = ref(0);
+let restoringOverlayFocus = false;
+let suppressSurfaceClick = false;
+function focusPlayerSilently(): void {
+  restoringOverlayFocus = true;
+  stage.value?.focus({ preventScroll: true });
+  restoringOverlayFocus = false;
+}
+function closeContextMenu(restoreFocus = true): void {
+  contextPosition.value = undefined;
+  if (restoreFocus) focusPlayerSilently();
+}
+function showContextMenu(x: number, y: number): void {
+  danmakuMenu.value = false;
+  closeQuality();
+  shortcutsOpen.value = false;
+  clearSeekPreview();
+  suppressSurfaceClick = false;
+  contextPosition.value = { x, y };
+}
+function contextMenu(event: MouseEvent): void {
+  if (event.target !== video.value && event.target !== stage.value) return;
+  const bounds = stage.value?.getBoundingClientRect();
+  if (!bounds) return;
+  event.preventDefault();
+  showContextMenu(event.clientX - bounds.left, event.clientY - bounds.top);
+}
+function outsideContextMenu(event: PointerEvent): void {
+  if (
+    !contextPosition.value ||
+    !(event.target instanceof Element) ||
+    event.target.closest('.player-context-menu')
+  )
+    return;
+  if (event.target === video.value || event.target === stage.value)
+    suppressSurfaceClick = true;
+  closeContextMenu(false);
+}
+function toggleStatistics(): void {
+  statisticsOpen.value = !statisticsOpen.value;
+  if (statisticsOpen.value) shortcutsOpen.value = false;
+}
+function closeStatistics(): void {
+  statisticsOpen.value = false;
+  focusPlayerSilently();
+}
+function openShortcuts(): void {
+  shortcutsOpen.value = true;
+}
+function closeShortcuts(): void {
+  shortcutsOpen.value = false;
+  focusPlayerSilently();
+}
+async function readStatistics(): Promise<StatisticsSnapshot | undefined> {
+  const local = adapter,
+    generation = selectionGeneration;
+  const value = await local?.getStatistics?.();
+  return adapter === local && generation === selectionGeneration
+    ? value
+    : undefined;
+}
+const contextItems = computed<PlayerMenuItem[]>(() => {
+  const media = current.value.media;
+  return [
+    ...(media?.kind === 'bilibili'
+      ? [
+          {
+            id: 'original',
+            label: t('player.openBilibili'),
+            icon: 'arrow',
+            href: media.episodeId
+              ? `https://www.bilibili.com/bangumi/play/ep${media.episodeId}`
+              : `https://www.bilibili.com/video/${media.bvid}?p=${media.part}`,
+          },
+          {
+            id: 'danmaku',
+            label: t(
+              showDanmaku.value
+                ? 'player.hideDanmakuMenu'
+                : 'player.showDanmakuMenu',
+            ),
+            icon: showDanmaku.value ? 'chat' : 'chat-off',
+            shortcut: 'D',
+            separator: true,
+          },
+          {
+            id: 'reload-danmaku',
+            label: t('player.reloadDanmaku'),
+            icon: 'replay',
+            disabled: !streamInfo.value || loading.value,
+          },
+        ]
+      : []),
+    {
+      id: 'shortcuts',
+      label: t('player.keyboardHelp'),
+      icon: 'screen',
+      separator: media?.kind === 'bilibili',
+    },
+    {
+      id: 'statistics',
+      label: t(
+        statisticsOpen.value ? 'player.closeStatistics' : 'player.statistics',
+      ),
+      icon: 'info',
+    },
+  ];
+});
+function selectContextItem(id: string): void {
+  closeContextMenu();
+  if (id === 'danmaku') toggleDanmaku();
+  else if (id === 'reload-danmaku') reloadDanmaku();
+  else if (id === 'statistics') toggleStatistics();
+  else if (id === 'shortcuts') openShortcuts();
+}
 const qualityTrigger = ref<HTMLButtonElement>(),
   qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
@@ -259,6 +382,7 @@ function rememberWindowFocus(): void {
   windowFocusTarget = document.activeElement;
 }
 function focusStage(event: FocusEvent): void {
+  if (restoringOverlayFocus) return;
   // Restoring the browser window repeats focusin on its retained active element.
   const restored =
     event.relatedTarget === null && event.target === windowFocusTarget;
@@ -275,7 +399,8 @@ function wake(): void {
   if (isPlaying.value && !controlsPinned.value)
     idleTimer = setTimeout(hideControls, 3000);
 }
-function pointerActivity(): void {
+function pointerActivity(event?: PointerEvent): void {
+  if (event?.type === 'pointerdown' && event.button !== 0) return;
   windowFocusTarget = null;
   pointerOutside = false;
   wake();
@@ -709,6 +834,8 @@ const importHandoff = new ImportHandoff({
   execute: importMedia,
 });
 function clearMedia(): void {
+  closeContextMenu(false);
+  statisticsVersion.value++;
   clearSeekPreview();
   endSeek();
   danmakuMenu.value = false;
@@ -779,6 +906,14 @@ function togglePlayback(): void {
 }
 function clickSurface(event: MouseEvent): void {
   if (event.target !== video.value && event.target !== stage.value) return;
+  if (suppressSurfaceClick) {
+    suppressSurfaceClick = false;
+    return;
+  }
+  if (contextPosition.value) {
+    closeContextMenu();
+    return;
+  }
   stage.value?.focus({ preventScroll: true });
   if (danmakuMenu.value || qualityMenu.value) {
     danmakuMenu.value = false;
@@ -897,7 +1032,10 @@ function fullscreenChanged(): void {
   if (!active) {
     releaseFullscreenKeyboard();
     // Browser-owned exits can bypass DOM keys when locking is unavailable/denied.
-    if (wasFullscreen && !exitingFullscreen) dismissKeyboardOverlay();
+    if (wasFullscreen && !exitingFullscreen) {
+      if (hasKeyboardOverlay()) dismissKeyboardOverlay();
+      else if (statisticsOpen.value) closeStatistics();
+    }
     exitingFullscreen = false;
   }
   wasFullscreen = active;
@@ -1244,6 +1382,26 @@ const commands = computed<QuickCommand[]>(() => [
         },
       ]
     : []),
+  {
+    id: 'statistics',
+    label: t(
+      statisticsOpen.value ? 'player.closeStatistics' : 'player.statistics',
+    ),
+    group: 'watch',
+    icon: 'info',
+    shortcut: '/stats',
+    aliases: 'stats statistics video information 视频 统计 信息',
+    run: toggleStatistics,
+  },
+  {
+    id: 'shortcuts',
+    label: t('player.keyboardHelp'),
+    group: 'watch',
+    icon: 'screen',
+    shortcut: '/shortcuts',
+    aliases: 'keyboard shortcuts help 快捷键 帮助',
+    run: openShortcuts,
+  },
 ]);
 const episodeActions = computed<EpisodeActions>(() => {
   const media = current.value.media;
@@ -1354,6 +1512,20 @@ function keyboard(event: KeyboardEvent): void {
     stage.value?.contains(event.target)
   )
     wake();
+  if (
+    (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) &&
+    (event.target === stage.value || event.target === video.value)
+  ) {
+    event.preventDefault();
+    const bounds = stage.value?.getBoundingClientRect();
+    if (bounds) showContextMenu(bounds.width / 2, bounds.height / 2);
+    return;
+  }
+  if (key === 'escape' && statisticsOpen.value) {
+    event.preventDefault();
+    if (!event.repeat) closeStatistics();
+    return;
+  }
   if (key === 'escape' && document.fullscreenElement) {
     event.preventDefault();
     if (!event.repeat) void fullscreen();
@@ -1604,6 +1776,7 @@ onMounted(() => {
   document.addEventListener('keydown', keyboard);
   document.addEventListener('fullscreenchange', fullscreenChanged);
   document.addEventListener('pointerdown', outsideQuality);
+  document.addEventListener('pointerdown', outsideContextMenu, true);
   document.addEventListener('pointerup', endSeek);
   document.addEventListener('pointercancel', endSeek);
 });
@@ -1622,6 +1795,7 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', fullscreenChanged);
   releaseFullscreenKeyboard();
   document.removeEventListener('pointerdown', outsideQuality);
+  document.removeEventListener('pointerdown', outsideContextMenu, true);
   document.removeEventListener('pointerup', endSeek);
   document.removeEventListener('pointercancel', endSeek);
   transport.dispose();
@@ -1647,6 +1821,7 @@ onUnmounted(() => {
       tabindex="0"
       :aria-label="t('player.shortcuts')"
       @click="clickSurface"
+      @contextmenu="contextMenu"
       @pointerenter="pointerActivity"
       @pointermove="pointerActivity"
       @pointerdown="pointerActivity"
@@ -1662,6 +1837,25 @@ onUnmounted(() => {
         :aria-label="t('player.roomVideo')"
       />
       <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
+      <PlayerStatistics
+        v-if="statisticsOpen"
+        :key="statisticsVersion"
+        :read="readStatistics"
+        @close="closeStatistics"
+      />
+      <PlayerShortcuts
+        v-if="shortcutsOpen"
+        :bilibili="current.media?.kind === 'bilibili'"
+        @close="closeShortcuts"
+      />
+      <PlayerContextMenu
+        v-if="contextPosition"
+        :items="contextItems"
+        :position="contextPosition"
+        :stage="stage"
+        @select="selectContextItem"
+        @close="closeContextMenu"
+      />
       <div
         v-if="volumeFeedback"
         class="volume-feedback"
@@ -1928,7 +2122,6 @@ onUnmounted(() => {
                 }
               "
               @toggle="toggleDanmaku"
-              @reload="reloadDanmaku"
               @update:area="
                 (value) => {
                   danmakuArea = value;
