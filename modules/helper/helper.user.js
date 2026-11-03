@@ -73,6 +73,7 @@
       u.hostname !== 'api.bilibili.com' ||
       ![
         '/x/web-interface/view',
+        '/x/player/pagelist',
         '/x/player/playurl',
         '/x/web-interface/nav',
         '/x/v2/dm/web/seg.so',
@@ -255,7 +256,14 @@
     const x = JSON.parse(
       await request(
         `https://api.bilibili.com${path}?${new URLSearchParams(params)}`,
-        { cancellations, deadline },
+        {
+          cancellations,
+          deadline,
+          // View responses include full collections even when the optional
+          // episode list exceeds the bridge limit and will be omitted.
+          limit:
+            path === '/x/web-interface/view' ? 4 * 1024 * 1024 : 1024 * 1024,
+        },
       ),
     );
     if (x.code !== 0)
@@ -363,12 +371,29 @@
       part > 10000
     )
       throw Error('invalid-media');
-    const view = await api(
-      '/x/web-interface/view',
-      { bvid },
-      cancellations,
-      deadline,
-    );
+    let view,
+      singleVideo = false;
+    try {
+      view = await api(
+        '/x/web-interface/view',
+        { bvid },
+        cancellations,
+        deadline,
+      );
+    } catch (error) {
+      if (error.message !== 'response-too-large') throw error;
+      // The compact part list excludes collection metadata. Keep the selected
+      // video usable without retrying the oversized response or raising its cap.
+      singleVideo = true;
+      view = {
+        pages: await api(
+          '/x/player/pagelist',
+          { bvid },
+          cancellations,
+          deadline,
+        ),
+      };
+    }
     if (!Array.isArray(view?.pages) || view.pages.length > 10000)
       throw Error('invalid-media');
     const page = view.pages.find((p) => p.page === part);
@@ -468,13 +493,13 @@
       )
     )
       throw Error('invalid-media');
-    const playlist = episodeList(view, bvid, part);
+    const playlist = singleVideo ? undefined : episodeList(view, bvid, part);
     return {
       bvid,
       cid: String(page.cid),
       part,
       duration: play.timelength / 1000,
-      title: String(view.title).slice(0, 160),
+      title: String(singleVideo ? page.part || bvid : view.title).slice(0, 160),
       parts: view.pages.length,
       ...(playlist ? { playlist } : {}),
       quality: video.id,

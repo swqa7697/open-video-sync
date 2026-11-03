@@ -75,6 +75,8 @@ function fixture(options = {}) {
             code: options.accessCode || 0,
             data: options.unsafeCDN ? { ...view } : view,
           });
+    else if (url.pathname.endsWith('/pagelist'))
+      value = JSON.stringify(options.pagelist ?? { code: 0, data: view.pages });
     else if (url.pathname.endsWith('/playurl'))
       value = JSON.stringify({
         code: 0,
@@ -595,16 +597,47 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   });
   assert(!JSON.stringify(collection).includes(CANARY));
   assert(!JSON.stringify(collection).includes('https://'));
-  const oversized = await fixture({
-    view: {
-      ugc_season: {
-        title: 'Too many',
-        sections: [{ episodes: Array(501).fill(episodes[0]) }],
+  // Large collections include provider metadata well beyond 1 MiB even when
+  // their optional episode list is too large to expose to the page.
+  for (const descriptionLength of [1800, 5000]) {
+    const oversized = fixture({
+      view: {
+        pages,
+        ugc_season: {
+          title: 'Too many',
+          sections: [
+            {
+              episodes: Array(929).fill({
+                ...episodes[0],
+                arc: {
+                  desc: 'x'.repeat(descriptionLength),
+                  credential: CANARY,
+                },
+              }),
+            },
+          ],
+        },
       },
-    },
-  }).open();
-  assert.equal(oversized.ok, true);
-  assert.equal(oversized.value.playlist, undefined);
+    });
+    for (const op of ['preview', 'open']) {
+      const reply = await oversized.call(op, {
+        bvid: 'BV1gX4w6fEKZ',
+        part: 2,
+        ...(op === 'open' ? { generation: 1 } : {}),
+      });
+      assert.equal(reply.ok, true, reply.error);
+      assert.equal(reply.value.cid, String(pages[1].cid));
+      assert.equal(reply.value.part, 2);
+      assert.equal(reply.value.parts, 2);
+      assert.equal(
+        reply.value.title,
+        descriptionLength === 1800 ? 'fixture' : pages[1].part,
+      );
+      assert.equal(reply.value.playlist, undefined);
+      assert.equal(reply.value.tracks.length, 2);
+      assert(!JSON.stringify(reply).includes(CANARY));
+    }
+  }
   const data = await f.call('bytes', {
     handle: open.value.handle,
     track: 0,
@@ -746,7 +779,28 @@ test('provider failures and restricted access cannot leak raw canaries', async (
     const f = fixture(options),
       r = await f.open();
     assert.equal(r.ok, false);
+    assert.equal(
+      f.requests.some((r) => r.url.includes('/pagelist')),
+      false,
+    );
     assert(!JSON.stringify(r).includes(CANARY));
+  }
+  for (const [pagelist, error] of [
+    [{ code: -101 }, 'login-required'],
+    [{ code: 0, data: null }, 'invalid-media'],
+    [{ code: 0, data: [] }, 'part-unavailable'],
+    [{ code: 0, data: [{ cid: 0, page: 1 }] }, 'invalid-media'],
+  ]) {
+    const f = fixture({
+      view: { desc: 'x'.repeat(4 * 1024 * 1024) },
+      pagelist,
+    });
+    assert.equal((await f.open()).error, error);
+    assert.equal(
+      f.requests.some((r) => r.url.includes('/playurl')),
+      false,
+    );
+    assert(!JSON.stringify(f.replies).includes(CANARY));
   }
   const f = fixture({ loggedOut: true });
   assert.equal((await f.call('session')).value.loggedIn, false);
@@ -1223,6 +1277,31 @@ test('slow resolution completes while request and media-operation deadlines rema
     assert.equal((await stalled).error, 'request-timeout');
     assert.equal(f.aborted, 1);
   }
+  for (const op of ['preview', 'open']) {
+    let clock = 0;
+    const f = fixture({
+      now: () => clock,
+      delay: () => 11000,
+      view: { desc: 'x'.repeat(4 * 1024 * 1024) },
+    });
+    const resolving = f.call(op, {
+      bvid: 'BV1gX4w6fEKZ',
+      part: 1,
+      ...(op === 'open' ? { generation: 1 } : {}),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    // The fallback's third request shares the original resolution deadline.
+    for (const elapsed of [11000, 11000, 2000]) {
+      clock += elapsed;
+      t.mock.timers.tick(elapsed);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.equal((await resolving).error, 'request-timeout');
+    assert.equal(f.requests.at(-1).timeout, 2000);
+    assert(!JSON.stringify(f.replies).includes(CANARY));
+    // Finish late fixture callbacks before starting the next independent clock.
+    t.mock.timers.tick(11000);
+  }
   let clock = 0;
   const options = { now: () => clock, expired: true },
     f = fixture(options),
@@ -1249,6 +1328,31 @@ test('slow resolution completes while request and media-operation deadlines rema
   assert(!JSON.stringify(f.replies).includes(CANARY));
 });
 test('oversized streams and unapproved final destinations fail without exposing bytes', async () => {
+  const metadata = fixture({
+    view: { desc: CANARY + 'x'.repeat(4 * 1024 * 1024) },
+    pagelist: {
+      code: 0,
+      data: [{ cid: 1, page: 1, part: CANARY + 'x'.repeat(1024 * 1024) }],
+    },
+  });
+  const tracks = fixture();
+  tracks.play.token = CANARY + 'x'.repeat(1024 * 1024);
+  for (const f of [metadata, tracks]) {
+    for (const reply of [
+      await f.call('preview', { bvid: 'BV1gX4w6fEKZ', part: 1 }),
+      await f.open(),
+    ]) {
+      assert.equal(reply.ok, false);
+      assert.equal(reply.error, 'response-too-large');
+      assert.equal(reply.value, undefined);
+      assert(!JSON.stringify(reply).includes(CANARY));
+    }
+    assert(f.aborted > 0);
+  }
+  assert.equal(
+    metadata.requests.filter((r) => r.url.includes('/playurl')).length,
+    0,
+  );
   for (const options of [{ oversize: true }, { redirect: true }]) {
     const f = fixture(options),
       open = await f.open(),

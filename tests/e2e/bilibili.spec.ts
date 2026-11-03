@@ -101,7 +101,18 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           return;
         }
         let data;
-        if (url.pathname.endsWith('/view')) data = { title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }] };
+        if (url.pathname.endsWith('/view')) data = {
+          title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }],
+          ugc_season: { title: 'Large collection', sections: [{
+            episodes: Array(929).fill({
+              bvid: 'BV17Jx76CEje', title: 'Episode', page: { page: 1 },
+              arc: { desc: 'x'.repeat(5000) }
+            })
+          }] }
+        };
+        else if (url.pathname.endsWith('/pagelist')) data = [
+          { cid: 1, page: 1, part: 'Streamed Bilibili seeks' }
+        ];
         else if (url.pathname.endsWith('/videoshot')) data = {
           img_x_len: 2, img_y_len: 2, img_x_size: 480, img_y_size: 270,
           index: [0, 0, 3, 7, 11, 16, 21, 26, 29],
@@ -156,6 +167,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'data-state',
     'ready',
   );
+  await expect(page.getByRole('tab', { name: /Episodes/ })).toHaveCount(0);
   const stage = page.locator('.video-stage');
   // Initial preparation and seeks complete while thumbnail metadata never replies.
   await expect

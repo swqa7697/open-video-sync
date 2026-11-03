@@ -18,6 +18,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Fixed
 
+- Load Bilibili videos whose large collections make video metadata exceed 1 MiB, while keeping oversized episode lists hidden. If metadata exceeds the 4 MiB response limit, fall back to loading only the selected video without the collection list.
 - Disable browser autofill and input-history suggestions for video links, display names, room names, and invitations.
 - Remember all local danmaku settings across reloads and rooms, including visibility, density, text size, scrolling speed, and display area.
 - Keep the seek preview time above the pointer, within the progress bar's edges.
