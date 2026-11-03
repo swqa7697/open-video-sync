@@ -8,6 +8,14 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
 }, testInfo) => {
   const failures: string[] = [];
   const mutations: string[] = [];
+  const documentFits = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      return {
+        horizontal: root.scrollWidth <= root.clientWidth + 1,
+        vertical: root.scrollHeight <= root.clientHeight + 1,
+      };
+    });
   page.on('pageerror', (error) => failures.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
@@ -92,7 +100,8 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   );
   await expect(page.locator('#bilibili-part')).toHaveValue('3');
   await runQuickAction(page, 'BV1hf4y1N75G');
-  await expect(page.locator('#bilibili-part')).toHaveCount(0);
+  await expect(page.locator('#bilibili-part')).toBeHidden();
+  await expect(page.getByRole('spinbutton')).toHaveCount(0);
   for (const [query, expected] of [
     [
       'https://www.bilibili.com/bangumi/play/ss6038?tracking=synthetic',
@@ -103,7 +112,8 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   ]) {
     await runQuickAction(page, query!);
     await expect(page.locator('#bilibili-url')).toHaveValue(expected!);
-    await expect(page.locator('#bilibili-part')).toHaveCount(0);
+    await expect(page.locator('#bilibili-part')).toBeHidden();
+    await expect(page.getByRole('spinbutton')).toHaveCount(0);
   }
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
@@ -154,11 +164,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
       path: testInfo.outputPath(`home-${width}-${height}.png`),
       fullPage: true,
     });
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
+    expect(await documentFits()).toEqual({ horizontal: true, vertical: true });
   }
   await runQuickAction(page, '/theme light');
   await openQuickActions(page, '/language');
@@ -174,11 +180,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await page.screenshot({
     path: testInfo.outputPath('commands-200-percent.png'),
   });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  expect(await documentFits()).toEqual({ horizontal: true, vertical: true });
   await page.keyboard.press('Control+k');
   await expect(palette).toHaveCount(0);
   await page.evaluate(() => {

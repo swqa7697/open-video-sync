@@ -1,6 +1,34 @@
 import { expect, test, type Page } from '../../modules/web/playwright-fixtures';
 import { closeRoom, openQuickActions, runQuickAction } from './flows';
 
+async function expectImportFits(page: Page, action: string): Promise<void> {
+  await expect(
+    page.getByRole('button', { name: action, exact: true }),
+  ).toBeInViewport({ ratio: 1 });
+  const bounds = await page.evaluate(() => ({
+    width: document.documentElement.scrollWidth,
+    height: document.documentElement.scrollHeight,
+    viewportWidth: innerWidth,
+    viewportHeight: innerHeight,
+    scrollTop: scrollY,
+  }));
+  expect(bounds.width).toBeLessThanOrEqual(bounds.viewportWidth);
+  expect(bounds.height).toBeLessThanOrEqual(bounds.viewportHeight);
+  expect(bounds.scrollTop).toBe(0);
+  for (const card of await page
+    .locator('.import-destination-card:visible')
+    .all())
+    await expect(card).toBeInViewport({ ratio: 1 });
+}
+
+async function selectExistingDestination(page: Page): Promise<void> {
+  const destination = page.getByRole('button', {
+    name: 'Replace a room’s video',
+    exact: true,
+  });
+  if (await destination.isVisible()) await destination.click();
+}
+
 test('video imports create rooms and replace media through the existing tab with recoverable receipts', async ({
   page,
   context,
@@ -22,7 +50,7 @@ test('video imports create rooms and replace media through the existing tab with
         const url = new URL(details.url);
         let data;
         if (url.pathname.endsWith('/view')) data = {
-          title: 'Imported synthetic video',
+          title: 'Imported synthetic video '.repeat(5).trim(),
           pages: [{cid:1,page:1,part:'Opening'},{cid:2,page:2,part:'Finale'}]
         };
         else if (url.pathname.endsWith('/playurl')) data = {
@@ -79,6 +107,7 @@ test('video imports create rooms and replace media through the existing tab with
     await expect(target).toHaveURL(/\/import$/);
     await expect(target.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
     await expect(target.getByRole('dialog')).toHaveCount(0);
+    await expectImportFits(target, 'Preview and continue');
     await target
       .getByRole('button', { name: 'Preview and continue', exact: true })
       .click();
@@ -94,6 +123,15 @@ test('video imports create rooms and replace media through the existing tab with
   await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
   await page.reload();
   await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 768],
+    [390, 844],
+    [320, 844],
+  ]) {
+    await page.setViewportSize({ width: width!, height: height! });
+    await expectImportFits(page, 'Preview and continue');
+  }
   await openQuickActions(page, '/video');
   await expect(page.getByRole('option')).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -105,7 +143,7 @@ test('video imports create rooms and replace media through the existing tab with
   ).toBeVisible();
   await page
     .getByLabel('Room name', { exact: false })
-    .fill('Import destination');
+    .fill('Import destination '.repeat(5).trim());
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(page).toHaveURL(/\/rooms\/[a-f0-9]{32}$/);
   const roomId = new URL(page.url()).pathname.split('/').at(-1)!;
@@ -124,17 +162,120 @@ test('video imports create rooms and replace media through the existing tab with
   let importSockets = 0;
   importer.on('websocket', () => importSockets++);
   await start(importer, 2);
+  await selectExistingDestination(importer);
   await importer.getByLabel('Your room', { exact: true }).selectOption(roomId);
   await expect(importer.locator('.import-current')).toContainText('Part 1');
+  const replaceButton = importer.getByRole('button', {
+    name: 'Replace video',
+    exact: true,
+  });
+  const actionBounds = () =>
+    replaceButton.evaluate((button) => {
+      const bounds = button.getBoundingClientRect();
+      return {
+        x: bounds.x + scrollX,
+        y: bounds.y + scrollY,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    });
   for (const [width, height] of [
     [1440, 900],
+    [1024, 768],
     [390, 844],
+    [320, 844],
   ]) {
     await importer.setViewportSize({ width: width!, height: height! });
-    await expect(importer.locator('body')).toHaveJSProperty(
-      'scrollWidth',
-      width!,
+    if (width! <= 700) {
+      await importer
+        .getByRole('button', { name: 'Create a new room', exact: true })
+        .click();
+      await expect(importer.locator('#import-room')).toBeHidden();
+      await expectImportFits(importer, 'Create room');
+      await selectExistingDestination(importer);
+      await expect(importer.locator('#import-room-title')).toBeHidden();
+    }
+    await expectImportFits(importer, 'Replace video');
+    await importer.getByLabel('Your room', { exact: true }).selectOption('');
+    await expect(replaceButton).toBeDisabled();
+    const idleBounds = await actionBounds();
+    const roomPath = `**/api/v2/rooms/${roomId}`;
+    let releaseRoom!: () => void;
+    const roomResponse = new Promise<void>(
+      (resolve) => (releaseRoom = resolve),
     );
+    await importer.route(roomPath, async (route) => {
+      await roomResponse;
+      await route.continue();
+    });
+    try {
+      await importer
+        .getByLabel('Your room', { exact: true })
+        .selectOption(roomId);
+      await expect(importer.locator('.import-room-feedback')).toContainText(
+        'Loading your rooms…',
+      );
+      expect(await actionBounds()).toEqual(idleBounds);
+      await expectImportFits(importer, 'Replace video');
+      releaseRoom();
+      await expect(importer.locator('.import-current')).toContainText('Part 1');
+      await expect(replaceButton).toBeEnabled();
+      expect(await actionBounds()).toEqual(idleBounds);
+    } finally {
+      releaseRoom();
+      await importer.unroute(roomPath);
+    }
+    const roomsPath = '**/api/v2/rooms?limit=*';
+    await importer.route(roomsPath, async (route) => {
+      const response = await route.fetch();
+      const listing = (await response.json()) as object;
+      await route.fulfill({
+        response,
+        json: { ...listing, nextCursor: roomId },
+      });
+    });
+    await importer
+      .getByRole('button', { name: 'Refresh', exact: true })
+      .click();
+    await expect(
+      importer.getByRole('button', { name: 'Load more rooms' }),
+    ).toBeVisible();
+    await expect(replaceButton).toBeEnabled();
+    expect(await actionBounds()).toEqual(idleBounds);
+    await expectImportFits(importer, 'Replace video');
+    await importer.unroute(roomsPath);
+    await importer.route(roomsPath, (route) =>
+      route.fulfill({ status: 503, json: { error: { code: 'busy' } } }),
+    );
+    await importer
+      .getByRole('button', { name: 'Refresh', exact: true })
+      .click();
+    await expect(
+      importer.locator('.import-room-feedback [role="alert"]'),
+    ).not.toBeEmpty();
+    expect(await actionBounds()).toEqual(idleBounds);
+    await expectImportFits(importer, 'Replace video');
+    await importer.unroute(roomsPath);
+    await importer
+      .getByRole('button', { name: 'Refresh', exact: true })
+      .click();
+    await expect(
+      importer.getByRole('button', { name: 'Load more rooms' }),
+    ).toHaveCount(0);
+    await expect(replaceButton).toBeEnabled();
+    expect(await actionBounds()).toEqual(idleBounds);
+    await expectImportFits(importer, 'Replace video');
+    if (width! <= 700) {
+      const details = importer.locator('.import-media .feedback-toggle');
+      await details.click();
+      await expect(
+        importer.locator('.import-media .feedback-details'),
+      ).toBeVisible();
+      await expectImportFits(importer, 'Replace video');
+      expect(await actionBounds()).toEqual(idleBounds);
+      await importer.keyboard.press('Escape');
+      await expect(details).toHaveAttribute('aria-expanded', 'false');
+    }
     await importer.screenshot({
       path: testInfo.outputPath(`import-${width}.png`),
       fullPage: true,
@@ -144,16 +285,19 @@ test('video imports create rooms and replace media through the existing tab with
   await expect(importer.locator('html')).toHaveAttribute('data-mode', 'light');
   for (const [width, height] of [
     [1440, 900],
+    [1024, 768],
     [390, 844],
+    [320, 844],
   ]) {
     await importer.setViewportSize({ width: width!, height: height! });
-    await importer.evaluate(() => window.scrollTo(0, 0));
+    await expectImportFits(importer, 'Replace video');
     await importer.screenshot({
       path: testInfo.outputPath(`import-${width}-light.png`),
       fullPage: true,
     });
   }
   await runQuickAction(importer, '/theme dark');
+  await importer.setViewportSize({ width: 390, height: 844 });
   expect((await readRoom()).mediaGeneration).toBe(initial.mediaGeneration);
   await importer
     .getByRole('button', { name: 'Replace video', exact: true })
@@ -181,6 +325,7 @@ test('video imports create rooms and replace media through the existing tab with
       exact: true,
     }),
   ).toBeVisible({ timeout: 20000 });
+  await expectImportFits(importer, 'Check original request');
   await expect.poll(async () => (await readRoom()).media.part).toBe(2);
   await expect(page.locator('.player-panel')).not.toContainText(
     'open in another tab',
@@ -206,6 +351,7 @@ test('video imports create rooms and replace media through the existing tab with
   await page.close();
   await importer.goto('/');
   await start(importer, 1);
+  await selectExistingDestination(importer);
   await importer.getByLabel('Your room', { exact: true }).selectOption(roomId);
   await expect(importer.locator('.import-current')).toContainText('Part 2');
   await importer

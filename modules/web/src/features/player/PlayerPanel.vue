@@ -1812,392 +1812,404 @@ onUnmounted(() => {
     <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">
       {{ t('common.watchTogether') }}
     </h3>
-    <div
-      ref="stage"
-      class="video-stage"
-      :class="{
-        'controls-idle': idle,
-      }"
-      tabindex="0"
-      :aria-label="t('player.shortcuts')"
-      @click="clickSurface"
-      @contextmenu="contextMenu"
-      @pointerenter="pointerActivity"
-      @pointermove="pointerActivity"
-      @pointerdown="pointerActivity"
-      @focusin="focusStage"
-      @pointerleave="leaveStage"
-    >
-      <video
-        ref="video"
-        preload="auto"
-        playsinline
-        :muted="muted"
-        :volume="volume"
-        :aria-label="t('player.roomVideo')"
-      />
-      <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
-      <PlayerStatistics
-        v-if="statisticsOpen"
-        :key="statisticsVersion"
-        :read="readStatistics"
-        @close="closeStatistics"
-      />
-      <PlayerShortcuts
-        v-if="shortcutsOpen"
-        :bilibili="current.media?.kind === 'bilibili'"
-        @close="closeShortcuts"
-      />
-      <PlayerContextMenu
-        v-if="contextPosition"
-        :items="contextItems"
-        :position="contextPosition"
-        :stage="stage"
-        @select="selectContextItem"
-        @close="closeContextMenu"
-      />
+    <div class="player-viewport">
       <div
-        v-if="volumeFeedback"
-        class="volume-feedback"
-        role="status"
-        :aria-label="t('player.localVolume')"
-        aria-atomic="true"
+        ref="stage"
+        class="video-stage"
+        :class="{
+          'controls-idle': idle,
+        }"
+        tabindex="0"
+        :aria-label="t('player.shortcuts')"
+        @click="clickSurface"
+        @contextmenu="contextMenu"
+        @pointerenter="pointerActivity"
+        @pointermove="pointerActivity"
+        @pointerdown="pointerActivity"
+        @focusin="focusStage"
+        @pointerleave="leaveStage"
       >
-        <Icon :name="muted || !volume ? 'mute' : 'volume'" :size="22" />
-        <span>{{ Math.round(volume * 100) }}</span>
-      </div>
-      <div v-if="replaced" class="player-state">
-        <Icon name="screen" :size="36" />
-        <h3>{{ t('player.moved') }}</h3>
-        <p>{{ t('player.movedHint') }}</p>
-        <button @click="reload">{{ t('player.usePage') }}</button>
-      </div>
-      <div v-else-if="error && !loading" class="player-state" role="alert">
-        <Icon name="screen" :size="32" />
-        <p>{{ translate(error) }}</p>
-        <button v-if="errorReload" @click="reload">
-          {{ t('common.reload') }}</button
-        ><button
-          v-else-if="current.media?.kind === 'bilibili'"
-          @click="retryMedia"
-        >
-          {{ t('player.retryVideo') }}</button
-        ><button v-else type="button" class="file-button" @click="chooseFile">
-          {{ t('common.chooseAnother') }}
-        </button>
-      </div>
-      <div v-else-if="mediaStatus === 'gesture_required'" class="player-state">
-        <Icon name="play" :size="36" />
-        <h3>{{ t('player.joinMoment') }}</h3>
-        <p>{{ t('player.permission') }}</p>
-        <button @click="enable">{{ t('player.enable') }}</button>
-      </div>
-      <div
-        v-else-if="!descriptor && !loading && current.media?.kind === 'local'"
-        class="player-state"
-      >
-        <span class="state-symbol"><Icon name="file" :size="34" /></span>
-        <h3>{{ t('player.seatReady') }}</h3>
-        <p>{{ t('player.selectCopy') }}</p>
-        <label class="file-button" for="local-video"
-          ><Icon name="plus" />{{ t('player.matchingVideo') }}</label
-        ><small>{{ t('player.filePrivate') }}</small>
-      </div>
-      <div v-else-if="mediaStatus === 'mismatch'" class="player-state">
-        <h3>{{ t('player.differentVideo') }}</h3>
-        <p>{{ t('player.mismatchHint') }}</p>
-        <button type="button" class="file-button" @click="chooseFile">
-          {{ t('player.matchingVideo') }}
-        </button>
-      </div>
-      <div
-        v-else-if="playbackIndicator"
-        class="playback-indicator"
-        :data-state="playbackIndicator"
-        role="img"
-        :aria-label="
-          playbackIndicator === 'paused'
-            ? t(phaseText.paused)
-            : t(readinessText[playbackIndicator])
-        "
-      >
-        <Icon
-          :name="playbackIndicator === 'paused' ? 'play' : 'loader'"
-          :size="32"
-          :class="{ 'playback-spinner': playbackIndicator !== 'paused' }"
+        <video
+          ref="video"
+          preload="auto"
+          playsinline
+          :muted="muted"
+          :volume="volume"
+          :aria-label="t('player.roomVideo')"
         />
-      </div>
-      <div
-        v-else-if="!descriptor && current.media?.kind === 'bilibili'"
-        class="player-state"
-      >
-        <Icon name="screen" :size="36" />
-        <h3>{{ t('player.connectHelper') }}</h3>
-        <p>{{ t('player.helperHint') }}</p>
-        <button class="quiet" @click="retryMedia">
-          {{ t('player.retryVideo') }}
-        </button>
-      </div>
-      <div v-else-if="current.playback.phase === 'ended'" class="player-state">
-        <h3>{{ t('player.again') }}</h3>
-        <button
-          :disabled="!canControl && !pendingCommand"
-          :aria-disabled="!canControl"
-          @click="command('replay')"
-        >
-          <Icon name="replay" />{{ t('player.replay') }}
-        </button>
-      </div>
-      <div
-        v-if="
-          current.barrier && descriptor && mediaStatus !== 'gesture_required'
-        "
-        class="waiting-overlay"
-        role="status"
-      >
-        {{ waitingText }}
-      </div>
-      <input
-        id="local-video"
-        tabindex="-1"
-        class="visually-hidden"
-        type="file"
-        accept="video/*,.mkv"
-        :disabled="!active || !connected || !!pendingCommand"
-        :aria-label="t('player.selectMatching')"
-        @change="choose"
-      />
-      <div v-if="commandDelayed" class="notice command-recovery" role="status">
-        <span>{{ t('player.commandDelayed') }}</span
-        ><button
-          ref="commandRecovery"
-          :disabled="!connected"
-          @click="transport.resolveUncertain()"
-        >
-          {{ t('player.checkOriginal') }}
-        </button>
-      </div>
-      <div
-        class="player-controls"
-        @pointerenter="hoverControls($event, true)"
-        @pointerleave="hoverControls($event, false)"
-      >
+        <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
+        <PlayerStatistics
+          v-if="statisticsOpen"
+          :key="statisticsVersion"
+          :read="readStatistics"
+          @close="closeStatistics"
+        />
+        <PlayerShortcuts
+          v-if="shortcutsOpen"
+          :bilibili="current.media?.kind === 'bilibili'"
+          @close="closeShortcuts"
+        />
+        <PlayerContextMenu
+          v-if="contextPosition"
+          :items="contextItems"
+          :position="contextPosition"
+          :stage="stage"
+          @select="selectContextItem"
+          @close="closeContextMenu"
+        />
         <div
-          class="seek-track"
-          @pointermove="hoverSeek"
-          @pointerleave="clearSeekPreview"
+          v-if="volumeFeedback"
+          class="volume-feedback"
+          role="status"
+          :aria-label="t('player.localVolume')"
+          aria-atomic="true"
         >
-          <div
-            class="buffered-track"
-            :style="{
-              width: `${totalSeconds ? (buffered / totalSeconds) * 100 : 0}%`,
-            }"
+          <Icon :name="muted || !volume ? 'mute' : 'volume'" :size="22" />
+          <span>{{ Math.round(volume * 100) }}</span>
+        </div>
+        <div v-if="replaced" class="player-state">
+          <Icon name="screen" :size="36" />
+          <h3>{{ t('player.moved') }}</h3>
+          <p>{{ t('player.movedHint') }}</p>
+          <button @click="reload">{{ t('player.usePage') }}</button>
+        </div>
+        <div v-else-if="error && !loading" class="player-state" role="alert">
+          <Icon name="screen" :size="32" />
+          <p>{{ translate(error) }}</p>
+          <button v-if="errorReload" @click="reload">
+            {{ t('common.reload') }}</button
+          ><button
+            v-else-if="current.media?.kind === 'bilibili'"
+            @click="retryMedia"
+          >
+            {{ t('player.retryVideo') }}</button
+          ><button v-else type="button" class="file-button" @click="chooseFile">
+            {{ t('common.chooseAnother') }}
+          </button>
+        </div>
+        <div
+          v-else-if="mediaStatus === 'gesture_required'"
+          class="player-state"
+        >
+          <Icon name="play" :size="36" />
+          <h3>{{ t('player.joinMoment') }}</h3>
+          <p>{{ t('player.permission') }}</p>
+          <button @click="enable">{{ t('player.enable') }}</button>
+        </div>
+        <div
+          v-else-if="!descriptor && !loading && current.media?.kind === 'local'"
+          class="player-state"
+        >
+          <span class="state-symbol"><Icon name="file" :size="34" /></span>
+          <h3>{{ t('player.seatReady') }}</h3>
+          <p>{{ t('player.selectCopy') }}</p>
+          <label class="file-button" for="local-video"
+            ><Icon name="plus" />{{ t('player.matchingVideo') }}</label
+          ><small>{{ t('player.filePrivate') }}</small>
+        </div>
+        <div v-else-if="mediaStatus === 'mismatch'" class="player-state">
+          <h3>{{ t('player.differentVideo') }}</h3>
+          <p>{{ t('player.mismatchHint') }}</p>
+          <button type="button" class="file-button" @click="chooseFile">
+            {{ t('player.matchingVideo') }}
+          </button>
+        </div>
+        <div
+          v-else-if="playbackIndicator"
+          class="playback-indicator"
+          :data-state="playbackIndicator"
+          role="img"
+          :aria-label="
+            playbackIndicator === 'paused'
+              ? t(phaseText.paused)
+              : t(readinessText[playbackIndicator])
+          "
+        >
+          <Icon
+            :name="playbackIndicator === 'paused' ? 'play' : 'loader'"
+            :size="32"
+            :class="{ 'playback-spinner': playbackIndicator !== 'paused' }"
           />
-          <div
-            class="played-track"
-            :style="{
-              width: `${totalSeconds ? ((dragging ? seekSeconds : position) / totalSeconds) * 100 : 0}%`,
-            }"
-          />
-          <input
-            id="seek-seconds"
-            :value="dragging ? seekSeconds : position"
-            type="range"
-            min="0"
-            :max="totalSeconds || 1"
-            step="0.1"
-            :aria-label="t('player.seek')"
-            :aria-valuetext="
-              t('player.seekValue', {
-                position: formatTime(dragging ? seekSeconds : position),
-                duration: formatTime(totalSeconds),
-              })
-            "
+        </div>
+        <div
+          v-else-if="!descriptor && current.media?.kind === 'bilibili'"
+          class="player-state"
+        >
+          <Icon name="screen" :size="36" />
+          <h3>{{ t('player.connectHelper') }}</h3>
+          <p>{{ t('player.helperHint') }}</p>
+          <button class="quiet" @click="retryMedia">
+            {{ t('player.retryVideo') }}
+          </button>
+        </div>
+        <div
+          v-else-if="current.playback.phase === 'ended'"
+          class="player-state"
+        >
+          <h3>{{ t('player.again') }}</h3>
+          <button
             :disabled="!canControl && !pendingCommand"
             :aria-disabled="!canControl"
-            @keydown="seekKeyboard"
-            @pointerdown="startSeek"
-            @click="stage?.focus({ preventScroll: true })"
-            @input="dragSeek"
-            @change="seek"
-          />
-          <div
-            v-if="hoveredTime !== undefined"
-            class="seek-preview"
-            :class="{ 'has-thumbnail': thumbnailVisible }"
-            aria-hidden="true"
-            :style="{
-              '--seek-pointer-offset': `${seekPointerOffset}px`,
-              '--seek-track-width': `${seekTrackWidth}px`,
-            }"
+            @click="command('replay')"
           >
-            <canvas
-              ref="previewCanvas"
-              v-show="thumbnailVisible"
-              width="160"
-              height="90"
-            />
-            <span>{{ formatTime(hoveredTime) }}</span>
-          </div>
+            <Icon name="replay" />{{ t('player.replay') }}
+          </button>
         </div>
-        <div class="control-bar">
-          <div class="control-start">
-            <button
-              class="icon-button"
-              :aria-label="
-                isPlaying
-                  ? t('player.pauseTogether')
-                  : current.playback.phase === 'ended'
-                    ? t('player.replay')
-                    : t('player.playTogether')
-              "
-              :title="
-                controlNote ||
-                (isPlaying
-                  ? t('player.pauseShortcut')
-                  : t('player.playShortcut'))
-              "
-              :disabled="
-                (isPlaying ? !canControl : !canPlay) && !pendingCommand
-              "
-              :aria-disabled="isPlaying ? !canControl : !canPlay"
-              :aria-describedby="controlNote ? 'control-note' : undefined"
-              @click="togglePlayback"
-            >
-              <Icon
-                :name="
-                  isPlaying
-                    ? 'pause'
-                    : current.playback.phase === 'ended'
-                      ? 'replay'
-                      : 'play'
-                "
-                :size="22"
-              />
-            </button>
-            <button
-              class="icon-button"
-              :aria-label="muted ? t('player.unmute') : t('player.mute')"
-              :aria-pressed="muted"
-              @click="muted = !muted"
-            >
-              <Icon :name="muted || !volume ? 'mute' : 'volume'" />
-            </button>
+        <div
+          v-if="
+            current.barrier && descriptor && mediaStatus !== 'gesture_required'
+          "
+          class="waiting-overlay"
+          role="status"
+        >
+          {{ waitingText }}
+        </div>
+        <input
+          id="local-video"
+          tabindex="-1"
+          class="visually-hidden"
+          type="file"
+          accept="video/*,.mkv"
+          :disabled="!active || !connected || !!pendingCommand"
+          :aria-label="t('player.selectMatching')"
+          @change="choose"
+        />
+        <div
+          v-if="commandDelayed"
+          class="notice command-recovery"
+          role="status"
+        >
+          <span>{{ t('player.commandDelayed') }}</span
+          ><button
+            ref="commandRecovery"
+            :disabled="!connected"
+            @click="transport.resolveUncertain()"
+          >
+            {{ t('player.checkOriginal') }}
+          </button>
+        </div>
+        <div
+          class="player-controls"
+          @pointerenter="hoverControls($event, true)"
+          @pointerleave="hoverControls($event, false)"
+        >
+          <div
+            class="seek-track"
+            @pointermove="hoverSeek"
+            @pointerleave="clearSeekPreview"
+          >
+            <div
+              class="buffered-track"
+              :style="{
+                width: `${totalSeconds ? (buffered / totalSeconds) * 100 : 0}%`,
+              }"
+            />
+            <div
+              class="played-track"
+              :style="{
+                width: `${totalSeconds ? ((dragging ? seekSeconds : position) / totalSeconds) * 100 : 0}%`,
+              }"
+            />
             <input
-              id="local-volume"
-              v-model.number="volume"
-              class="volume-slider"
+              id="seek-seconds"
+              :value="dragging ? seekSeconds : position"
               type="range"
               min="0"
-              max="1"
+              :max="totalSeconds || 1"
               step="0.1"
-              @input="muted = false"
-              :aria-label="t('player.localVolume')"
+              :aria-label="t('player.seek')"
               :aria-valuetext="
-                t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
-                  volume: Math.round(volume * 100),
+                t('player.seekValue', {
+                  position: formatTime(dragging ? seekSeconds : position),
+                  duration: formatTime(totalSeconds),
                 })
               "
+              :disabled="!canControl && !pendingCommand"
+              :aria-disabled="!canControl"
+              @keydown="seekKeyboard"
+              @pointerdown="startSeek"
+              @click="stage?.focus({ preventScroll: true })"
+              @input="dragSeek"
+              @change="seek"
             />
-            <span class="player-time"
-              >{{ formatTime(dragging ? seekSeconds : position)
-              }}<span>/ {{ formatTime(totalSeconds) }}</span></span
+            <div
+              v-if="hoveredTime !== undefined"
+              class="seek-preview"
+              :class="{ 'has-thumbnail': thumbnailVisible }"
+              aria-hidden="true"
+              :style="{
+                '--seek-pointer-offset': `${seekPointerOffset}px`,
+                '--seek-track-width': `${seekTrackWidth}px`,
+              }"
             >
+              <canvas
+                ref="previewCanvas"
+                v-show="thumbnailVisible"
+                width="160"
+                height="90"
+              />
+              <span>{{ formatTime(hoveredTime) }}</span>
+            </div>
           </div>
-          <div class="control-end">
-            <DanmakuControl
-              v-if="current.media?.kind === 'bilibili'"
-              :open="danmakuMenu"
-              :visible="showDanmaku"
-              :density="density"
-              :font-size="danmakuSize"
-              :speed="danmakuSpeed"
-              :area="danmakuArea"
-              :status="translate(danmakuStatus)"
-              :stage="stage"
-              @update:open="
-                (value) => {
-                  danmakuMenu = value;
-                  if (value) closeQuality();
-                }
-              "
-              @toggle="toggleDanmaku"
-              @update:area="
-                (value) => {
-                  danmakuArea = value;
-                  danmakuPreferences();
-                }
-              "
-              @update:density="
-                (value) => {
-                  density = value;
-                  danmakuPreferences();
-                }
-              "
-              @update:font-size="
-                (value) => {
-                  danmakuSize = value;
-                  danmakuPreferences();
-                }
-              "
-              @update:speed="
-                (value) => {
-                  danmakuSpeed = value;
-                  danmakuPreferences();
-                }
-              "
-            />
-            <button
-              v-if="current.media?.kind === 'bilibili'"
-              ref="qualityTrigger"
-              class="quality-trigger quiet"
-              :aria-label="t('player.videoQuality')"
-              aria-haspopup="menu"
-              aria-controls="video-quality"
-              :disabled="!streamInfo || loading"
-              :aria-expanded="qualityMenu"
-              @click="openQuality"
-              @keydown.down.prevent="!qualityMenu && openQuality()"
-            >
-              {{
-                streamInfo
-                  ? qualityName(streamInfo.quality)
-                  : t('player.quality')
-              }}<Icon name="chevron" :size="14" />
-            </button>
-            <button
-              class="icon-button"
-              :aria-label="t('player.fullscreen')"
-              @click="fullscreen"
-            >
-              <Icon name="fullscreen" />
-            </button>
+          <div class="control-bar">
+            <div class="control-start">
+              <button
+                class="icon-button"
+                :aria-label="
+                  isPlaying
+                    ? t('player.pauseTogether')
+                    : current.playback.phase === 'ended'
+                      ? t('player.replay')
+                      : t('player.playTogether')
+                "
+                :title="
+                  controlNote ||
+                  (isPlaying
+                    ? t('player.pauseShortcut')
+                    : t('player.playShortcut'))
+                "
+                :disabled="
+                  (isPlaying ? !canControl : !canPlay) && !pendingCommand
+                "
+                :aria-disabled="isPlaying ? !canControl : !canPlay"
+                :aria-describedby="controlNote ? 'control-note' : undefined"
+                @click="togglePlayback"
+              >
+                <Icon
+                  :name="
+                    isPlaying
+                      ? 'pause'
+                      : current.playback.phase === 'ended'
+                        ? 'replay'
+                        : 'play'
+                  "
+                  :size="22"
+                />
+              </button>
+              <button
+                class="icon-button"
+                :aria-label="muted ? t('player.unmute') : t('player.mute')"
+                :aria-pressed="muted"
+                @click="muted = !muted"
+              >
+                <Icon :name="muted || !volume ? 'mute' : 'volume'" />
+              </button>
+              <input
+                id="local-volume"
+                v-model.number="volume"
+                class="volume-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                @input="muted = false"
+                :aria-label="t('player.localVolume')"
+                :aria-valuetext="
+                  t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
+                    volume: Math.round(volume * 100),
+                  })
+                "
+              />
+              <span class="player-time"
+                >{{ formatTime(dragging ? seekSeconds : position)
+                }}<span>/ {{ formatTime(totalSeconds) }}</span></span
+              >
+            </div>
+            <div class="control-end">
+              <DanmakuControl
+                v-if="current.media?.kind === 'bilibili'"
+                :open="danmakuMenu"
+                :visible="showDanmaku"
+                :density="density"
+                :font-size="danmakuSize"
+                :speed="danmakuSpeed"
+                :area="danmakuArea"
+                :status="translate(danmakuStatus)"
+                :stage="stage"
+                @update:open="
+                  (value) => {
+                    danmakuMenu = value;
+                    if (value) closeQuality();
+                  }
+                "
+                @toggle="toggleDanmaku"
+                @update:area="
+                  (value) => {
+                    danmakuArea = value;
+                    danmakuPreferences();
+                  }
+                "
+                @update:density="
+                  (value) => {
+                    density = value;
+                    danmakuPreferences();
+                  }
+                "
+                @update:font-size="
+                  (value) => {
+                    danmakuSize = value;
+                    danmakuPreferences();
+                  }
+                "
+                @update:speed="
+                  (value) => {
+                    danmakuSpeed = value;
+                    danmakuPreferences();
+                  }
+                "
+              />
+              <button
+                v-if="current.media?.kind === 'bilibili'"
+                ref="qualityTrigger"
+                class="quality-trigger quiet"
+                :aria-label="t('player.videoQuality')"
+                aria-haspopup="menu"
+                aria-controls="video-quality"
+                :disabled="!streamInfo || loading"
+                :aria-expanded="qualityMenu"
+                @click="openQuality"
+                @keydown.down.prevent="!qualityMenu && openQuality()"
+              >
+                {{
+                  streamInfo
+                    ? qualityName(streamInfo.quality)
+                    : t('player.quality')
+                }}<Icon name="chevron" :size="14" />
+              </button>
+              <button
+                class="icon-button"
+                :aria-label="t('player.fullscreen')"
+                @click="fullscreen"
+              >
+                <Icon name="fullscreen" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      <div
-        v-if="qualityMenu && streamInfo"
-        id="video-quality"
-        ref="qualityOptions"
-        v-keyboard-boundary="() => closeQuality(true)"
-        class="player-menu quality-menu"
-        role="menu"
-        :aria-label="t('player.videoQuality')"
-        @keydown.stop="qualityKeyboard"
-      >
-        <button
-          v-for="q in [...streamInfo.qualities].sort((a, b) => b - a)"
-          :key="q"
-          type="button"
-          role="menuitemradio"
-          class="quiet"
-          tabindex="-1"
-          :aria-checked="streamInfo.quality === q"
-          @click="changeQuality(q)"
+        <div
+          v-if="qualityMenu && streamInfo"
+          id="video-quality"
+          ref="qualityOptions"
+          v-keyboard-boundary="() => closeQuality(true)"
+          class="player-menu quality-menu"
+          role="menu"
+          :aria-label="t('player.videoQuality')"
+          @keydown.stop="qualityKeyboard"
         >
-          <span>{{ qualityName(q) }}</span
-          ><Icon v-if="streamInfo.quality === q" name="check" :size="16" />
-        </button>
+          <button
+            v-for="q in [...streamInfo.qualities].sort((a, b) => b - a)"
+            :key="q"
+            type="button"
+            role="menuitemradio"
+            class="quiet"
+            tabindex="-1"
+            :aria-checked="streamInfo.quality === q"
+            @click="changeQuality(q)"
+          >
+            <span>{{ qualityName(q) }}</span
+            ><Icon v-if="streamInfo.quality === q" name="check" :size="16" />
+          </button>
+        </div>
       </div>
     </div>
     <div class="video-information">

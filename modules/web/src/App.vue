@@ -953,42 +953,55 @@ onUnmounted(() => {
                 <label for="room-name"
                   >{{ t('app.roomName') }}
                   <span class="hint">{{ t('common.optional') }}</span></label
-                ><input
-                  id="room-name"
-                  v-model="title"
-                  :readonly="busy || !!attempt"
-                  maxlength="120"
-                  autocomplete="off"
-                  :placeholder="t('app.roomPlaceholder')"
-                  :aria-invalid="invalidField === 'room-name' || undefined"
-                  @input="invalidField = undefined"
-                />
-              </div>
-              <div class="draft-settings">
-                <span
-                  ><Icon name="users" :size="16" />{{
-                    draftSettings.controllers === 'host'
-                      ? t('app.hostControls')
-                      : t('app.everyoneControls')
-                  }}<span class="separator">·</span
-                  >{{
-                    draftSettings.waitForAll
-                      ? t('settings.wait')
-                      : t('app.joinWhenReady')
-                  }}</span
-                ><button
-                  type="button"
-                  class="quiet icon-button"
-                  :aria-label="t('common.settings')"
-                  :disabled="busy || !!attempt"
-                  @click="settingsOpen = true"
                 >
-                  <Icon name="sliders" />
-                </button>
+                <div class="input-action room-name-row">
+                  <input
+                    id="room-name"
+                    v-model="title"
+                    :readonly="busy || !!attempt"
+                    maxlength="120"
+                    autocomplete="off"
+                    :placeholder="t('app.roomPlaceholder')"
+                    :aria-invalid="invalidField === 'room-name' || undefined"
+                    @input="invalidField = undefined"
+                  /><button
+                    type="button"
+                    class="quiet icon-button"
+                    :title="
+                      t('settings.summary', {
+                        controllers: t(
+                          draftSettings.controllers === 'host'
+                            ? 'app.hostControls'
+                            : 'app.everyoneControls',
+                        ),
+                        waiting: t(
+                          draftSettings.waitForAll
+                            ? 'settings.wait'
+                            : 'app.joinWhenReady',
+                        ),
+                      })
+                    "
+                    :aria-label="t('common.settings')"
+                    :disabled="busy || !!attempt"
+                    @click="settingsOpen = true"
+                  >
+                    <Icon name="sliders" />
+                  </button>
+                </div>
               </div>
               <button class="create-submit" :disabled="busy || !!attempt">
-                {{ busy ? t('app.preparingRoom') : t('app.createRoom')
-                }}<Icon name="arrow" />
+                <span class="stable-label">
+                  <span
+                    :data-inactive="busy"
+                    :aria-hidden="busy || undefined"
+                    >{{ t('app.createRoom') }}</span
+                  >
+                  <span
+                    :data-inactive="!busy"
+                    :aria-hidden="!busy || undefined"
+                    >{{ t('app.preparingRoom') }}</span
+                  > </span
+                ><Icon name="arrow" />
               </button>
             </form>
           </section>

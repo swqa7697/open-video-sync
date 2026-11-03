@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FormFeedback from '../components/FormFeedback.vue';
 import Icon from '../components/Icon.vue';
 import { t } from '../i18n';
 import {
@@ -64,8 +65,8 @@ const appearance = useAppearanceStore();
         </label>
       </div>
     </fieldset>
-    <p class="hint" role="status">
-      {{ appearance.saved ? t('appearance.saved') : t('appearance.unsaved') }}
-    </p>
+    <FormFeedback
+      :text="t(appearance.saved ? 'appearance.saved' : 'appearance.unsaved')"
+    />
   </div>
 </template>

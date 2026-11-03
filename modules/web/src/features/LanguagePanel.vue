@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FormFeedback from '../components/FormFeedback.vue';
 import { t } from '../i18n';
 import { languageOptions, useLanguageStore } from '../stores/language';
 
@@ -37,8 +38,8 @@ const language = useLanguageStore();
         </label>
       </div>
     </fieldset>
-    <p class="hint" role="status">
-      {{ language.saved ? t('language.saved') : t('appearance.unsaved') }}
-    </p>
+    <FormFeedback
+      :text="t(language.saved ? 'language.saved' : 'appearance.unsaved')"
+    />
   </div>
 </template>

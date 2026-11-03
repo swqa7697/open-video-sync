@@ -2,6 +2,7 @@ import {
   enableAutoUnmount,
   flushPromises,
   mount,
+  type DOMWrapper,
   type VueWrapper,
 } from '@vue/test-utils';
 import { createPinia } from 'pinia';
@@ -44,10 +45,15 @@ afterEach(() => {
   history.replaceState(null, '', '/');
   i18n.global.locale.value = 'en';
 });
-const findButton = (wrapper: VueWrapper, text: string) => {
+const findButton = (
+  wrapper: VueWrapper | DOMWrapper<Element>,
+  text: string,
+) => {
   const button = wrapper
     .findAll('button')
-    .find((button) => button.text() === text);
+    .find(
+      (button) => (button.attributes('aria-label') ?? button.text()) === text,
+    );
   if (!button) throw new Error(`Button not found: ${text}`);
   return button;
 };
@@ -124,7 +130,7 @@ async function submitReplacement(wrapper: VueWrapper): Promise<void> {
   const confirm = wrapper
     .get('[role="dialog"]')
     .findAll('button')
-    .find((button) => button.text() === 'Replace video')!;
+    .find((button) => button.attributes('aria-label') === 'Replace video')!;
   await confirm.trigger('click');
   await flushPromises();
 }
@@ -154,7 +160,9 @@ test('previews before mutation, limits selection to hosted rooms, and confirms r
   expect(wrapper.get('[role="dialog"]').text()).toContain(
     'starts paused at zero',
   );
-  await wrapper.get('[role="dialog"] button').trigger('click');
+  await findButton(wrapper.find('[role="dialog"]'), 'Replace video').trigger(
+    'click',
+  );
   await flushPromises();
   expect(wrapper.text()).toContain('Video replaced.');
   expect(wrapper.find('#import-room').exists()).toBe(false);
@@ -233,6 +241,14 @@ test('new room creation carries the previewed media only after explicit submissi
   await flushPromises();
   expect(wrapper.findComponent(ImportPanel).emitted('create')).toBeUndefined();
   await wrapper.get('#import-room-title').setValue('Friday night');
+  await findButton(wrapper, 'Replace a room’s video').trigger('click');
+  await wrapper.get('#import-room').setValue(snapshot.roomId);
+  await flushPromises();
+  await findButton(wrapper, 'Create a new room').trigger('click');
+  expect(
+    wrapper.get<HTMLInputElement>('#import-room-title').element.value,
+  ).toBe('Friday night');
+  expect(wrapper.findComponent(ImportPanel).emitted('create')).toBeUndefined();
   await wrapper.get('form').trigger('submit');
   expect(wrapper.findComponent(ImportPanel).emitted('create')).toEqual([
     [{ media, title: 'Friday night' }],

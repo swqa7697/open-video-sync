@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FormFeedback from '../components/FormFeedback.vue';
 import { t } from '../i18n';
 import {
   notificationPositions,
@@ -28,7 +29,7 @@ const notifications = useNotificationStore();
       </label>
     </div>
   </fieldset>
-  <p class="hint" role="status">
-    {{ t(notifications.saved ? 'appearance.saved' : 'appearance.unsaved') }}
-  </p>
+  <FormFeedback
+    :text="t(notifications.saved ? 'appearance.saved' : 'appearance.unsaved')"
+  />
 </template>

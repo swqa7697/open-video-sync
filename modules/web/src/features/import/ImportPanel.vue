@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import FormFeedback from '../../components/FormFeedback.vue';
 import Icon from '../../components/Icon.vue';
 import Modal from '../../components/Modal.vue';
 import { errorMessage, message, t, translate, type Message } from '../../i18n';
@@ -37,6 +38,7 @@ const picker = ref<InstanceType<typeof MediaPicker>>();
 const prepared = ref<MediaDescriptor>();
 const previewTitle = ref('');
 const title = ref('');
+const destination = ref<'new' | 'existing'>('new');
 const rooms = ref<RoomSummary[]>([]);
 const nextCursor = ref<string | null>(null);
 const selectedRoom = ref('');
@@ -59,8 +61,12 @@ const locked = computed(
 );
 const outcomeText = computed(() => {
   const value = outcome.value;
+  if (working.value) return t('import.replacing');
   if (!value) return '';
-  return translate(value.message ?? message(`import.${value.status}`));
+  const text = translate(value.message ?? message(`import.${value.status}`));
+  return value.status === 'unavailable'
+    ? `${text} ${t('import.takeoverHint')}`
+    : text;
 });
 const mediaText = (media: MediaDescriptor | null | undefined): string =>
   !media
@@ -70,6 +76,16 @@ const mediaText = (media: MediaDescriptor | null | undefined): string =>
       : media.episodeId
         ? `EP${media.episodeId}`
         : `${media.bvid} · ${t('import.part', { part: media.part })}`;
+const roomFeedback = computed(() => {
+  if (listError.value || roomError.value)
+    return translate(listError.value || roomError.value);
+  if (listing.value || loadingRoom.value) return t('import.loadingRooms');
+  if (snapshot.value)
+    return `${t('import.currentVideo')} ${mediaText(snapshot.value.media)}`;
+  return !rooms.value.length
+    ? t(nextCursor.value ? 'import.noHostedPage' : 'import.noRooms')
+    : t('import.hostOnly');
+});
 const api = (path: string, signal = lifecycle.signal) =>
   request(path, 'GET', identity.session?.csrfToken ?? '', undefined, signal);
 
@@ -228,11 +244,12 @@ onUnmounted(() => {
     <div class="import-heading">
       <p class="eyebrow">BILIBILI → OVS</p>
       <h1 id="import-title">{{ t('import.title') }}</h1>
-      <p class="hint">{{ t('import.hint') }}</p>
+      <FormFeedback :text="t('import.hint')" :announce="false" />
     </div>
-    <p v-if="initialImport.invalid" class="notice error" role="alert">
-      {{ t('import.invalid') }}
-    </p>
+    <FormFeedback
+      :text="initialImport.invalid ? t('import.invalid') : ''"
+      tone="error"
+    />
     <section class="create-card import-video" :aria-label="t('media.preview')">
       <div class="card-heading">
         <h2>{{ t('import.video') }}</h2>
@@ -252,15 +269,17 @@ onUnmounted(() => {
         room-id="import"
         :disabled="locked"
       />
-      <p v-if="prepared" class="import-media">
-        <Icon name="screen" /><span
-          ><strong v-if="previewTitle">{{ previewTitle }}</strong
-          ><span>{{ mediaText(prepared) }}</span></span
-        >
-      </p>
-      <p v-if="prepareError" class="notice error" role="alert">
-        {{ translate(prepareError) }}
-      </p>
+      <FormFeedback
+        v-if="prepared"
+        class="import-media"
+        :text="
+          previewTitle
+            ? `${previewTitle} · ${mediaText(prepared)}`
+            : mediaText(prepared)
+        "
+        :announce="false"
+      />
+      <FormFeedback v-else :text="translate(prepareError)" tone="error" />
       <button
         v-if="!prepared"
         class="create-submit"
@@ -271,52 +290,48 @@ onUnmounted(() => {
       </button>
     </section>
 
-    <template v-if="prepared">
+    <div v-if="prepared" class="import-workspace">
       <h2 id="import-destination" tabindex="-1">
         {{ t('import.destination') }}
       </h2>
-      <p
-        v-if="outcome"
-        id="import-result"
-        :class="['notice', { error: outcome.status !== 'accepted' }]"
-        role="status"
-        tabindex="-1"
-      >
-        {{ outcomeText }}
-      </p>
-      <p v-if="working" class="hint" role="status">
-        {{ t('import.replacing') }}
-      </p>
-      <div v-if="outcome?.status === 'uncertain'" class="import-recovery">
-        <button :disabled="working || disabled" @click="submitReplacement">
-          {{ t('import.retry') }}
-        </button>
-      </div>
       <div
-        v-else-if="outcome?.status === 'unavailable'"
-        class="import-recovery"
+        v-if="outcome?.status !== 'accepted'"
+        class="import-destination-switch"
+        role="group"
+        :aria-label="t('import.destination')"
       >
-        <p class="hint">{{ t('import.takeoverHint') }}</p>
-        <button :disabled="locked" @click="open">
-          {{ t('import.openAndReplace') }}
+        <button
+          type="button"
+          :aria-pressed="destination === 'new'"
+          :disabled="locked"
+          aria-controls="import-new-room"
+          @click="destination = 'new'"
+        >
+          {{ t('import.newRoom') }}
+        </button>
+        <button
+          type="button"
+          :aria-pressed="destination === 'existing'"
+          :disabled="locked"
+          aria-controls="import-existing-room"
+          @click="destination = 'existing'"
+        >
+          {{ t('import.existingRoom') }}
         </button>
       </div>
-      <div v-else-if="outcome?.status === 'stale'" class="import-recovery">
-        <button :disabled="locked" @click="loadRoom">
-          {{ t('import.refreshRoom') }}
-        </button>
-      </div>
-
       <div v-if="outcome?.status !== 'accepted'" class="import-destinations">
         <form
-          class="create-card"
+          id="import-new-room"
+          class="create-card import-destination-card"
+          :class="{ 'import-inactive': destination !== 'new' }"
+          aria-labelledby="import-new-title"
           @submit.prevent="create"
           @keydown.enter="
             (event) => event.isComposing && event.preventDefault()
           "
         >
           <div class="card-heading">
-            <h2>{{ t('import.newRoom') }}</h2>
+            <h2 id="import-new-title">{{ t('import.newRoom') }}</h2>
             <Icon name="plus" />
           </div>
           <label for="import-room-title"
@@ -332,19 +347,45 @@ onUnmounted(() => {
             :placeholder="t('app.roomPlaceholder')"
           />
           <p class="hint">{{ t('import.defaults') }}</p>
-          <button type="submit" :disabled="locked">
-            {{ t('app.createRoom') }}
-          </button>
-        </form>
-
-        <section class="create-card" :aria-label="t('import.existingRoom')">
-          <div class="card-heading">
-            <h2>{{ t('import.existingRoom') }}</h2>
-            <button class="quiet" :disabled="locked || listing" @click="list()">
-              {{ t('import.refresh') }}
+          <div class="import-card-actions">
+            <button type="submit" :disabled="locked">
+              {{ t('app.createRoom') }}
             </button>
           </div>
-          <p class="hint">{{ t('import.hostOnly') }}</p>
+        </form>
+
+        <section
+          id="import-existing-room"
+          class="create-card import-destination-card"
+          :class="{ 'import-inactive': destination !== 'existing' }"
+          aria-labelledby="import-existing-title"
+        >
+          <div class="card-heading">
+            <h2 id="import-existing-title">{{ t('import.existingRoom') }}</h2>
+            <div class="import-list-actions">
+              <button
+                v-if="nextCursor"
+                type="button"
+                class="quiet icon-button"
+                :aria-label="t('import.moreRooms')"
+                :title="t('import.moreRooms')"
+                :disabled="locked || listing"
+                @click="list(true)"
+              >
+                <Icon name="plus" :size="16" />
+              </button>
+              <button
+                type="button"
+                class="quiet icon-button"
+                :aria-label="t('import.refresh')"
+                :title="t('import.refresh')"
+                :disabled="locked || listing"
+                @click="list()"
+              >
+                <Icon name="replay" :size="16" />
+              </button>
+            </div>
+          </div>
           <label for="import-room">{{ t('import.room') }}</label>
           <select
             id="import-room"
@@ -360,64 +401,100 @@ onUnmounted(() => {
               {{ room.title }}
             </option>
           </select>
-          <p v-if="listing || loadingRoom" class="hint" role="status">
-            {{ t('import.loadingRooms') }}
-          </p>
-          <p v-else-if="!rooms.length && !listError" class="hint">
-            {{ t(nextCursor ? 'import.noHostedPage' : 'import.noRooms') }}
-          </p>
-          <p v-if="snapshot" class="import-current">
-            {{ t('import.currentVideo') }}
-            <strong>{{ mediaText(snapshot.media) }}</strong>
-          </p>
-          <p v-if="listError || roomError" class="notice error" role="alert">
-            {{ translate(listError || roomError) }}
-          </p>
-          <button
-            v-if="nextCursor"
-            class="quiet"
-            :disabled="locked || listing"
-            @click="list(true)"
-          >
-            {{ t('import.moreRooms') }}
-          </button>
-          <p class="hint">{{ t('import.paused') }}</p>
-          <button
-            :disabled="
-              locked || listing || !snapshot || loadingRoom || !!outcome
+          <FormFeedback
+            id="import-result"
+            :text="outcomeText || roomFeedback"
+            :tone="
+              !working && (outcome || listError || roomError) ? 'error' : 'hint'
             "
-            @click="confirm"
-          >
-            {{ t('import.replaceVideo') }}
-          </button>
-          <button
-            v-if="outcome?.status === 'failed'"
-            class="quiet"
-            :disabled="locked"
-            @click="loadRoom"
-          >
-            {{ t('import.refreshRoom') }}
-          </button>
+            :reserve="true"
+            :class="{ 'import-current': snapshot && !outcome }"
+            class="import-room-feedback"
+            tabindex="-1"
+          />
+          <FormFeedback :text="t('import.paused')" :announce="false" />
+          <div class="import-card-actions">
+            <button
+              v-if="outcome?.status === 'uncertain'"
+              :disabled="working || disabled"
+              @click="submitReplacement"
+            >
+              {{ t('import.retry') }}
+            </button>
+            <button
+              v-else-if="outcome?.status === 'unavailable'"
+              :disabled="locked"
+              @click="open"
+            >
+              {{ t('import.openAndReplace') }}
+            </button>
+            <button
+              v-else-if="
+                outcome?.status === 'stale' || outcome?.status === 'failed'
+              "
+              :disabled="locked"
+              @click="loadRoom"
+            >
+              {{ t('import.refreshRoom') }}
+            </button>
+            <button
+              v-else
+              :disabled="
+                locked || listing || !snapshot || loadingRoom || !!outcome
+              "
+              @click="confirm"
+            >
+              {{ t('import.replaceVideo') }}
+            </button>
+          </div>
         </section>
       </div>
-    </template>
+      <FormFeedback
+        v-else
+        id="import-result"
+        :text="outcomeText"
+        tone="success"
+        tabindex="-1"
+      />
+    </div>
 
     <Modal
       v-if="confirmation && pending"
-      :title="t('import.confirmTitle', { room: pending.snapshot.title })"
+      :title="t('import.replaceVideo')"
       @close="confirmation = false"
     >
-      <p>
-        {{
+      <FormFeedback
+        :text="t('import.confirmTitle', { room: pending.snapshot.title })"
+        :announce="false"
+      />
+      <FormFeedback
+        :text="
           t('import.confirmVideo', {
             video: previewTitle || mediaText(pending.media),
           })
-        }}
-      </p>
+        "
+        :announce="false"
+      />
       <p class="hint">{{ t('import.paused') }}</p>
       <div class="import-confirm-actions">
-        <button :disabled="working || disabled" @click="submitReplacement">
-          {{ working ? t('import.replacing') : t('import.replaceVideo') }}
+        <button
+          :disabled="working || disabled"
+          :aria-label="
+            working ? t('import.replacing') : t('import.replaceVideo')
+          "
+          @click="submitReplacement"
+        >
+          <span class="stable-label">
+            <span
+              :data-inactive="working"
+              :aria-hidden="working || undefined"
+              >{{ t('import.replaceVideo') }}</span
+            ><span
+              :data-inactive="!working"
+              :aria-hidden="!working || undefined"
+              >{{ t('import.replacing') }}</span
+            >
+          </span>
         </button>
         <button class="quiet" :disabled="working" @click="confirmation = false">
           {{ t('common.cancel') }}
@@ -429,82 +506,169 @@ onUnmounted(() => {
 
 <style scoped>
 .import-panel {
-  width: min(calc(100% - 40px), 980px);
-  margin: 42px auto;
-  display: grid;
-  gap: 24px;
+  width: min(100%, 980px);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin-inline: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.import-heading,
+.import-video {
+  flex: none;
 }
 .import-heading h1 {
-  font-size: clamp(1.6rem, 3vw, 2rem);
-  margin: 8px 0 12px;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  margin: 2px 0 4px;
 }
 .import-heading .eyebrow {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   letter-spacing: 0.1em;
 }
-.import-heading .hint {
-  max-width: 64ch;
+.import-panel .form-feedback {
+  margin: 0;
 }
 .import-panel h2 {
-  font-size: 1rem;
+  font-size: 0.9rem;
+}
+.import-panel .create-card {
+  min-width: 0;
+  padding: 12px 14px;
 }
 .import-panel .card-heading {
-  margin-bottom: 16px;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  gap: 8px;
+}
+.import-panel .card-heading h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-video {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-video .card-heading > button {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.import-video .create-submit {
+  margin: 0;
+}
+.import-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.import-destination-switch {
+  display: none;
 }
 .import-destinations {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  align-items: start;
-}
-.import-destinations .create-card {
+  gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
-.import-destinations .hint,
-.import-current {
-  margin: 12px 0 16px;
-}
-.import-media {
+.import-destination-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow-wrap: anywhere;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
 }
-.import-media > span {
+.import-destination-card label {
+  margin: 0;
+}
+.import-destination-card .hint {
+  margin: 0;
+  font-size: 0.75rem;
+}
+.import-card-actions {
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: auto;
+  padding-top: 4px;
 }
-.import-current strong {
-  display: block;
-  margin-top: 6px;
-  overflow-wrap: anywhere;
+.import-card-actions > button {
+  min-width: 0;
+  min-height: 44px;
+  font-size: 0.8rem;
+  padding: 8px;
+}
+.import-list-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.import-list-actions > button {
+  width: 36px;
+  min-height: 36px;
+  padding: 6px;
 }
 .import-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   margin-top: 24px;
 }
-.import-recovery button {
-  max-width: 100%;
-}
-.import-panel .notice {
-  overflow-wrap: anywhere;
+.import-confirm-actions > button {
+  min-width: 0;
 }
 @media (max-width: 700px) {
   .import-panel {
-    margin: 24px auto;
-    gap: 20px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .import-heading .eyebrow {
+    display: none;
+  }
+  .import-destination-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 3px;
+    gap: 3px;
+    border: 1px solid var(--subtle-border);
+    border-radius: 8px;
+    background: var(--input);
+    flex: none;
+  }
+  .import-destination-switch > button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+  .import-destination-switch > button[aria-pressed='true'] {
+    background: var(--surface-raised);
+    color: var(--text);
+    box-shadow: 0 1px 3px #0003;
   }
   .import-destinations {
     grid-template-columns: minmax(0, 1fr);
   }
-  .import-panel .create-card {
-    padding: 20px;
+  .import-destination-card.import-inactive {
+    display: none;
   }
-  .import-panel .create-submit {
-    margin-top: 20px;
+  .import-destination-card input,
+  .import-destination-card select {
+    font-size: 16px;
   }
 }
 </style>

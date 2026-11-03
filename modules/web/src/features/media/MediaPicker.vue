@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onUnmounted, ref, watch } from 'vue';
 
+import FormFeedback from '../../components/FormFeedback.vue';
 import Icon from '../../components/Icon.vue';
 import {
   errorMessage,
@@ -201,7 +202,7 @@ defineExpose({ prepare, selectBilibili, selectLocal });
     </div>
     <template v-if="source === 'bilibili'">
       <label for="bilibili-url">{{ t('media.url') }}</label>
-      <div class="input-action">
+      <div class="input-action media-input">
         <input
           id="bilibili-url"
           v-model="url"
@@ -216,9 +217,59 @@ defineExpose({ prepare, selectBilibili, selectLocal });
           :disabled="disabled || working || !url.trim()"
           @click="prepare"
         >
-          {{ working ? t('media.checking') : t('media.preview') }}
+          <span class="stable-label">
+            <span
+              :data-inactive="working"
+              :aria-hidden="working || undefined"
+              >{{ t('media.preview') }}</span
+            >
+            <span
+              :data-inactive="!working"
+              :aria-hidden="!working || undefined"
+              >{{ t('media.checking') }}</span
+            >
+          </span>
         </button>
       </div>
+    </template>
+    <div v-else class="file-drop" @dragover.prevent @drop="drop">
+      <Icon name="file" :size="24" />
+      <FormFeedback
+        class="file-name"
+        :text="
+          translate(error) ||
+          (working
+            ? t('common.preparingVideo')
+            : translate(localSummary) || fileName || t('media.bringVideo'))
+        "
+        :tone="error ? 'error' : localSummary ? 'success' : 'hint'"
+        :announce="!!error || working || !!localSummary"
+      />
+      <span class="hint file-privacy">{{ t('media.fileHint') }}</span>
+      <label class="file-button" for="create-local-video"
+        ><span class="stable-label">
+          <span
+            :data-inactive="!!fileName"
+            :aria-hidden="!!fileName || undefined"
+            >{{ t('media.chooseFile') }}</span
+          >
+          <span
+            :data-inactive="!fileName"
+            :aria-hidden="!fileName || undefined"
+            >{{ t('common.chooseAnother') }}</span
+          >
+        </span></label
+      >
+      <input
+        id="create-local-video"
+        class="visually-hidden"
+        type="file"
+        accept="video/*,.mkv"
+        :disabled="disabled || working"
+        @change="fileInput"
+      />
+    </div>
+    <div v-if="source === 'bilibili'" class="media-info">
       <div v-if="parts > 1 || part > 1" class="part-row">
         <label for="bilibili-part">{{ t('media.part') }}</label
         ><input
@@ -234,31 +285,17 @@ defineExpose({ prepare, selectBilibili, selectLocal });
           t('media.partTotal', { count: parts })
         }}</span>
       </div>
-    </template>
-    <div v-else class="file-drop" @dragover.prevent @drop="drop">
-      <Icon name="file" :size="30" /><strong>{{
-        fileName || t('media.bringVideo')
-      }}</strong
-      ><span class="hint">{{ t('media.fileHint') }}</span>
-      <label class="file-button" for="create-local-video">{{
-        fileName ? t('common.chooseAnother') : t('media.chooseFile')
-      }}</label>
-      <input
-        id="create-local-video"
-        class="visually-hidden"
-        type="file"
-        accept="video/*,.mkv"
-        :disabled="disabled || working"
-        @change="fileInput"
+      <FormFeedback
+        reserve
+        class="media-preview"
+        :text="
+          translate(error) ||
+          (working
+            ? t('common.preparingVideo')
+            : summary || t('media.previewHint'))
+        "
+        :tone="error ? 'error' : working || !summary ? 'hint' : 'success'"
       />
-      <span class="hint">{{ t('media.drop') }}</span>
     </div>
-    <p v-if="summary || localSummary" class="media-preview">
-      <Icon name="check" />{{ translate(localSummary) || summary }}
-    </p>
-    <p v-if="error" role="alert" class="notice error">{{ translate(error) }}</p>
-    <p v-if="working" role="status" class="hint">
-      {{ t('common.preparingVideo') }}
-    </p>
   </div>
 </template>

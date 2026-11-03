@@ -38,6 +38,8 @@ export async function generatedVideo(
     audioOnly?: boolean;
     paddingBytes?: number;
     keyframeSeconds?: number;
+    width?: number;
+    height?: number;
   } = {},
 ): Promise<Buffer> {
   // The source encoder is Chromium for every project. Firefox must decode the same bytes;
@@ -61,10 +63,10 @@ export async function generatedVideo(
     );
     await page.goto('http://localhost/ovs-fixture');
     const chunks = await page.evaluate(
-      async ({ count, audio, keyframeSeconds }) => {
+      async ({ count, audio, keyframeSeconds, width, height }) => {
         const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 360;
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas unavailable.');
         const frames: { timestamp: number; bytes: number[]; key: boolean }[] =
@@ -85,14 +87,20 @@ export async function generatedVideo(
         });
         encoder.configure({
           codec: 'vp8',
-          width: 640,
-          height: 360,
+          width,
+          height,
           bitrate: 600000,
           framerate: 30,
         });
         for (let frame = 0; frame < count; frame++) {
           ctx.fillStyle = '#101820';
-          ctx.fillRect(0, 0, 640, 360);
+          ctx.fillRect(0, 0, width, height);
+          if (width !== 640 || height !== 360) {
+            // A visible outer edge makes cropping obvious in aspect-ratio captures.
+            ctx.strokeStyle = '#32d399';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(4, 4, width - 8, height - 8);
+          }
           ctx.fillStyle = '#ffffff';
           ctx.font = '32px monospace';
           ctx.fillText('OVS synthetic video / CC0', 20, 80);
@@ -158,6 +166,8 @@ export async function generatedVideo(
         count: seconds * 30,
         audio,
         keyframeSeconds: options.keyframeSeconds ?? 1,
+        width: options.width ?? 640,
+        height: options.height ?? 360,
       },
     );
     const duration = Buffer.alloc(8);
@@ -195,7 +205,10 @@ export async function generatedVideo(
           ebml(0x23e383, uint(33333333)),
           ebml(
             0xe0,
-            Buffer.concat([ebml(0xb0, uint(640)), ebml(0xba, uint(360))]),
+            Buffer.concat([
+              ebml(0xb0, uint(options.width ?? 640)),
+              ebml(0xba, uint(options.height ?? 360)),
+            ]),
           ),
         ]),
       ),

@@ -11,6 +11,7 @@ import {
   observePageKeyboard,
   openPlayerMenu,
   openQuickActions,
+  runQuickAction,
   seekTo,
   settings,
 } from './flows';
@@ -180,9 +181,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   })();`,
   });
   await page.goto('/');
-  await page
-    .getByLabel('Video URL or BV/SS/EP identifier')
-    .fill('BV17Jx76CEje');
+  await page.getByLabel('Video URL or identifier').fill('BV17Jx76CEje');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();
@@ -439,7 +438,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   // reloading the selected episode, and host episode changes.
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page
-    .getByLabel('Video URL or BV/SS/EP identifier')
+    .getByLabel('Video URL or identifier')
     .fill('https://www.bilibili.com/bangumi/play/ss6038');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
@@ -577,7 +576,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
   page,
   browser,
-}) => {
+}, testInfo) => {
+  test.setTimeout(60000);
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   expect(response.ok()).toBe(true);
   const script = await response.text();
@@ -615,7 +615,10 @@ test('previewing another Bilibili link preserves the active helper and room unti
         const url = new URL(details.url);
         let data;
         if (url.pathname.endsWith('/view')) data = {
-          title: 'Replacement preview', pages: [{ page: 1, cid: 2 }]
+          title: sessionStorage.getItem('preview-title') || 'Replacement preview',
+          pages: sessionStorage.getItem('preview-multipart')
+            ? [{ page: 1, cid: 2 }, { page: 2, cid: 3 }]
+            : [{ page: 1, cid: 2 }]
         };
         else if (url.pathname.endsWith('/nav')) data = { isLogin: false };
         else if (url.pathname.endsWith('/playurl')) {
@@ -635,10 +638,13 @@ test('previewing another Bilibili link preserves the active helper and room unti
         holdNextRead = false;
         document.addEventListener('release-media-read', respond, { once: true });
         document.dispatchEvent(new Event('media-read-held'));
+      } else if (!media && new URL(details.url).pathname.endsWith('/view') && sessionStorage.getItem('hold-preview')) {
+        document.addEventListener('release-preview', respond, { once: true });
       } else queueMicrotask(respond);
       return { abort() {
         cancelled = true;
         document.removeEventListener('release-media-read', respond);
+        document.removeEventListener('release-preview', respond);
         details.onabort?.();
       } };
     };
@@ -748,7 +754,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
   };
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page
-    .getByLabel('Video URL or BV/SS/EP identifier')
+    .getByLabel('Video URL or identifier')
     .fill('https://www.bilibili.com/video/BV17Jx76CEje');
   const held = page.evaluate(
     () =>
@@ -777,6 +783,138 @@ test('previewing another Bilibili link preserves the active helper and room unti
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await expectOriginalMedia();
   expect((await helper('bytes', read)).ok).toBe(true);
+  // Reuse the active-room isolation journey for the distinct layout contract.
+  // Each viewport exercises one bounded title and response rather than a full cross-product.
+  const longTitle = 'A long synthetic preview title 中文 '.repeat(4).trim();
+  for (const [width, height, locale, multipart] of [
+    [1440, 900, 'en', false],
+    [1024, 768, 'en', true],
+    [390, 844, 'en', true],
+    [320, 844, 'zh-CN', true],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    if (locale === 'zh-CN') await runQuickAction(page, '/language zh-CN');
+    await page.evaluate(
+      ({ title, multipart }) => {
+        sessionStorage.setItem('preview-title', title);
+        sessionStorage.setItem('hold-preview', '1');
+        if (multipart) sessionStorage.setItem('preview-multipart', '1');
+        else sessionStorage.removeItem('preview-multipart');
+      },
+      { title: longTitle, multipart },
+    );
+    await page.locator('.change-media').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    await dialog.locator('#bilibili-url').fill('BV17Jx76CEje');
+    const geometry = () =>
+      dialog
+        .locator(
+          '.modal-heading, .media-picker .input-action button, form > button',
+        )
+        .evaluateAll((nodes) =>
+          nodes.flatMap((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return [x, y, width, height];
+          }),
+        );
+    const idle = await geometry();
+    expect(idle).toHaveLength(12);
+    const expectStable = async () => {
+      await expect
+        .poll(async () =>
+          Math.max(
+            ...(await geometry()).map((value, index) =>
+              Math.abs(value - idle[index]!),
+            ),
+          ),
+        )
+        .toBeLessThanOrEqual(1);
+    };
+    const preview = dialog.locator('.media-picker .input-action button');
+    await preview.click();
+    await expect(preview).toBeDisabled();
+    await expect(dialog.locator('.media-picker [role="status"]')).toContainText(
+      /Preparing your video|正在准备视频/,
+    );
+    await expectStable();
+    await page.evaluate(() => {
+      sessionStorage.removeItem('hold-preview');
+      document.dispatchEvent(new Event('release-preview'));
+    });
+    await expect(dialog.locator('.media-preview .feedback-text')).toHaveText(
+      longTitle,
+    );
+    await expectStable();
+    if (multipart) await expect(dialog.locator('.part-row')).toBeVisible();
+    else await expect(dialog.locator('.part-row')).toBeHidden();
+    expect(
+      await dialog.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+    if (width === 390) {
+      const details = dialog.locator('.media-preview .feedback-toggle');
+      await expect(details).toBeVisible();
+      await details.focus();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      const popover = dialog.locator('.feedback-details');
+      await expect(popover.locator('> p')).toHaveText(longTitle);
+      await expect(popover.getByRole('button')).toBeFocused();
+      await expectStable();
+      await expectOriginalMedia();
+      await page.keyboard.press('Space');
+      await expect(details).toHaveAttribute('aria-expanded', 'false');
+      await expect(details).toBeFocused();
+      await expectStable();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(details).toHaveAttribute('aria-expanded', 'false');
+      await expect(dialog).toBeVisible();
+      await expect(details).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      await dialog.locator('#bilibili-url').fill('invalid');
+      await expect(dialog.locator('.feedback-details')).toBeHidden();
+      await preview.click();
+      await expect(
+        dialog.locator('.media-picker [role="alert"]'),
+      ).toBeVisible();
+      await expectStable();
+      await dialog.locator('#bilibili-url').fill('BV17Jx76CEje');
+      await preview.click();
+      await expect(dialog.locator('.media-preview .feedback-text')).toHaveText(
+        longTitle,
+      );
+      await expectStable();
+      await expectOriginalMedia();
+    }
+    expect(
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        return (
+          root.scrollHeight <= root.clientHeight + 1 &&
+          root.scrollWidth <= root.clientWidth + 1
+        );
+      }),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`preview-form-${locale}-${width}.png`),
+    });
+    await dialog.locator('.modal-heading button').click();
+    if (locale === 'zh-CN') await runQuickAction(page, '/language en');
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    sessionStorage.removeItem('preview-title');
+    sessionStorage.removeItem('preview-multipart');
+  });
   for (const [failure, text] of [
     ['access', 'unavailable'],
     ['no-audio', 'cannot decode'],
@@ -788,15 +926,30 @@ test('previewing another Bilibili link preserves the active helper and room unti
       (mode) => sessionStorage.setItem('preview-failure', mode),
       failure,
     );
-    await page
-      .getByLabel('Video URL or BV/SS/EP identifier')
-      .fill('BV17Jx76CEje');
+    await page.getByLabel('Video URL or identifier').fill('BV17Jx76CEje');
+    const failureDialog = page.getByRole('dialog');
+    await failureDialog.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const beforeFailure = await failureDialog.boundingBox();
     await page
       .getByRole('button', { name: 'Preview video', exact: true })
       .click();
     await expect(page.locator('.media-picker [role="alert"]')).toContainText(
       text,
     );
+    await expect
+      .poll(async () => {
+        const afterFailure = (await failureDialog.boundingBox())!;
+        return Math.max(
+          ...(['x', 'y', 'width', 'height'] as const).map((key) =>
+            Math.abs(afterFailure[key] - beforeFailure![key]),
+          ),
+        );
+      })
+      .toBeLessThanOrEqual(1);
     expect((await helper('bytes', read)).ok).toBe(true);
     await page
       .getByRole('button', { name: 'Close dialog', exact: true })
@@ -930,9 +1083,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'Update helper',
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
-  await page
-    .getByLabel('Video URL or BV/SS/EP identifier')
-    .fill('BV1hf4y1N75G');
+  await page.getByLabel('Video URL or identifier').fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   // The development version 0.0.0 has no older valid release. The component
@@ -957,9 +1108,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('complementary', { name: 'Playback helper' }),
   ).toHaveCount(0);
-  await page
-    .getByLabel('Video URL or BV/SS/EP identifier')
-    .fill('BV1hf4y1N75G');
+  await page.getByLabel('Video URL or identifier').fill('BV1hf4y1N75G');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();

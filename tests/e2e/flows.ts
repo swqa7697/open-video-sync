@@ -26,9 +26,17 @@ export async function openAppPanel(page: Page, name: string): Promise<void> {
   await page.getByRole('menuitem', { name, exact: true }).click();
 }
 export async function dismissHelper(page: Page): Promise<void> {
-  await expect(
-    page.getByRole('complementary', { name: 'Playback helper' }),
-  ).not.toContainText('Checking', { timeout: 8000 });
+  await expect
+    .poll(
+      async () =>
+        (
+          await page
+            .getByRole('complementary', { name: 'Playback helper' })
+            .allTextContents()
+        ).join(''),
+      { timeout: 8000 },
+    )
+    .not.toContain('Checking');
   const later = page.getByRole('button', { name: 'Later', exact: true });
   if (await later.isVisible()) await later.click();
 }
