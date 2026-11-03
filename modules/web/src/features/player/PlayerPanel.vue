@@ -397,6 +397,23 @@ const canReplace = computed(
 const shownStatus = computed<ReadinessStatus>(() =>
   loading.value ? 'loading' : mediaStatus.value,
 );
+const playbackIndicator = computed(() => {
+  if (loading.value) return 'loading';
+  if (
+    !descriptor.value ||
+    !matched.value ||
+    current.value.playback.phase === 'ended'
+  )
+    return undefined;
+  if (mediaStatus.value === 'loading' || mediaStatus.value === 'buffering')
+    return mediaStatus.value;
+  if (
+    mediaStatus.value === 'ready' &&
+    current.value.playback.phase === 'paused'
+  )
+    return 'paused';
+  return undefined;
+});
 const blockers = computed(() => {
   const room = current.value,
     barrier = room.barrier;
@@ -1517,19 +1534,30 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        v-else-if="
-          loading || (!descriptor && current.media?.kind === 'bilibili')
+        v-else-if="playbackIndicator"
+        class="playback-indicator"
+        :data-state="playbackIndicator"
+        role="img"
+        :aria-label="
+          playbackIndicator === 'paused'
+            ? t(phaseText.paused)
+            : t(readinessText[playbackIndicator])
         "
+      >
+        <Icon
+          :name="playbackIndicator === 'paused' ? 'play' : 'loader'"
+          :size="32"
+          :class="{ 'playback-spinner': playbackIndicator !== 'paused' }"
+        />
+      </div>
+      <div
+        v-else-if="!descriptor && current.media?.kind === 'bilibili'"
         class="player-state"
       >
         <Icon name="screen" :size="36" />
-        <h3>
-          {{ loading ? t('common.preparingVideo') : t('player.connectHelper') }}
-        </h3>
-        <p>
-          {{ loading ? t('player.preparingHint') : t('player.helperHint') }}
-        </p>
-        <button v-if="!loading" class="quiet" @click="retryMedia">
+        <h3>{{ t('player.connectHelper') }}</h3>
+        <p>{{ t('player.helperHint') }}</p>
+        <button class="quiet" @click="retryMedia">
           {{ t('player.retryVideo') }}
         </button>
       </div>

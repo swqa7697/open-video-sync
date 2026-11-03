@@ -265,6 +265,22 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         (await (await page.request.get(roomPath)).json()).barrier?.reason,
     )
     .toBe('buffering');
+  await expect(
+    page.getByRole('img', { name: 'Buffering…', exact: true }),
+  ).toBeVisible();
+  const spinner = page.locator('.playback-spinner');
+  const initialTransform = await spinner.evaluate(
+    (element) => getComputedStyle(element).transform,
+  );
+  await expect
+    .poll(() =>
+      spinner.evaluate((element) => getComputedStyle(element).transform),
+    )
+    .not.toBe(initialTransform);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(spinner).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(spinner).toHaveCSS('animation-name', 'playback-spin');
   await page.evaluate(() => {
     sessionStorage.removeItem('hold-seek');
     sessionStorage.setItem('seek-delay', '450');
@@ -282,6 +298,9 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   }
   await clickPlayerControl(page, 'Pause together');
   await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await expect(
+    page.getByRole('img', { name: 'Paused', exact: true }),
+  ).toBeVisible();
   await seekTo(page, 10);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(300);
   await closeRoom(page);

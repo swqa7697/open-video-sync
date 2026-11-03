@@ -76,6 +76,8 @@ Replace the example address with your server's address. Direct HTTP works withou
 4. Each participant prepares the video. For local playback, everyone selects their own copy of the same file.
 5. Select **Play**. The host chooses whether everyone can control playback and whether to wait for everyone.
 
+A subtle, translucent play icon appears while paused. Loading and buffering show a rotating ring unless your system requests reduced motion. These overlays let clicks reach the player.
+
 Hover over the progress bar to preview the target frame and time. Bilibili uses platform thumbnails; local files are decoded only in your browser. Bilibili thumbnails cache progressively in the background. Downloads from different CDNs run independently, and temporary thumbnail failures retry automatically. Video preparation and controls never wait for thumbnails. If a thumbnail is unavailable, the target time remains visible.
 
 ### Bilibili

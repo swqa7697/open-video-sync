@@ -17,6 +17,7 @@ const paths: Record<string, string> = {
   moon: 'M20.5 13.5A9 9 0 0 1 10.5 3a9 9 0 1 0 10 10.5Z',
   play: 'm9 5 11 7-11 7Z',
   pause: 'M8 5v14M16 5v14',
+  loader: 'M21 12a9 9 0 1 1-9-9',
   replay: 'M3 10a9 9 0 1 1 1 8M3 4v6h6',
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
   mute: 'm11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6',

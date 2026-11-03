@@ -781,10 +781,16 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     expect(
       wrapper.get('[data-testid="media-status"]').attributes('data-state'),
     ).toBe('loading');
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Loading video…',
+    );
     expect(commands()).toHaveLength(0);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     video.dispatchEvent(new Event('loadeddata'));
     await flushPromises();
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Paused',
+    );
     socket.frame('room.snapshot', snapshot);
     const play = wrapper.get('.control-start > button');
     expect(play.attributes('aria-disabled'), wrapper.text()).toBe('false');
@@ -881,6 +887,9 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   expect(
     wrapper.get('[data-testid="media-status"]').attributes('data-state'),
   ).toBe('buffering');
+  expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+    'Buffering…',
+  );
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
 });
@@ -919,6 +928,7 @@ test('a playing seek reports buffering until the room can wait and resume withou
     socket.frame('room.snapshot', playing);
     await flushPromises();
     expect(video.paused).toBe(false);
+    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
     media.holdSeek = true;
     await wrapper.get('#seek-seconds').setValue(5);
     const command = socket.sent
@@ -938,6 +948,9 @@ test('a playing seek reports buffering until the room can wait and resume withou
     await vi.advanceTimersByTimeAsync(750);
     expect(video.seeking).toBe(true);
     expect(reported(socket).at(-1)).toBe('buffering');
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Buffering…',
+    );
     const waiting = {
       ...playing,
       revision: 4,
@@ -963,6 +976,7 @@ test('a playing seek reports buffering until the room can wait and resume withou
     video.dispatchEvent(new Event('canplay'));
     await flushPromises();
     expect(reported(socket).at(-1)).toBe('ready');
+    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     socket.frame('room.snapshot', {
       ...playing,
@@ -975,6 +989,7 @@ test('a playing seek reports buffering until the room can wait and resume withou
     });
     await flushPromises();
     expect(video.paused).toBe(false);
+    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     const commands = socket.sent
       .map((raw) => JSON.parse(raw))

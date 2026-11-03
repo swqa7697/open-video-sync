@@ -98,6 +98,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await expect(other.getByTestId('media-status')).toHaveText(
       'Different video from the room',
     );
+    await expect(other.locator('.playback-indicator')).toHaveCount(0);
     await other.locator('#local-video').setInputFiles({
       name: 'unsupported-codec.webm',
       mimeType: 'video/webm',
@@ -137,7 +138,18 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       fullPage: true,
     });
     await page.setViewportSize({ width: 1280, height: 1000 });
-    await clickPlayerControl(page, 'Play together');
+    const pausedIndicator = page.getByRole('img', {
+      name: 'Paused',
+      exact: true,
+    });
+    await expect(pausedIndicator).toBeVisible();
+    const indicatorBox = await pausedIndicator.boundingBox();
+    if (!indicatorBox) throw new Error('The paused indicator must be visible.');
+    // The visual indicator must let clicks reach the playback surface beneath it.
+    await page.mouse.click(
+      indicatorBox.x + indicatorBox.width / 2,
+      indicatorBox.y + indicatorBox.height / 2,
+    );
     for (const player of [page, other])
       await expect
         .poll(() =>
@@ -150,6 +162,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             ),
         )
         .toBe(true);
+    await expect(page.locator('.playback-indicator')).toHaveCount(0);
     // Headless windows stay visible. Exercise visibility events on actual playing media;
     // both the event and later sampling must preserve playback, including on return.
     const background = await page.evaluateHandle(() => {
@@ -250,6 +263,10 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
             .evaluate((v) => (v as HTMLVideoElement).paused),
         )
         .toBe(true);
+    for (const player of [page, other])
+      await expect(
+        player.getByRole('img', { name: 'Paused', exact: true }),
+      ).toBeVisible();
     const recoveredFrames = await Promise.all([
       decodedFrame(page),
       decodedFrame(other),
