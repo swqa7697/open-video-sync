@@ -35,9 +35,9 @@ function fixture(options = {}) {
     (listeners[name] ??= []).push(callback);
   page.postMessage = (raw) => replies.push(JSON.parse(raw));
   const view = {
-    bvid: 'BV1hf4y1N75G',
+    bvid: 'BV1TESTaaaaa',
     title: 'fixture',
-    pages: [{ cid: 400306737, page: 1 }],
+    pages: [{ cid: 9000000000001, page: 1 }],
     cookie: CANARY,
     ...options.view,
   };
@@ -283,7 +283,7 @@ function fixture(options = {}) {
     get aborted() {
       return aborted;
     },
-    open: () => call('open', { bvid: 'BV1hf4y1N75G', part: 1, generation: 1 }),
+    open: () => call('open', { bvid: 'BV1TESTaaaaa', part: 1, generation: 1 }),
   };
 }
 test('exact activation and source checks reject origins, frames, and forged window wrappers', async () => {
@@ -530,11 +530,11 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   );
   const preview = await f.call('preview', {
     client: inspection.client,
-    bvid: 'BV17Jx76CEje',
+    bvid: 'BV1TESTaaaab',
     part: 1,
   });
   assert.equal(preview.ok, true);
-  assert.equal(preview.value.bvid, 'BV17Jx76CEje');
+  assert.equal(preview.value.bvid, 'BV1TESTaaaab');
   assert.equal(preview.value.handle, undefined);
   assert.equal(f.aborted, 0);
   assert(!JSON.stringify(preview).includes(CANARY));
@@ -553,7 +553,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     (
       await f.call('preview', {
         client: inspection.client,
-        bvid: 'BV17Jx76CEje',
+        bvid: 'BV1TESTaaaab',
         part: 2,
       })
     ).error,
@@ -563,9 +563,9 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert(!JSON.stringify(open).includes('https://'));
   assert.equal(open.value.playlist, undefined);
   const pages = [
-    { cid: 400306737, page: 1, part: 'Opening' },
+    { cid: 9000000000001, page: 1, part: 'Opening' },
     {
-      cid: 400306738,
+      cid: 9000000000002,
       page: 2,
       part: '<script>Finale</script>',
       cookie: CANARY,
@@ -575,15 +575,15 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert.deepEqual(multipart.value.playlist, {
     title: 'fixture',
     episodes: pages.map((p) => ({
-      bvid: 'BV1hf4y1N75G',
+      bvid: 'BV1TESTaaaaa',
       part: p.page,
       title: p.part,
     })),
   });
   const episodes = [
-    { bvid: 'BV1hf4y1N75G', title: 'First', pages: [pages[0]], token: CANARY },
+    { bvid: 'BV1TESTaaaaa', title: 'First', pages: [pages[0]], token: CANARY },
     {
-      bvid: 'BV17Jx76CEje',
+      bvid: 'BV1TESTaaaab',
       title: 'Second',
       pages,
       signedURL: `https://example.invalid/${CANARY}`,
@@ -601,10 +601,10 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   assert.deepEqual(collection.value.playlist, {
     title: 'Collection',
     episodes: [
-      { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
-      { bvid: 'BV17Jx76CEje', part: 1, title: 'Second · Opening' },
+      { bvid: 'BV1TESTaaaaa', part: 1, title: 'First' },
+      { bvid: 'BV1TESTaaaab', part: 1, title: 'Second · Opening' },
       {
-        bvid: 'BV17Jx76CEje',
+        bvid: 'BV1TESTaaaab',
         part: 2,
         title: 'Second · <script>Finale</script>',
       },
@@ -636,7 +636,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     });
     for (const op of ['preview', 'open']) {
       const reply = await oversized.call(op, {
-        bvid: 'BV1gX4w6fEKZ',
+        bvid: 'BV1TESTaaaaf',
         part: 2,
         ...(op === 'open' ? { generation: 1 } : {}),
       });
@@ -699,7 +699,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
     1,
   );
   const switched = await f.call('open', {
-    bvid: 'BV1hf4y1N75G',
+    bvid: 'BV1TESTaaaaa',
     part: 1,
     generation: 2,
     quality: 32,
@@ -733,7 +733,7 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
   );
   assert(!JSON.stringify(switched).includes(CANARY));
   const unavailable = await f.call('open', {
-    bvid: 'BV1hf4y1N75G',
+    bvid: 'BV1TESTaaaaa',
     part: 1,
     generation: 3,
     quality: 120,
@@ -743,41 +743,47 @@ test('bridge returns opaque metadata and bounded bytes while excluding credentia
 test('bangumi pins the episode, keeps access local, and refreshes through the PGC endpoint', async () => {
   const episodes = [
     {
-      id: 103591,
-      bvid: 'BV1hf4y1N75G',
-      cid: 400306737,
+      id: 9000000000011,
+      bvid: 'BV1TESTaaaaa',
+      cid: 9000000000001,
       title: '1',
       long_title: 'Opening',
       token: CANARY,
     },
     {
-      id: 250984,
-      bvid: 'BV17Jx76CEje',
-      cid: 400306738,
+      id: 9000000000012,
+      bvid: 'BV1TESTaaaab',
+      cid: 9000000000002,
       title: '2',
       long_title: 'Finale',
     },
   ];
   const season = {
-    season_id: 6038,
+    season_id: 9000000000021,
     title: 'Season',
     episodes,
     credential: CANARY,
   };
   const f = fixture({ season, expired: true });
-  const preview = await f.call('preview', { seasonId: '6038', part: 1 });
+  const preview = await f.call('preview', {
+    seasonId: '9000000000021',
+    part: 1,
+  });
   assert.equal(preview.ok, true, preview.error);
-  assert.equal(preview.value.episodeId, '103591');
+  assert.equal(preview.value.episodeId, '9000000000011');
   assert.equal(preview.value.bvid, episodes[0].bvid);
   assert.equal(preview.value.title, 'Season · 1 · Opening');
-  assert.equal(preview.value.playlist.episodes[1].episodeId, '250984');
+  assert.equal(preview.value.playlist.episodes[1].episodeId, '9000000000012');
   assert(!JSON.stringify(preview).includes(CANARY));
   assert(!JSON.stringify(preview).includes('https://'));
-  const second = await f.call('preview', { episodeId: '250984', part: 1 });
+  const second = await f.call('preview', {
+    episodeId: '9000000000012',
+    part: 1,
+  });
   assert.equal(second.value.bvid, episodes[1].bvid);
   const open = await f.call('open', {
     bvid: episodes[1].bvid,
-    episodeId: '250984',
+    episodeId: '9000000000012',
     part: 1,
     generation: 1,
   });
@@ -795,8 +801,8 @@ test('bangumi pins the episode, keeps access local, and refreshes through the PG
     .filter((u) => u.hostname === 'api.bilibili.com');
   assert(apiRequests.every((u) => u.pathname.startsWith('/pgc/')));
   const plays = apiRequests.filter((u) => u.pathname.endsWith('/playurl'));
-  assert.equal(plays.at(-1).searchParams.get('ep_id'), '250984');
-  assert.equal(plays.at(-1).searchParams.get('cid'), '400306738');
+  assert.equal(plays.at(-1).searchParams.get('ep_id'), '9000000000012');
+  assert.equal(plays.at(-1).searchParams.get('cid'), '9000000000002');
   assert.equal(plays.at(-1).searchParams.get('fnval'), '2064');
   assert(
     plays.every(
@@ -811,7 +817,7 @@ test('bangumi pins the episode, keeps access local, and refreshes through the PG
   ]) {
     const denied = fixture({ season, ...options });
     const result = await denied.call('preview', {
-      episodeId: '103591',
+      episodeId: '9000000000011',
       part: 1,
     });
     assert.equal(result.error, expected);
@@ -824,9 +830,9 @@ test('bangumi pins the episode, keeps access local, and refreshes through the PG
   }
   for (const selection of [
     { episodeId: '0', part: 1 },
-    { seasonId: '6038', episodeId: '103591', part: 1 },
-    { bvid: episodes[0].bvid, episodeId: '250984', part: 1 },
-    { episodeId: '103591', part: 2 },
+    { seasonId: '9000000000021', episodeId: '9000000000011', part: 1 },
+    { bvid: episodes[0].bvid, episodeId: '9000000000012', part: 1 },
+    { episodeId: '9000000000011', part: 2 },
     { episodeId: '999', part: 1 },
   ])
     assert.equal(
@@ -1243,7 +1249,7 @@ test('previews and opens select the best supported codec at the preferred or hig
         mime.startsWith('audio/mp4;') ||
         supported.some((codec) => mime === `video/mp4; codecs="${codec}"`),
     });
-    const preview = await f.call('preview', { bvid: 'BV1hf4y1N75G', part: 1 });
+    const preview = await f.call('preview', { bvid: 'BV1TESTaaaaa', part: 1 });
     const opened = await f.open();
     for (const reply of [preview, opened]) {
       assert.equal(reply.ok, true);
@@ -1253,7 +1259,7 @@ test('previews and opens select the best supported codec at the preferred or hig
       assert(!JSON.stringify(reply).includes(CANARY));
     }
     const selected = await f.call('open', {
-      bvid: 'BV1hf4y1N75G',
+      bvid: 'BV1TESTaaaaa',
       part: 1,
       generation: 2,
       quality: 32,
@@ -1406,7 +1412,7 @@ test('slow resolution completes while request and media-operation deadlines rema
     const options = { now: () => clock, delay: () => 11000 },
       f = fixture(options),
       resolving = f.call(op, {
-        bvid: 'BV1hf4y1N75G',
+        bvid: 'BV1TESTaaaaa',
         part: 1,
         ...(op === 'open' ? { generation: 1 } : {}),
       });
@@ -1420,11 +1426,11 @@ test('slow resolution completes while request and media-operation deadlines rema
     await advance(11000);
     const reply = await resolving;
     assert.equal(reply.ok, true);
-    assert.equal(reply.value.bvid, 'BV1hf4y1N75G');
+    assert.equal(reply.value.bvid, 'BV1TESTaaaaa');
     assert(!JSON.stringify(f.replies).includes(CANARY));
     // An individual request still cannot consume the full resolution budget.
     options.delay = () => 30000;
-    const stalled = f.call('preview', { bvid: 'BV1hf4y1N75G', part: 1 });
+    const stalled = f.call('preview', { bvid: 'BV1TESTaaaaa', part: 1 });
     await new Promise((resolve) => setImmediate(resolve));
     await advance(12000);
     assert.equal((await stalled).error, 'request-timeout');
@@ -1438,7 +1444,7 @@ test('slow resolution completes while request and media-operation deadlines rema
       view: { desc: 'x'.repeat(4 * 1024 * 1024) },
     });
     const resolving = f.call(op, {
-      bvid: 'BV1gX4w6fEKZ',
+      bvid: 'BV1TESTaaaaf',
       part: 1,
       ...(op === 'open' ? { generation: 1 } : {}),
     });
@@ -1492,7 +1498,7 @@ test('oversized streams and unapproved final destinations fail without exposing 
   tracks.play.token = CANARY + 'x'.repeat(1024 * 1024);
   for (const f of [metadata, tracks]) {
     for (const reply of [
-      await f.call('preview', { bvid: 'BV1gX4w6fEKZ', part: 1 }),
+      await f.call('preview', { bvid: 'BV1TESTaaaaf', part: 1 }),
       await f.open(),
     ]) {
       assert.equal(reply.ok, false);
@@ -1575,7 +1581,7 @@ test('a replacement player channel cancels old work and refuses stale owners', a
   assert.equal(f.held.length, 1);
   options.hold = false;
   const preview = await f.call('preview', {
-    bvid: 'BV17Jx76CEje',
+    bvid: 'BV1TESTaaaab',
     part: 1,
     client: 'c'.repeat(32),
   });
@@ -1595,7 +1601,7 @@ test('a replacement player channel cancels old work and refuses stale owners', a
   });
   assert.equal(stale.error, 'stale-generation');
   const next = await f.call('open', {
-    bvid: 'BV1hf4y1N75G',
+    bvid: 'BV1TESTaaaaa',
     part: 1,
     generation: 1,
     client,

@@ -178,7 +178,6 @@ watch([() => props.context, playlistKey], ([context], [previous]) => {
 watch(
   () => props.episodes?.selection?.phase,
   (phase) => {
-    if (submitted && phase === 'accepted') emit('close');
     if (phase === 'failed') submitted = false;
   },
 );

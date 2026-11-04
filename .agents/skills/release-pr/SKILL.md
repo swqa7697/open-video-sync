@@ -251,10 +251,11 @@ step failed.
    must occur in hosted CI.
 
 5. **Publish the reviewed fix under the invocation's authorization.** Show each cause's
-   classification, contract evidence, changed files, diff, and validation, then commit
-   and push without a separate approval request, applying the guidelines exemption for
-   CI fix commits above. Do not stop to satisfy a general Git approval rule already
-   covered by the `release-pr` invocation.
+   classification, contract evidence, changed files, diff, and validation. Once all failures
+   in the current CI attempt are repaired and validated, commit the fixes together in a
+   single commit and push without a separate approval request, applying the guidelines
+   exemption for CI fix commits above. Do not stop to satisfy a general Git approval rule
+   already covered by the `release-pr` invocation.
    Recheck branch, diff, and remote tips before writing; stage
    only reviewed fix paths, use an English scoped Conventional Commit, and push only the
    selected source branch without force or tags. Keep new version bumps and dated release
@@ -296,12 +297,25 @@ Documentation, tests, formatting, behavior-preserving refactors, and tooling-onl
 require no module bump unless they change shipped runtime behavior. Review shared changes
 for their impact on each module too.
 
-Compare each module's base, committed, and proposed versions. Show a table in manifest order
-with those versions, runtime impact, and the bump rationale. An existing release commit does
-not prove that every affected module is covered. If a partial set of bumps leaves an affected
-module uncovered, identify the gap and include a justified proposed target in the final
-approval package rather than stopping for a separate version question. Preserve valid
-committed and pending bumps.
+Compare each module's base, committed, and proposed versions to review version coverage.
+An existing release commit does not prove that every affected module is covered. If a
+partial set of bumps leaves an affected module uncovered, identify the gap and include a
+justified proposed target in the final approval package rather than stopping for a separate
+version question. Preserve valid committed and pending bumps.
+
+In both the approval package and PR body, list all modules in manifest order using a
+`Module` column and exactly two version columns: `Before release` and `After release`.
+Compare the release baseline with the final proposed/released version across the full PR,
+not just the final release commit. Bold every cell in a module's row only when its version
+increases; leave unchanged module rows unbolded. Keep intermediate versions, bump types,
+runtime impact, rationale, baseline references, and other explanations outside the table.
+For example:
+
+| Module   | Before release | After release |
+| -------- | -------------- | ------------- |
+| **sync** | **1.0.0**      | **1.1.0**     |
+| **web**  | **1.0.0**      | **1.1.0**     |
+| helper   | 1.0.0          | 1.0.0         |
 
 For each affected module, select the smallest appropriate increase from its `origin/main` version:
 
@@ -383,11 +397,14 @@ Prepare an English PR title matching the release commit subject:
 List only modules changed by that version commit relative to its parent, in `versions.toml`
 order, separated by `|`. For example: `release open-video-sync: sync 0.1.0 | helper 0.2.1`.
 Omit unchanged modules; a single-module release has one entry and no separator.
+Present change lists, including highlights, release notes, and per-module behavior changes,
+as ordinary bullet lists, never tables.
 Follow the repository PR template when present; otherwise include these useful parts:
 
-- **Version and rationale:** a table of all three modules in manifest order, comparing base
-  and proposed versions across the full PR, with the selected increases and reasons. The
-  release commit subject describes only that commit's bumps; the table covers the release.
+- **Version and rationale:** use the version table format above, with only before/after
+  versions and entire bumped module rows bolded. Put the selected increases and reasons in
+  prose or bullets outside the table. The release commit subject describes only that
+  commit's bumps; the table covers the release.
 - **Highlights and release notes:** final user/operator behavior from the changelog or an
   identified diff summary. Describe implemented scope, not proposed application contracts.
 - **Upgrade and deployment:** changed configuration, dependencies, numbered migrations,

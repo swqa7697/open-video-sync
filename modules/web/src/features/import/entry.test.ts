@@ -5,9 +5,12 @@ import { clearImport, consumeImport } from './entry';
 afterEach(() => history.replaceState(null, '', '/'));
 
 test.each([
-  ['v=1&bvid=BV1hf4y1N75G&part=2', { bvid: 'BV1hf4y1N75G', part: 2 }],
-  ['v=1&episodeId=103591&part=1', { episodeId: '103591', part: 1 }],
-  ['v=1&seasonId=6038&part=1', { seasonId: '6038', part: 1 }],
+  ['v=1&bvid=BV1TESTaaaaa&part=2', { bvid: 'BV1TESTaaaaa', part: 2 }],
+  [
+    'v=1&episodeId=9000000000011&part=1',
+    { episodeId: '9000000000011', part: 1 },
+  ],
+  ['v=1&seasonId=9000000000021&part=1', { seasonId: '9000000000021', part: 1 }],
 ])(
   'imports bounded identifiers and survives a helper-install reload: %s',
   (hash, selection) => {
@@ -21,16 +24,16 @@ test.each([
 );
 
 test.each([
-  'v=2&bvid=BV1hf4y1N75G&part=1',
-  'v=1&bvid=BV1hf4y1N75G&part=1&part=2',
-  'v=1&bvid=BV1hf4y1N75G',
-  'v=1&bvid=BV1hf4y1N75G&part=0',
-  'v=1&bvid=BV1hf4y1N75G&part=10001',
-  'v=1&bvid=BV1hf4y1N75G&part=1&url=https://secret.invalid',
-  'v=1&episodeId=103591&part=2',
+  'v=2&bvid=BV1TESTaaaaa&part=1',
+  'v=1&bvid=BV1TESTaaaaa&part=1&part=2',
+  'v=1&bvid=BV1TESTaaaaa',
+  'v=1&bvid=BV1TESTaaaaa&part=0',
+  'v=1&bvid=BV1TESTaaaaa&part=10001',
+  'v=1&bvid=BV1TESTaaaaa&part=1&url=https://secret.invalid',
+  'v=1&episodeId=9000000000011&part=2',
   'v=1&seasonId=0&part=1',
-  'v=1&bvid=ep103591&part=1',
-  'v=1&bvid=https://www.bilibili.com/video/BV1hf4y1N75G&part=1',
+  'v=1&bvid=ep9000000000011&part=1',
+  'v=1&bvid=https://www.bilibili.com/video/BV1TESTaaaaa&part=1',
 ])('rejects malformed import data before retaining history: %s', (hash) => {
   history.replaceState(null, '', `/import#${hash}`);
   expect(consumeImport()).toEqual({ invalid: true });
@@ -43,7 +46,7 @@ test('does not consume invitation entry and revalidates restored history data', 
   expect(consumeImport()).toBeUndefined();
   expect(location.hash).toBe('#invite=synthetic');
   history.replaceState(
-    { pendingImport: { bvid: 'BV1hf4y1N75G' } },
+    { pendingImport: { bvid: 'BV1TESTaaaaa' } },
     '',
     '/import',
   );
@@ -52,7 +55,7 @@ test('does not consume invitation entry and revalidates restored history data', 
   history.replaceState(
     null,
     '',
-    '/import?video=untrusted#v=1&bvid=BV1hf4y1N75G&part=1',
+    '/import?video=untrusted#v=1&bvid=BV1TESTaaaaa&part=1',
   );
   expect(consumeImport()).toEqual({ invalid: true });
   expect(location.search).toBe('');

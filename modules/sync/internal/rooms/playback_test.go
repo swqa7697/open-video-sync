@@ -77,7 +77,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000, EpisodeID: "103591"}}
+	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "9000000000001", Part: 1, DurationMs: 60000, EpisodeID: "9000000000011"}}
 	repository.reject.Store(true)
 	err = service.Handle(ctx, bound, command)
 	expectCode(t, err, "busy")
@@ -108,7 +108,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	changedIntent.AutoPlay = false
 	expectCode(t, service.Handle(ctx, bound, changedIntent), "invalid_command")
 	changedEpisode := command
-	changedEpisode.Media.EpisodeID = "250984"
+	changedEpisode.Media.EpisodeID = "9000000000012"
 	if err := service.Handle(ctx, bound, changedEpisode); err == nil {
 		t.Fatal("changed episode reused the original command receipt")
 	}
@@ -424,7 +424,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 			var clock atomic.Int64
 			service.Monotonic = clock.Load
 			host, guest := participant(t, store, time.Now), participant(t, store, time.Now)
-			selected := contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 60000}
+			selected := contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "1", Part: 1, DurationMs: 60000}
 			settings := contracts.DefaultSettings()
 			settings.WaitForAll = false
 			createKey := key(t)
@@ -564,7 +564,7 @@ func TestRestoredEmptyRoomHasBoundedReconnectionWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateSelected(ctx, host, key(t), "Restart window", contracts.DefaultSettings(), contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 10000}, false)
+	created, err := service.CreateSelected(ctx, host, key(t), "Restart window", contracts.DefaultSettings(), contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "1", Part: 1, DurationMs: 10000}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

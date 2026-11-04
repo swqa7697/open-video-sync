@@ -11,6 +11,7 @@ import {
   closeRoom,
   createLocalRoom,
   dismissHelper,
+  expectFittedPlayer,
   invitationLink,
   observePageKeyboard,
   openAppPanel,
@@ -252,13 +253,73 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
+    const windowButton = page.locator('[aria-keyshortcuts="s"]');
+    const stageBefore = await page.locator('.video-stage').boundingBox();
+    const retainedVideo = await page.locator('video').elementHandle();
+    await page.keyboard.down('s');
+    await page.keyboard.down('s');
+    await page.keyboard.up('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual({
+      x: 0,
+      y: 0,
+      ...page.viewportSize()!,
+    });
+    expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+    await windowButton.click({ trial: true });
+    expect(
+      await page
+        .locator('video')
+        .evaluate((video, retained) => video === retained, retainedVideo),
+    ).toBe(true);
+    await runQuickAction(page, '/shortcuts');
+    await expect(page.locator('.player-shortcuts')).toContainText(
+      'Enter or exit browser-window fullscreen',
+    );
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.player-shortcuts')).toHaveCount(0);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual(
+      stageBefore,
+    );
+    await page.locator('.video-stage').hover();
+    await windowButton.click();
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('s');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual(
+      stageBefore,
+    );
+    await retainedVideo?.dispose();
     await page.keyboard.press('f');
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(true);
     await openQuickActions(page);
     const paletteKeys = await observePageKeyboard(page);
-    await page.getByRole('combobox').pressSequentially('m f k d ');
+    await page.getByRole('combobox').pressSequentially('m f k d s ');
     await page.getByRole('combobox').press('Control+a');
     await page.getByRole('combobox').press('Backspace');
     await page.keyboard.press('Tab');
@@ -291,6 +352,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await appearance.getByRole('button', { name: 'Close dialog' }).focus();
     await page.keyboard.press('m');
     await page.keyboard.press('f');
+    await page.keyboard.press('s');
     await page.keyboard.press('Control+k');
     await expect(appearance).toBeVisible();
     await expect(page.locator('.command-palette')).toHaveCount(0);
@@ -406,10 +468,11 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.locator('.profile-button').click();
     const nameInput = page.getByLabel('Display name (optional)');
     await nameInput.fill('');
-    await nameInput.pressSequentially('m d f k ');
+    await nameInput.pressSequentially('m d f k s ');
     await nameInput.press('ArrowDown');
     await nameInput.press('ArrowUp');
-    await expect(nameInput).toHaveValue('m d f k ');
+    await expect(nameInput).toHaveValue('m d f k s ');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
@@ -423,6 +486,8 @@ test('independent identities manage a private room over direct HTTP', async ({
       .focus();
     await page.keyboard.press('m');
     await page.keyboard.press('f');
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
@@ -487,13 +552,13 @@ test('independent identities manage a private room over direct HTTP', async ({
 
     await page
       .getByRole('combobox')
-      .fill('$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
+      .fill('$ https://www.bilibili.com/video/BV1TESTaaaaa/?p=2');
     await page.getByRole('combobox').press('Enter');
     await expect(
       page.getByRole('dialog', { name: 'Change the video', exact: true }),
     ).toBeVisible();
     await expect(page.locator('#bilibili-url')).toBeFocused();
-    await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+    await expect(page.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
     await expect(page.locator('#bilibili-part')).toHaveValue('2');
     await page.keyboard.press('Escape');
     const unchangedMedia = await (
@@ -572,7 +637,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       other.getByRole('option').filter({ hasText: '/video' }),
     ).toHaveCount(0);
-    await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
+    await other.getByRole('combobox').fill('$ BV1TESTaaaaa');
     await expect(other.getByRole('option')).toHaveCount(0);
     await other.keyboard.press('Escape');
     await expect(other.locator('.command-palette')).toHaveCount(0);
@@ -1226,6 +1291,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       [1966, 654],
       [1440, 900],
       [1024, 768],
+      [1080, 1706],
       [900, 500],
       [320, 844],
     ]) {
@@ -1246,9 +1312,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         }
         await expectViewportStructure(page, '.room');
         expect(await playerColors()).toEqual(darkPlayerColors);
-        expect(
-          (await page.locator('.room').boundingBox())!.width,
-        ).toBeLessThanOrEqual(1600);
+        await expectFittedPlayer(page);
       }
       if (width! > 760) {
         const members = page.locator('.room-actions button[aria-expanded]');
@@ -1258,36 +1322,31 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
             'aria-expanded',
             String(expanded),
           );
-          // The container fills the available area; its shape is independent
-          // of the source media, which may letterbox in either direction.
-          await expect
-            .poll(() =>
-              page.locator('.room').evaluate((root) => {
-                const room = root.getBoundingClientRect(),
-                  layout = root
-                    .querySelector('.room-layout')!
-                    .getBoundingClientRect(),
-                  viewport = root
-                    .querySelector('.player-viewport')!
-                    .getBoundingClientRect(),
-                  stage = root
-                    .querySelector('.video-stage')!
-                    .getBoundingClientRect(),
-                  sidebar =
-                    root.querySelector('.member-panel')?.getBoundingClientRect()
-                      .width ?? 0;
-                const bottomSpace =
-                  room.bottom -
-                  parseFloat(getComputedStyle(root).paddingBottom) -
-                  layout.bottom;
-                return Math.max(
-                  Math.abs(layout.width - stage.width - sidebar - 2),
-                  Math.abs(viewport.height - stage.height),
-                  Math.abs(bottomSpace),
-                );
-              }),
-            )
-            .toBeLessThanOrEqual(1);
+          if (width === 1080 && expanded) {
+            // Layout-only copies exercise a long roster without creating more sessions.
+            await page.locator('.roster').evaluate((roster) => {
+              const entry = roster.lastElementChild!;
+              for (let index = 0; index < 12; index++) {
+                const item = entry.cloneNode(true) as HTMLElement;
+                item.dataset.layoutFixture = '';
+                roster.append(item);
+              }
+            });
+          }
+          await expectFittedPlayer(page);
+          if (width === 1080 && expanded) {
+            expect(
+              await page
+                .locator('.member-panel .sidebar-pane')
+                .evaluate((pane) => {
+                  pane.scrollTop = pane.scrollHeight;
+                  return pane.scrollTop;
+                }),
+            ).toBeGreaterThan(0);
+            await page
+              .locator('[data-layout-fixture]')
+              .evaluateAll((nodes) => nodes.forEach((node) => node.remove()));
+          }
           roomGeometry.push({
             width: width!,
             height: height!,
@@ -1330,6 +1389,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         .getByRole('button', { name: 'Fullscreen locally', exact: true })
         .click({ trial: true, timeout: 5000 });
       await expectViewportStructure(page, '.room');
+      await expectFittedPlayer(page);
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     writeFileSync(
@@ -1348,9 +1408,10 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
     await expectHeaderFits(page);
     await expectViewportStructure(page, '.room');
     await page.evaluate(() => (document.documentElement.style.fontSize = ''));
-    // Non-widescreen sources must not reshape the player.
-    const frameBounds = (await page.locator('.video-stage').boundingBox())!;
+    // Native dimensions must fit without cropping or app-created letterboxing,
+    // including sources larger than their available column.
     for (const [name, sourceWidth, sourceHeight] of [
+      ['wide', 1920, 886],
       ['portrait', 640, 960],
       ['square', 640, 640],
     ] as const) {
@@ -1379,17 +1440,17 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       const video = page.locator('.video-stage video');
       await expect(video).toHaveJSProperty('videoWidth', sourceWidth);
       await expect(video).toHaveJSProperty('videoHeight', sourceHeight);
-      await expect
-        .poll(async () => {
-          const bounds = (await page.locator('.video-stage').boundingBox())!;
-          return Math.max(
-            ...(['x', 'y', 'width', 'height'] as const).map((key) =>
-              Math.abs(bounds[key] - frameBounds[key]),
-            ),
-          );
-        })
-        .toBeLessThanOrEqual(1);
-      await expectViewportStructure(page, '.room');
+      for (const [width, height] of [
+        [3440, 1145],
+        [1080, 1706],
+        [390, 844],
+      ]) {
+        await page.setViewportSize({ width: width!, height: height! });
+        await expectFittedPlayer(page);
+        await expectViewportStructure(page, '.room');
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expectFittedPlayer(page);
     }
     await closeRoom(page);
     expect(failures).toEqual([]);

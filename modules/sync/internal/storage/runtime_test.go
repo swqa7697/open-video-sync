@@ -91,7 +91,7 @@ func TestInitializedReadsAuthorizationPlaybackReadinessAndTicksPerformZeroStorag
 			t.Fatal(err)
 		}
 	}
-	if err := service.Handle(ctx, conn, contracts.ClientFrame{Type: "media.select", CommandID: recoveryKey(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}); err != nil {
+	if err := service.Handle(ctx, conn, contracts.ClientFrame{Type: "media.select", CommandID: recoveryKey(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "9000000000001", Part: 1, DurationMs: 60000}}); err != nil {
 		t.Fatal(err)
 	}
 	snap, err = service.Snapshot(ctx, host, snap.RoomID)

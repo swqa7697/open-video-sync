@@ -88,6 +88,33 @@ See [deployment validation](deploy/README.md#remote-deployment-validation) and [
 Routine tests remain offline. Live Bilibili and actual-network checks require separate validation.
 Retain implementation evidence under ignored `.misc/`. Local results do not establish hosted CI success.
 
+### Bilibili test data
+
+Tracked tests, shared contract fixtures, and smoke clients use invented Bilibili metadata.
+Use format-valid `BV1TESTaaaaa`-style values and decimal IDs from the synthetic `9000000000001` series.
+These values are test conventions, not identifiers reserved by Bilibili. Never resolve them against the platform.
+Keep malformed and numeric-boundary cases where validation needs them.
+Parser and security tests retain canonical platform domains and URL shapes with synthetic resource IDs.
+Use invented titles, including long Chinese text for layout coverage, and generate media bytes locally.
+The Bilibili browser journeys execute the adapter and bundled helper with intercepted platform requests; they do not prove live platform compatibility.
+
+There is currently no automated live-Bilibili runner or live CI job.
+If both local development and CI need live coverage, use a separate, explicitly enabled runner with this input contract:
+
+- Read selections from `OVS_LIVE_BILIBILI_CASES_FILE`, pointing to an untracked JSON file such as `.misc/live-bilibili/cases.json`.
+  Track only the schema and an empty example; supply each case's alias, selection, and expected access outcome outside Git.
+- Use the same runner locally and in a manually dispatched CI workflow.
+  Inject case data through a repository secret and write the input file under ignored `.misc/` for the job.
+  GitHub supports passing [Actions secrets as environment variables](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets).
+  Never put real links or IDs in workflow defaults, command arguments, or test names.
+- Resolve CIDs, titles, and other platform metadata at runtime. Assert playback, seeking, decoded-frame progress, danmaku, and session isolation by case alias.
+  Do not compare exact public titles or retain raw provider responses.
+- Run a real browser with the installed Tampermonkey helper and bounded request/test deadlines.
+  Keep required platform access in each participant's browser; do not inject cookies, browser profiles, or signed playback URLs through CI secrets.
+  Report missing input, browser access, or network prerequisites as unverified; fail an explicitly requested live run when prerequisites are absent.
+- Keep screenshots and traces local unless scrubbed, because they can include real titles and resource IDs.
+  Upload only a summary with case aliases and results. Keep routine PR validation independent of this live job.
+
 ## Release preparation
 
 Use the repository's [release-pr](.agents/skills/release-pr/SKILL.md) instructions.

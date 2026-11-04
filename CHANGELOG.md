@@ -6,13 +6,28 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-04]
+
+### Added
+
+- Fill the browser content area with the player using its browser-window fullscreen button, Quick actions, or S. Keep browser chrome visible, use S or Esc to return, and preserve playback and the previous mode across native fullscreen.
+
+### Changed
+
+- Keep danmaku settings focused on density, text size, scrolling speed, and display area, without a status footer.
+
+### Fixed
+
+- Close Quick actions after the host's episode switch is confirmed, including when another room update arrives immediately.
+- Scale each video proportionally until it reaches the available width or height, without a fixed room-width cap, cropping, or added black bars. Fit the room card and toolbar to the video plus any visible member pane, leaving unused space outside the card. Keep long video titles inside the viewing column so they cannot shift the video or cover the member pane and controls. Keep narrow and tall layouts coordinated, the window free of scrolling, and playback controls reachable.
+
 ## [2026-11-03]
 
 ### Added
 
 - Open a player context menu with video statistics and keyboard help, plus Bilibili original-page access and local danmaku controls. Keep Reload danmaku in this menu. View available resolution, frame rate, track bitrates, segments, forward buffer, and real-time media download activity in a persistent overlay, and copy or download a browser-local statistics snapshot. Statistics and shortcut help are also available in Quick actions. Bilibili statistics require the updated playback helper.
 - Import the current Bilibili video, part, or bangumi episode through a small OVS action in Bilibili's video toolbar, with a shared multi-site menu that follows the page's colors. Preview it in OVS, then create a room or confirm replacing a room you host. Keep preview and destination actions stable while loading, and expand long titles on demand. Keep the existing room tab active, recover unconfirmed requests without duplicate replacement, and offer explicit opening when no room tab responds. Replacements start paused at zero. Requires the updated helper.
-- Browse and switch episodes in Quick actions with `@`, filter titles with `@keywords`, or find an exact original list number with `@12`. Keep current-episode markers and member browsing, restrict switching to the host, and retain the search with an error when switching fails.
+- Browse and switch episodes in Quick actions with `@`, filter titles with `@keywords`, or find an exact original list number with `@12`. Keep current-episode markers and member browsing, restrict switching to the host, close after server confirmation, and retain the search with an error when switching fails.
 - Support Bilibili bangumi SS/EP identifiers and links. Start season links at the first main episode, let the host switch episodes, and preserve the exact episode for joining and reloading members. Use a single identifier label in video inputs, Quick actions, and validation prompts. Each participant uses their own platform access; restricted or trial-only playback stays unready. Requires the updated playback helper.
 - Show a subtle, translucent play icon while paused and a rotating ring during loading and buffering. Respect reduced motion and keep playback controls and clicks available.
 - Show target-frame thumbnails and time above the progress bar on hover, using Bilibili's platform thumbnails, including high-resolution previews, or browser-local extraction for local files. Follow the platform's returned image sizes, layouts, and CDN addresses. Progressively cache every compressed sheet in the background, refresh stationary previews as images arrive, reuse cached images across hover targets, and recover from temporary thumbnail failures. Schedule downloads independently by CDN so playback, seeking, and another source's delay do not repeatedly interrupt thumbnail loading. Video preparation, switching, and buffering never wait for thumbnails. Keep playback unchanged and retain the time when thumbnails are unavailable. Bilibili previews require the updated playback helper.

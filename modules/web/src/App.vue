@@ -879,6 +879,7 @@ onUnmounted(() => {
           :host="host"
           :playlist="player?.playlist"
           :can-select-episode="player?.canReplace ?? false"
+          :player-layout="player?.layout"
           :invitation="invitation"
           :busy="busy"
           :error="failure ? translate(failure.text) : undefined"
@@ -903,6 +904,7 @@ onUnmounted(() => {
             :helper-generation="helperGeneration"
             @snapshot="(value) => (room = value)"
             @connection="connectionChanged"
+            @episode-selected="paletteOpen = false"
             @recheck="recheck"
             @ended="
               (reason) => {

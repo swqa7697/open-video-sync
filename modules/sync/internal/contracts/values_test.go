@@ -147,7 +147,7 @@ func TestLocalFingerprintVectors(t *testing.T) {
 
 // Media selection accepts only a boolean playback intent, with omission meaning paused.
 func TestMediaSelectionPlaybackIntentBoundary(t *testing.T) {
-	media := `"media":{"kind":"bilibili","bvid":"BV1hf4y1N75G","cid":"400306737","part":1,"durationMs":60000}`
+	media := `"media":{"kind":"bilibili","bvid":"BV1TESTaaaaa","cid":"9000000000001","part":1,"durationMs":60000}`
 	for _, tc := range []struct {
 		name, extra string
 		valid, play bool

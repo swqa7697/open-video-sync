@@ -73,7 +73,7 @@ function fixture({ frame = false, ready = true, language = 'en' } = {}) {
     listeners.push(name);
     addEventListener(name, callback);
   };
-  let location = new URL('https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
+  let location = new URL('https://www.bilibili.com/video/BV1TESTaaaaa/?p=2');
   let network = 0;
   function install(origin) {
     const context = {
@@ -130,8 +130,8 @@ test('instance helpers merge their destinations without duplicating the Bilibili
   assert.deepEqual(
     f.links.map((link) => link.href),
     [
-      'https://watch.example/import#v=1&bvid=BV1hf4y1N75G&part=2',
-      'http://watch.example:8080/import#v=1&bvid=BV1hf4y1N75G&part=2',
+      'https://watch.example/import#v=1&bvid=BV1TESTaaaaa&part=2',
+      'http://watch.example:8080/import#v=1&bvid=BV1TESTaaaaa&part=2',
     ],
   );
   for (const link of f.links) {
@@ -147,12 +147,15 @@ test('links use the current SPA video and retain only canonical identifiers', ()
   const link = f.links[0];
   for (const [path, fragment] of [
     [
-      '/video/BV17Jx76CEje/?p=10000&spm_id_from=tracking&token=SYNTHETIC',
-      'bvid=BV17Jx76CEje&part=10000',
+      '/video/BV1TESTaaaab/?p=10000&spm_id_from=tracking&token=SYNTHETIC',
+      'bvid=BV1TESTaaaab&part=10000',
     ],
-    ['/video/BV17Jx76CEje/', 'bvid=BV17Jx76CEje&part=1'],
-    ['/bangumi/play/ep103591?from=tracking', 'episodeId=103591&part=1'],
-    ['/bangumi/play/ss6038', 'seasonId=6038&part=1'],
+    ['/video/BV1TESTaaaab/', 'bvid=BV1TESTaaaab&part=1'],
+    [
+      '/bangumi/play/ep9000000000011?from=tracking',
+      'episodeId=9000000000011&part=1',
+    ],
+    ['/bangumi/play/ss9000000000021', 'seasonId=9000000000021&part=1'],
   ]) {
     f.navigate(`https://www.bilibili.com${path}`);
     const event = new Event('click', { cancelable: true });
@@ -167,14 +170,14 @@ test('unsupported routes and invalid or duplicate parts cannot launch a stale vi
   f.install('https://watch.example');
   const link = f.links[0];
   for (const path of [
-    '/video/BV17Jx76CEje/?p=0',
-    '/video/BV17Jx76CEje/?p=10001',
-    '/video/BV17Jx76CEje/?p=2&p=3',
-    '/video/BV17Jx76CEje/?p=1e2',
+    '/video/BV1TESTaaaab/?p=0',
+    '/video/BV1TESTaaaab/?p=10001',
+    '/video/BV1TESTaaaab/?p=2&p=3',
+    '/video/BV1TESTaaaab/?p=1e2',
     '/video/BV0000000000',
     '/bangumi/play/ep0',
     '/bangumi/play/ss1234567890123456',
-    '/video/BV17Jx76CEje/evil',
+    '/video/BV1TESTaaaab/evil',
     '/account',
   ]) {
     f.navigate(`https://www.bilibili.com${path}`);
@@ -183,11 +186,11 @@ test('unsupported routes and invalid or duplicate parts cannot launch a stale vi
     assert.equal(event.defaultPrevented, true, path);
     assert.equal(link.href, undefined, path);
   }
-  f.navigate('https://www.bilibili.com/bangumi/play/ep103591');
+  f.navigate('https://www.bilibili.com/bangumi/play/ep9000000000011');
   link.dispatchEvent(new Event('pointerdown'));
   assert.equal(
     link.href,
-    'https://watch.example/import#v=1&episodeId=103591&part=1',
+    'https://watch.example/import#v=1&episodeId=9000000000011&part=1',
   );
 });
 
@@ -203,7 +206,7 @@ test('Bilibili never exposes the privileged playback bridge and frames stay inac
         client: 'a'.repeat(32),
         id: 1,
         op: 'preview',
-        bvid: 'BV1hf4y1N75G',
+        bvid: 'BV1TESTaaaaa',
         part: 1,
       }),
     }),

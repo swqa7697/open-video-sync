@@ -18,12 +18,12 @@ import type { ImportOutcome } from './types';
 
 const media: MediaDescriptor = {
   kind: 'bilibili',
-  bvid: 'BV1hf4y1N75G',
+  bvid: 'BV1TESTaaaaa',
   cid: '1',
   part: 2,
   durationMs: 10000,
 };
-const initialImport = { selection: { bvid: 'BV1hf4y1N75G', part: 2 } };
+const initialImport = { selection: { bvid: 'BV1TESTaaaaa', part: 2 } };
 const snapshot = { ...roomFixture, title: 'Family room' };
 const json = (value: unknown) =>
   new Response(JSON.stringify(value), {

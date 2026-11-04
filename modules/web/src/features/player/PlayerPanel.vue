@@ -80,6 +80,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   snapshot: [snapshot: Snapshot];
   connection: [connected: boolean];
+  episodeSelected: [];
   recheck: [];
   ended: [reason: EndReason];
 }>();
@@ -93,9 +94,9 @@ let escapeKeyboard: EscapeKeyboard | undefined;
 let keyboardGeneration = 0;
 let wasFullscreen = false;
 let exitingFullscreen = false;
+const windowFullscreen = ref(false);
 const preferences = readPlayerPreferences();
-const danmakuStatus = ref<Message | ''>(''),
-  showDanmaku = ref(preferences.danmakuVisible),
+const showDanmaku = ref(preferences.danmakuVisible),
   density = ref(preferences.danmakuDensity),
   danmakuSize = ref(preferences.danmakuSize),
   danmakuSpeed = ref(preferences.danmakuSpeed),
@@ -110,6 +111,30 @@ const video = ref<HTMLVideoElement>(),
   roomErrorReload = ref(false),
   mediaStatus = ref<ReadinessStatus>('no_media'),
   calibration = ref<Message>(message('player.calibrating'));
+const videoAspectRatio = ref(16 / 9);
+const details = ref<HTMLElement>(),
+  detailsHeight = ref(0);
+const layout = computed(() => ({
+  aspectRatio: videoAspectRatio.value,
+  detailsHeight: detailsHeight.value,
+}));
+let detailsObserver: ResizeObserver | undefined;
+let detailsFrame: number | undefined;
+function measureDetails(): void {
+  detailsHeight.value = details.value?.getBoundingClientRect().height ?? 0;
+}
+function scheduleDetails(): void {
+  if (detailsFrame !== undefined) return;
+  detailsFrame = requestAnimationFrame(() => {
+    detailsFrame = undefined;
+    measureDetails();
+  });
+}
+function updateVideoAspectRatio(): void {
+  const element = video.value;
+  if (element && element.videoWidth > 0 && element.videoHeight > 0)
+    videoAspectRatio.value = element.videoWidth / element.videoHeight;
+}
 // Sampled every 250 ms; only a changed label re-renders the panel.
 let quality: SyncQualityState = {
   quality: 'calibrating',
@@ -743,6 +768,7 @@ const transport = new RoomSocket(
           ? { error: roomError.value || message('episodes.failed') }
           : {}),
       };
+      if (accepted) emit('episodeSelected');
     },
     ended(reason) {
       if (reason === 'replaced') replaced.value = true;
@@ -848,6 +874,7 @@ function clearMedia(): void {
   subscription?.();
   adapter?.dispose();
   adapter = undefined;
+  videoAspectRatio.value = 16 / 9;
   descriptor.value = undefined;
   sync.invalidate();
   mediaStatus.value = 'no_media';
@@ -855,7 +882,6 @@ function clearMedia(): void {
   probedBarrier = '';
   probingBarrier = '';
   loading.value = false;
-  danmakuStatus.value = '';
   publishing = false;
   streamInfo.value = undefined;
 }
@@ -1027,6 +1053,13 @@ function releaseFullscreenKeyboard(): void {
   escapeKeyboard?.unlock();
   escapeKeyboard = undefined;
 }
+async function toggleWindowFullscreen(): Promise<void> {
+  if (document.fullscreenElement === stage.value) {
+    await fullscreen();
+    if (disposed || document.fullscreenElement === stage.value) return;
+    windowFullscreen.value = true;
+  } else windowFullscreen.value = !windowFullscreen.value;
+}
 function fullscreenChanged(): void {
   const active = document.fullscreenElement === stage.value;
   if (!active) {
@@ -1071,9 +1104,6 @@ async function chooseBilibili(
   const local = new BilibiliAdapter(
     video.value,
     overlay.value,
-    (value) => {
-      if (adapter === local) danmakuStatus.value = value;
-    },
     (failure) => {
       if (adapter === local) showError(failure.text, failure.reload);
     },
@@ -1346,6 +1376,21 @@ const commands = computed<QuickCommand[]>(() => [
     },
   },
   {
+    id: 'window-fullscreen',
+    label: t(
+      windowFullscreen.value
+        ? 'player.exitWindowFullscreen'
+        : 'player.windowFullscreen',
+    ),
+    group: 'watch',
+    icon: 'window-fullscreen',
+    shortcut: '/window-fullscreen',
+    aliases: 'window fullscreen theater theatre 网页全屏 浏览器窗口全屏',
+    run: () => {
+      void toggleWindowFullscreen();
+    },
+  },
+  {
     id: 'fullscreen',
     label: t('player.fullscreen'),
     group: 'watch',
@@ -1433,6 +1478,7 @@ const episodeActions = computed<EpisodeActions>(() => {
   };
 });
 defineExpose({
+  layout,
   commands,
   playlist,
   canReplace,
@@ -1531,6 +1577,11 @@ function keyboard(event: KeyboardEvent): void {
     if (!event.repeat) void fullscreen();
     return;
   }
+  if (key === 'escape' && windowFullscreen.value) {
+    event.preventDefault();
+    if (!event.repeat) windowFullscreen.value = false;
+    return;
+  }
   if (
     event.target instanceof Element &&
     event.target.closest(
@@ -1570,6 +1621,9 @@ function keyboard(event: KeyboardEvent): void {
   } else if (key === 'f') {
     event.preventDefault();
     void fullscreen();
+  } else if (key === 's') {
+    event.preventDefault();
+    if (!event.repeat) void toggleWindowFullscreen();
   } else return;
 }
 async function sample(): Promise<void> {
@@ -1766,6 +1820,11 @@ function visibility(): void {
   void sample();
 }
 onMounted(() => {
+  measureDetails();
+  if (typeof ResizeObserver !== 'undefined' && details.value) {
+    detailsObserver = new ResizeObserver(scheduleDetails);
+    detailsObserver.observe(details.value);
+  }
   wake();
   transport.start();
   timer = setInterval(() => {
@@ -1781,6 +1840,8 @@ onMounted(() => {
   document.addEventListener('pointercancel', endSeek);
 });
 onUnmounted(() => {
+  detailsObserver?.disconnect();
+  if (detailsFrame !== undefined) cancelAnimationFrame(detailsFrame);
   disposed = true;
   finishImport({ status: 'outcome_unknown' });
   importHandoff.dispose();
@@ -1807,6 +1868,7 @@ onUnmounted(() => {
   <section
     class="player-panel"
     :class="{ 'command-pending': pendingCommand }"
+    :style="{ '--video-aspect-ratio': videoAspectRatio }"
     aria-labelledby="player-title"
   >
     <h3 id="player-title" ref="heading" class="visually-hidden" tabindex="-1">
@@ -1818,6 +1880,7 @@ onUnmounted(() => {
         class="video-stage"
         :class="{
           'controls-idle': idle,
+          'window-fullscreen': windowFullscreen,
         }"
         tabindex="0"
         :aria-label="t('player.shortcuts')"
@@ -1836,6 +1899,8 @@ onUnmounted(() => {
           :muted="muted"
           :volume="volume"
           :aria-label="t('player.roomVideo')"
+          @loadedmetadata="updateVideoAspectRatio"
+          @resize="updateVideoAspectRatio"
         />
         <div ref="overlay" class="danmaku-overlay" aria-hidden="true" />
         <PlayerStatistics
@@ -2083,7 +2148,6 @@ onUnmounted(() => {
                         ? 'replay'
                         : 'play'
                   "
-                  :size="22"
                 />
               </button>
               <button
@@ -2124,7 +2188,6 @@ onUnmounted(() => {
                 :font-size="danmakuSize"
                 :speed="danmakuSpeed"
                 :area="danmakuArea"
-                :status="translate(danmakuStatus)"
                 :stage="stage"
                 @update:open="
                   (value) => {
@@ -2178,6 +2241,26 @@ onUnmounted(() => {
               </button>
               <button
                 class="icon-button"
+                :aria-label="
+                  t(
+                    windowFullscreen
+                      ? 'player.exitWindowFullscreen'
+                      : 'player.windowFullscreen',
+                  )
+                "
+                :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
+                :aria-pressed="windowFullscreen"
+                aria-keyshortcuts="s"
+                @click="toggleWindowFullscreen"
+              >
+                <Icon
+                  :name="
+                    windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                  "
+                />
+              </button>
+              <button
+                class="icon-button"
                 :aria-label="t('player.fullscreen')"
                 @click="fullscreen"
               >
@@ -2212,87 +2295,89 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-    <div class="video-information">
-      <div class="video-description">
-        <span class="source-label">{{
-          current.media?.kind === 'local'
-            ? t('common.localFileLabel')
-            : t('media.bilibiliLabel')
-        }}</span>
-        <span
-          v-if="videoCodec"
-          class="codec-label"
-          :title="t('player.videoCodec', { codec: videoCodec })"
-        >
-          <span class="visually-hidden">{{
-            t('player.videoCodec', { codec: videoCodec })
-          }}</span
-          ><span aria-hidden="true">{{ videoCodec }}</span>
-        </span>
-        <h3
-          :title="
-            videoTitle ||
-            (current.media?.kind === 'local'
-              ? current.media.label || t('common.watchingTogether')
-              : current.media?.bvid)
-          "
-        >
-          {{
-            videoTitle ||
-            (current.media?.kind === 'local'
-              ? current.media.label || t('common.watchingTogether')
-              : current.media?.bvid)
-          }}<span v-if="current.media?.kind === 'bilibili'" class="hint">
-            · {{ t('player.part', { part: current.media.part }) }}</span
+    <div ref="details" class="player-details">
+      <div class="video-information">
+        <div class="video-description">
+          <span class="source-label">{{
+            current.media?.kind === 'local'
+              ? t('common.localFileLabel')
+              : t('media.bilibiliLabel')
+          }}</span>
+          <span
+            v-if="videoCodec"
+            class="codec-label"
+            :title="t('player.videoCodec', { codec: videoCodec })"
           >
-        </h3>
-        <p
-          v-if="controlNote"
-          id="control-note"
-          :class="pendingCommand ? 'visually-hidden' : 'hint'"
+            <span class="visually-hidden">{{
+              t('player.videoCodec', { codec: videoCodec })
+            }}</span
+            ><span aria-hidden="true">{{ videoCodec }}</span>
+          </span>
+          <h3
+            :title="
+              videoTitle ||
+              (current.media?.kind === 'local'
+                ? current.media.label || t('common.watchingTogether')
+                : current.media?.bvid)
+            "
+          >
+            {{
+              videoTitle ||
+              (current.media?.kind === 'local'
+                ? current.media.label || t('common.watchingTogether')
+                : current.media?.bvid)
+            }}<span v-if="current.media?.kind === 'bilibili'" class="hint">
+              · {{ t('player.part', { part: current.media.part }) }}</span
+            >
+          </h3>
+          <p
+            v-if="controlNote"
+            id="control-note"
+            :class="pendingCommand ? 'visually-hidden' : 'hint'"
+          >
+            {{ controlNote }}
+          </p>
+        </div>
+        <button
+          v-if="host"
+          class="quiet change-media"
+          :disabled="!canReplace && !pendingCommand"
+          :aria-disabled="!canReplace"
+          @click="openMedia()"
         >
-          {{ controlNote }}
-        </p>
+          <Icon name="plus" :size="16" />{{ t('player.changeVideo') }}
+        </button>
       </div>
-      <button
-        v-if="host"
-        class="quiet change-media"
-        :disabled="!canReplace && !pendingCommand"
-        :aria-disabled="!canReplace"
-        @click="openMedia()"
-      >
-        <Icon name="plus" :size="16" />{{ t('player.changeVideo') }}
-      </button>
-    </div>
-    <div class="playback-status">
-      <div role="status">
-        <span class="status-dot" />{{ translate(status)
-        }}<span class="separator">·</span>{{ translate(calibration) }}
+      <div class="playback-status">
+        <div role="status">
+          <span class="status-dot" />{{ translate(status)
+          }}<span class="separator">·</span>{{ translate(calibration) }}
+        </div>
+        <span
+          class="media-status"
+          data-testid="media-status"
+          :data-state="shownStatus"
+          >{{ t(readinessText[shownStatus]) }}</span
+        ><span
+          data-testid="playback-phase"
+          :data-state="current.playback.phase"
+          >{{ t(phaseText[current.playback.phase]) }}</span
+        >
       </div>
-      <span
-        class="media-status"
-        data-testid="media-status"
-        :data-state="shownStatus"
-        >{{ t(readinessText[shownStatus]) }}</span
-      ><span
-        data-testid="playback-phase"
-        :data-state="current.playback.phase"
-        >{{ t(phaseText[current.playback.phase]) }}</span
-      >
+      <div v-if="roomError" class="notice error" role="alert">
+        <span>{{ translate(roomError) }}</span
+        ><button v-if="roomErrorReload" class="quiet" @click="reload">
+          {{ t('common.reload') }}
+        </button>
+      </div>
+      <p v-if="hostNotice" class="notice" role="status">
+        {{ t('player.hostLeft') }}
+      </p>
+      <p v-if="waitTimedOut" class="notice" role="status">
+        {{ t('player.waitTimeout') }}
+        {{ permitted ? t('player.retryPlay') : t('player.hostRetry') }}
+      </p>
     </div>
-    <div v-if="roomError" class="notice error" role="alert">
-      <span>{{ translate(roomError) }}</span
-      ><button v-if="roomErrorReload" class="quiet" @click="reload">
-        {{ t('common.reload') }}
-      </button>
-    </div>
-    <p v-if="hostNotice" class="notice" role="status">
-      {{ t('player.hostLeft') }}
-    </p>
-    <p v-if="waitTimedOut" class="notice" role="status">
-      {{ t('player.waitTimeout') }}
-      {{ permitted ? t('player.retryPlay') : t('player.hostRetry') }}
-    </p>
     <Modal
       v-if="replaceOpen"
       :title="t('player.changeTitle')"

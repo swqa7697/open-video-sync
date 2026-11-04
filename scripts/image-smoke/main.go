@@ -284,7 +284,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if _, err := previous.host.Call(ctx, "PATCH", "/me", map[string]any{"displayName": hostName}); err != nil {
 			return previous, err
 		}
-		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "1", "part": 1, "durationMs": 100000}})
+		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
 		if err != nil {
 			return previous, err
 		}
@@ -365,7 +365,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 			kind    string
 			payload map[string]any
 		}{
-			{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "400306737", "part": 1, "durationMs": 60000}}},
+			{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "9000000000001", "part": 1, "durationMs": 60000}}},
 			{"playback.command", map[string]any{"action": "seek", "positionMs": 12000}},
 			{"playback.command", map[string]any{"action": "play"}},
 		} {
