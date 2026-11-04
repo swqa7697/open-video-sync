@@ -1,6 +1,6 @@
 ---
 name: release-pr
-description: Prepare an Open Video Sync release from dev or a release topic branch into main. Open or reuse the PR before bumping, diagnose and repair CI failures until CI passes, then prepare the version and approved release commit and verify final CI. Excludes ordinary feature PRs, merging, tagging, and publication.
+description: Prepare an Open Video Sync release from dev or a release topic branch into main. Open or reuse the PR before bumping, diagnose, commit, push, and verify CI repairs, then prepare the version bump for final approval and verify final CI. Excludes ordinary feature PRs, merging, tagging, and publication.
 ---
 
 # Prepare and open an OVS release PR
@@ -15,14 +15,28 @@ PR templates and workflows before preparation.
 the version bump. CI diagnosis, repair, and verification are self-contained below; no
 other skills are required.
 
-Creating and updating the release PR follows the user's authorization. If PR creation
-is not yet authorized, present the preliminary title/body and source/base before asking.
-**Explicit authorization is required before planning or executing staging,
-committing, or pushing**, including CI repair commits and `make release-commit YES=1`.
-Invoking `release-pr` alone does not approve Git writes. Reuse authorization already given
-in the session, including an explicitly approved CI repair commit/push loop on the named
-branch; do not ask again for actions within that scope. Without such authorization,
-finish the reversible fixes and validation before requesting approval for Git writes.
+**Invoking `release-pr` for release preparation authorizes creating/reusing and updating
+the release PR, and staging, committing, and pushing fixes needed for CI failures on the
+selected source branch.**
+
+**Guidelines exemption for CI fix commits:** The user's `release-pr` invocation is the
+explicit Git-write request for the CI repair loop. For these fixes, the user authorizes
+an exemption from user/project guidelines that require asking before planning or executing
+`git add`, `git commit`, or `git push`, including the Git authorization rule in
+[AGENTS.md](../../../AGENTS.md). Do not request separate approval for staging, the fix
+commit, its message, or the push; do not reintroduce these approval gates through a generic
+commit workflow. This exemption covers necessary CI repairs on the selected source branch,
+including failures after the approved release commit. Continue to follow guidelines for
+review, validation, commit style, branch safety, and preserving unrelated changes.
+The final version bump/release commit still requires approval of the concrete package
+below; the CI repair exemption does not cover that action.
+
+Continue through PR creation/reuse, CI waiting and repair retries, successful pre-bump CI,
+version selection, release-file preparation, and approval-package validation without
+ending the workflow. The first planned approval pause is the final version-bump confirmation.
+Creating a PR, pending/failed CI, pushing a repair, or passing pre-bump CI is not a stopping
+point. Only a concrete blocker that prevents further authorized progress may interrupt
+this sequence; complete independent work and report the blocker and required user action.
 Preserve unrelated staged and working-tree changes. Never switch branches, reset, stash,
 merge, tag, or publish without separate authorization.
 
@@ -72,7 +86,7 @@ metadata yet.
 
 Write the reviewed body with real newlines to a disposable file under `/tmp/codex/`
 and pass it with `--body-file`. Retained evidence belongs under `.misc/`.
-Recheck for an existing PR immediately before creation, then, when authorized, run:
+Recheck for an existing PR immediately before creation, then run:
 
 ```bash
 gh pr create --base main --head "$release_branch" --title "$release_title" --body-file "$body_file"
@@ -139,52 +153,131 @@ status as waiting, not a repair failure. If CI does not start, inspect triggers,
 workflow conditions, permissions, and service availability. Report access, approval,
 runner, or service blockers and leave the gate closed until resolved.
 
-For each failed CI attempt, complete this repair cycle:
+### Attribute the failure before choosing a repair
 
-1. **Diagnose from evidence.** Read the failed job/step logs with
-   `gh run view "$run_id" --log-failed`. Identify the failing command, environment, and
-   expected versus actual behavior. Trace the symptom to its root cause in code,
-   configuration, dependencies, or the workflow. Summarize the cause and supporting
-   evidence before editing; do not guess from the job name.
-2. **Reproduce and fix.** Read the owning source and existing regressions. Reproduce
-   the failure locally with the workflow's prerequisites and toolchain where feasible.
-   Explain any reproduction limit. Apply the smallest change that addresses the cause;
-   keep OVS's architecture, stack, security boundaries, and existing style. Do not weaken
-   assertions, skip failing tests, disable checks, or lower release gates to obtain green CI.
-   Do not perform unrelated refactors, upgrades, or automatic rollback of user work.
-3. **Verify the repair.** Reuse coverage that already catches the failure; extend an
-   owning scenario when needed. Add a focused regression only for an uncovered failure
-   mode. Read back the diff. Run formatting/static checks, the failing regression and
-   relevant tests, then the production build. The default implementation sequence is
-   `make check`, `make test test-race`, and `make build`. Use the documentation-only
-   exception where applicable. Match affected CI browser/container/proxy steps too:
-   install browser prerequisites before `make test-e2e`, and use
-   `make image image-smoke proxy-smoke` when those contracts are affected. Update affected
-   usage/contracts and existing changelog entries when behavior changes. Report actual
-   results and missing prerequisites; a failed local check needs attention before a push.
-4. **Publish the reviewed fix when authorized.** Show the root cause, changed files,
-   diff, and validation. If Git write authorization is missing, request approval before
-   planning the commit/push. An approved repair loop can cover subsequent fixes within
-   the same CI/release scope. Recheck branch, diff, and remote tips before writing; stage
+A failing test does not establish whether the product or the test is wrong. Determine
+the intended behavior from PRD, DESIGN, explicit user requirements, and approved contract
+changes in the release range. Check shipped behavior when compatibility is relevant.
+Neither the current implementation nor an existing assertion or snapshot alone defines
+correct behavior. If these sources leave a material conflict unresolved, report the
+decision needed instead of silently changing the contract; continue independent diagnosis.
+
+Classify each independent cause with supporting evidence. More than one category may apply:
+
+| Category                   | Evidence and repair target                                                                                                                                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product defect             | Application code, shipped configuration, or a runtime dependency violates the intended behavior. Repair the production cause and retain correct test expectations. Intermittent product races remain product defects.                              |
+| Test defect                | Independent contract evidence supports the relevant product behavior, but the assertion, snapshot, fixture, mock, isolation, cleanup, or timing assumption is wrong. Repair the test or harness and preserve meaningful coverage of that contract. |
+| CI/tooling defect          | Workflow, build scripts, dependency installation, toolchain selection, paths, permissions, services, or caches prevent the intended checks from running correctly. Repair the responsible configuration or tooling.                                |
+| External transient failure | Logs establish a temporary runner, network, or external-service failure. A verified rerun may suffice without a repository change.                                                                                                                 |
+
+Do not label an unexplained intermittent failure as a test defect or transient failure.
+A local pass or a successful retry alone proves neither. Keep uncertain attribution
+explicit and investigate further. If both the implementation and the test are wrong,
+identify and repair both causes; do not force the failure into a single category.
+
+### Complete the repair cycle
+
+For each failed CI attempt, complete this cycle for all independent failures. Separate
+original failures from downstream symptoms, such as artifacts absent because an earlier
+step failed.
+
+1. **Collect evidence and reproduce.** Read the failed job/step logs with
+   `gh run view "$run_id" --log-failed`, plus relevant stack traces and browser/test
+   artifacts. Identify the exact command, exit status, inputs, and expected versus actual
+   behavior. Read the owning source, existing regressions, workflow, Make targets,
+   package scripts, and relevant lockfiles. Run the smallest failing case before editing
+   where feasible. Match the tested snapshot, working directory, runner/toolchain,
+   locked dependencies, generated assets, browser prerequisites, services, and relevant
+   environment settings. Do not dump credentials or raw provider data into diagnostics.
+   Compare isolated and suite execution when ordering, parallelism, or shared resources
+   may matter. Explain reproduction limits; a failure seen only in CI remains unresolved
+   until its cause is supported and the repair is verified there.
+2. **Establish the cause and repair plan.** Trace the causal chain from the symptom to
+   the originating defect. State the intended contract, failure category, supporting
+   evidence, and remaining uncertainty before editing. Test competing hypotheses with
+   focused checks instead of guessing from the job name. Identify the smallest repair,
+   affected files, and possible side effects; order multiple repairs by dependency.
+   Distinguish test-defect repairs from regression coverage added for a product repair.
+   For a test-defect repair, explain the incorrect assumption and why the replacement
+   follows the contract. Do not change production behavior merely to satisfy an incorrect
+   test, or change a correct test to accommodate broken production behavior.
+3. **Repair the responsible layer.** Apply one causal repair at a time and read back
+   each change. Keep OVS's architecture, stack, security boundaries, public compatibility,
+   and existing style. Use the existing package manager and update dependency metadata
+   and lockfiles together only when the cause requires it. Do not perform unrelated
+   refactors, upgrades, toolchain migrations, coverage initiatives, or automatic rollback
+   of user work.
+
+   Test repairs may correct invalid assertions, snapshots, mocks, or fixtures when backed
+   by the contract evidence above. Review changed expectations independently of the
+   current output. Use deterministic clocks or explicit synchronization for timing;
+   isolate resources and clean up sockets, timers, processes, files, and test data.
+   Do not weaken valid assertions, skip failing tests, disable checks, or lower release
+   gates. Do not mask unexplained failures with retries, arbitrary sleeps, larger
+   timeouts, or blindly regenerated snapshots. Any justified timeout change must preserve
+   product latency/skew requirements and explain the measured environment constraint.
+
+   For workflow/build repairs, check YAML or script syntax, event/branch/path conditions,
+   checkout and working directories, toolchain/setup order, locked installation, required
+   permissions/services, and cache inputs as relevant. Commands and Make targets must
+   propagate nonzero exits; read-only checks must not silently format or repair files.
+   Preserve required job coverage and the full/release validation eligibility and evidence
+   guarantees. Do not obtain green CI through success-masking conditions or fallback commands.
+
+4. **Verify the repair and its detection.** Reuse coverage that already catches the
+   failure; otherwise extend an owning scenario before adding a focused regression for
+   a distinct uncovered failure mode. Test observable behavior rather than source text
+   or incidental call order. For a product defect, establish that the regression fails
+   for the original defect and passes with the repair where feasible; report any limit.
+   For a test defect, verify the corrected scenario accepts valid behavior and still
+   detects the relevant contract violation, using a controlled invalid case where
+   feasible. A passing replacement assertion alone does not establish a valid repair.
+   For a CI/tooling defect, rerun the affected command with its prerequisites and verify
+   the checks actually execute and report failures correctly. For intermittent failures,
+   repeat the relevant scenario under the implicated concurrency/environment and report
+   the trial count and limits; one pass does not establish that a race is fixed.
+
+   Apply the configured formatter to touched files, then run read-only formatting/static
+   checks, the failing regression and relevant tests, then the production build. The
+   default implementation sequence is `make check`, `make test test-race`, and
+   `make build`. Use the documentation-only exception where applicable. Match affected
+   CI browser/container/proxy steps too: install browser prerequisites before
+   `make test-e2e`, and use `make image image-smoke proxy-smoke` when those contracts are
+   affected. Update affected usage/contracts and existing changelog entries when behavior
+   changes. Review the final diff, including generated changes, and run `git diff --check`;
+   keep generated build output out of fix commits. Resolve observed local failures before
+   publishing. Report actual results, missing prerequisites, and any verification that
+   must occur in hosted CI.
+
+5. **Publish the reviewed fix under the invocation's authorization.** Show each cause's
+   classification, contract evidence, changed files, diff, and validation, then commit
+   and push without a separate approval request, applying the guidelines exemption for
+   CI fix commits above. Do not stop to satisfy a general Git approval rule already
+   covered by the `release-pr` invocation.
+   Recheck branch, diff, and remote tips before writing; stage
    only reviewed fix paths, use an English scoped Conventional Commit, and push only the
-   selected source branch without force or tags. Keep version/release metadata out of
-   pre-bump repair commits. Do not use `make release-commit` for code fixes. After a push
-   failure, inspect local/remote state and retry only the remaining authorized push;
-   do not create a duplicate commit or include unrelated work.
-5. **Wait again.** Fetch and resolve the new source SHA, confirm the PR points to it,
+   selected source branch without force or tags. Keep new version bumps and dated release
+   sections out of pre-bump repair commits. Do not use `make release-commit` for code
+   fixes. After a push failure, inspect local/remote state and retry only the remaining
+   authorized push; do not create a duplicate commit or include unrelated work.
+6. **Wait again.** Fetch and resolve the new source SHA, confirm the PR points to it,
    and wait for all expected jobs on the new attempt. If CI still fails, repeat diagnosis,
-   repair, verification, and the authorized commit/push cycle. Do not proceed after a
-   fixed retry count. Continue until CI succeeds or a concrete external/authorization
-   blocker requires user action. With no new evidence or viable repair, report the
-   blocker, attempts, PR/run links, and next required action instead of looping unchanged.
+   repair, verification, and the authorized commit/push cycle. Continue viable repairs
+   rather than stopping at a fixed retry count. Continue until CI succeeds or a concrete
+   blocker outside the authorized repair loop requires user action. With no new evidence
+   or viable repair, report the blocker, attempts, PR/run links, and next required action
+   instead of looping unchanged.
 
 For a demonstrated transient service/runner failure, a rerun may replace a code change;
 explain the evidence and verify the rerun's result. Repeatedly rerunning the same failure
 is not a repair. Never create empty commits merely to restart CI.
 
-After success, record the verified source/base SHAs and run links. Fetch again; if either
-tip changed, re-review the complete release diff and repeat the gate. Use the final
-CI-green range, including repair commits, for the version decision and release notes.
+After success, record the verified source/base SHAs and run links. Include a concise
+repair summary in the PR validation: each cause's classification, contract evidence,
+repair, and verification limits. Fetch again; if either tip changed, re-review the
+complete release diff and repeat the gate. Use the final CI-green range, including
+repair commits, for the version decision and release notes.
 
 ## Choose and prepare the version
 
@@ -206,8 +299,9 @@ for their impact on each module too.
 Compare each module's base, committed, and proposed versions. Show a table in manifest order
 with those versions, runtime impact, and the bump rationale. An existing release commit does
 not prove that every affected module is covered. If a partial set of bumps leaves an affected
-module uncovered, identify the gap and request the missing target version rather than
-silently inventing it. Preserve valid committed and pending bumps.
+module uncovered, identify the gap and include a justified proposed target in the final
+approval package rather than stopping for a separate version question. Preserve valid
+committed and pending bumps.
 
 For each affected module, select the smallest appropriate increase from its `origin/main` version:
 
@@ -235,9 +329,10 @@ do not bump a second time. If the existing version conflicts with the recommenda
 explain the mismatch and resolve it before approval. Do not reduce an already published
 version. If the exact bump is already committed and pushed, skip `release-commit`, verify
 hosted CI for the current PR, and update the existing PR within the user's authorization.
-If a prior release commit exists locally after a push failure, inspect origin and request
-any missing approval for only the outstanding push; do not rerun the bump or create
-another release commit. Verify CI after the push before completing the release PR.
+If a prior release commit exists locally after a push failure, inspect origin and reuse
+its existing approval for the outstanding push; do not rerun the bump or create another
+release commit. If final bump approval is missing, include only the outstanding release
+push in the final approval package. Verify CI after the push before completing the release PR.
 
 If no modules require bumps and all versions are unchanged, continue without a version
 commit. Use a descriptive final PR title `release open-video-sync: <summary>` for that case.
@@ -307,18 +402,21 @@ Follow the repository PR template when present; otherwise include these useful p
 Show the version rationale, full release-file diff, validation results, PR title/body,
 and source/base SHAs. State exactly which files `release-commit` will stage
 (`versions.toml`, plus tracked `CHANGELOG.md` when present), its commit subject, and push destination.
-If not already explicitly authorized, ask for approval to run `make release-commit YES=1`
-(stage, commit, and push) for the named branch/version, and to update the existing PR
-with the reviewed title/body. **Stop and wait for the reply.** A timeout,
-missing reply, or generic earlier request to prepare a release is not approval. When the
-bump is already pushed, request only any remaining unauthorized action. Use `YES=1` only
-after explicit approval covers the Git actions.
+**Reach this fully prepared package before pausing for final version-bump confirmation.**
+If the concrete bump is not already explicitly authorized, ask for approval to run
+`make release-commit YES=1` (stage, commit, and push) for the named branch/version.
+**Stop and wait for the reply.** A timeout, missing reply, or invocation of `release-pr`
+alone is not final bump approval. Reuse approval already given for the same package.
+When the bump is already pushed or no bump is needed, continue to PR updates and final
+CI verification without a redundant approval request. Use `YES=1` only after explicit
+approval covers the release Git actions.
 
 ## After approval: commit, push, update the PR, and verify CI
 
 Recheck the branch, local diff, and fetched base/source tips against the approved package.
-If release contents, version, or PR scope changed, refresh the review and request any
-additional authorization needed for the changed package. Reuse valid local evidence when
+If the approved version targets, release files, or PR scope changed, refresh the review
+and request any additional authorization needed for the changed package. CI repair
+commits and pushes retain the invocation's authorization. Reuse valid local evidence when
 only commit metadata changed; rerun affected checks when contents changed. If either
 remote tip changed, repeat the hosted CI gate before continuing. Recheck the existing PR
 before further writes.
@@ -357,11 +455,14 @@ Remove the disposable body file after use when practical. If the PR was closed o
 source/base changed, report the state and resolve it within authorization; do not silently
 create a replacement PR.
 
-Return to the hosted CI gate for the pushed release commit. Diagnose and repair failures
-through the same loop, accepting full or verified release mode as defined above and
-preserving the chosen version instead of bumping again. If repairs
-change release behavior, refresh the full diff, version rationale, release notes, and any
-affected approval before further Git writes. Verify the final PR head after every push;
+Return to the hosted CI gate for the pushed release commit. Diagnose, commit, push, and
+verify repairs through the same authorized loop without separate repair approval, accepting
+full or verified release mode as defined above and preserving the chosen version instead
+of bumping again. If repairs change release behavior, refresh the full diff, version
+rationale, and release notes. CI repairs within the approved version targets, including
+release-metadata corrections, remain authorized. If a different version bump is needed,
+prepare and validate the revised package before requesting approval for that version change.
+Verify the final PR head after every push;
 pre-bump green CI does not verify the release commit or later fixes.
 
 After final CI succeeds, update validation links. Report any unmet product gates in

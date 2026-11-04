@@ -76,14 +76,6 @@ Replace the example address with your server's address. Direct HTTP works withou
 4. Each participant prepares the video. For local playback, everyone selects their own copy of the same file.
 5. Select **Play**. The host chooses whether everyone can control playback and whether to wait for everyone.
 
-A subtle, translucent play icon appears while paused. Loading and buffering show a rotating ring unless your system requests reduced motion. These overlays let clicks reach the player.
-
-Hover over the progress bar to preview the target frame and time. Bilibili uses platform thumbnails; local files are decoded only in your browser. Bilibili thumbnails cache progressively in the background. Downloads from different CDNs run independently, and temporary thumbnail failures retry automatically. Video preparation and controls never wait for thumbnails. If a thumbnail is unavailable, the target time remains visible.
-
-Seeking with the progress bar or Left/Right pauses everyone at the target, including during playback or waiting. Select **Play** to resume.
-
-Right-click the video, or focus the player and press Shift + F10, to open its menu. Open **Video statistics** to inspect this browser's resolution, frame rate, available track bitrates and segments, forward buffer, and real-time media download activity. Unsupported fields stay hidden. The panel remains visible during playback; close it with its close button or Esc. Copy or download a statistics snapshot locally. Statistics never go to the OVS server. **Video statistics** and **Keyboard shortcuts** are also available in Quick actions.
-
 ### Bilibili
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.

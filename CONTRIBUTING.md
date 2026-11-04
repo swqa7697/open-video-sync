@@ -91,6 +91,6 @@ Retain implementation evidence under ignored `.misc/`. Local results do not esta
 ## Release preparation
 
 Use the repository's [release-pr](.agents/skills/release-pr/SKILL.md) instructions.
-Version bump targets change `versions.toml` without staging, committing, or pushing. Git writes require an explicit request.
+Version bump targets change `versions.toml` without staging, committing, or pushing.
 Keep module versions independent. Publish changelog entries under date-only headings, `## [YYYY-MM-DD]`, with the newest release first.
 `make release-tag` uses that newest entry's date as the annotated tag, `vYYYY-MM-DD`, and includes only that entry's notes. Tagging requires a separate request and confirmation on clean, current `main`.
