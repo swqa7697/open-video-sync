@@ -904,6 +904,7 @@ onUnmounted(() => {
             :helper-generation="helperGeneration"
             @snapshot="(value) => (room = value)"
             @connection="connectionChanged"
+            @episode-selected="paletteOpen = false"
             @recheck="recheck"
             @ended="
               (reason) => {

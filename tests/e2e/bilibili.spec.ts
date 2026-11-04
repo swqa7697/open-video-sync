@@ -582,17 +582,32 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.getByRole('tab', { name: /Episodes/ }).click();
-  await settings(page, 'host', false);
-  await clickPlayerControl(page, 'Play together');
-  await expect(page.locator('video')).toHaveJSProperty('paused', false);
-  await page.getByRole('button', { name: /Opening/ }).click();
+  await page.locator('.command-trigger').focus();
+  await openQuickActions(page, '@1');
+  await palette.getByRole('option').click();
+  await expect(palette).toHaveCount(0);
+  await expect(page.locator('.command-trigger')).toBeFocused();
   await expect
     .poll(
       async () =>
         (await (await page.request.get(roomPath)).json()).media.episodeId,
     )
     .toBe('103591');
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await page.getByRole('tab', { name: /Episodes/ }).click();
+  await settings(page, 'host', false);
+  await clickPlayerControl(page, 'Play together');
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await page.getByRole('button', { name: /Finale/ }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('250984');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await closeRoom(page);

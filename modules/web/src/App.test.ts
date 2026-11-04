@@ -163,7 +163,14 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
       ? new Response(null, { status: 204 })
       : json(url.endsWith('/session') ? identity : room),
   );
-  vi.spyOn(BilibiliAdapter.prototype, 'load').mockResolvedValue(room.media!);
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
+    async (_bvid, part) => ({
+      ...media,
+      kind: 'bilibili',
+      part,
+      cid: String(part),
+    }),
+  );
   vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockReturnValue({
     ...media,
     duration: 10,
@@ -198,7 +205,7 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     expect(wrapper.get('[aria-current="true"]').text()).toContain('Opening');
     expect(wrapper.findAll('.episode-button')).toHaveLength(12);
     await wrapper.get('.command-trigger').trigger('click');
-    const input = wrapper.get('[role="combobox"]');
+    let input = wrapper.get('[role="combobox"]');
     await input.setValue('换集');
     expect(wrapper.get('[role="option"]').text()).toContain('Switch episode');
     await input.trigger('keydown', { key: 'Enter' });
@@ -231,6 +238,38 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     );
     await input.setValue('');
     expect(wrapper.find('.command-episodes-heading').exists()).toBe(false);
+    await input.setValue('@2');
+    await input.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    const selected = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .find((frame) => frame.type === 'media.select');
+    expect(selected).toBeDefined();
+    socket.frame('command.result', {
+      commandId: 'f'.repeat(32),
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    await flushPromises();
+    expect(wrapper.find('.command-palette').exists()).toBe(true);
+    socket.frame('command.result', {
+      commandId: selected.commandId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    // Another media update can clear the accepted selection before Vue renders it.
+    socket.frame('room.snapshot', {
+      ...room,
+      revision: 3,
+      mediaGeneration: 3,
+      media: { ...media, part: 3, cid: '3' },
+    });
+    await flushPromises();
+    expect(wrapper.find('.command-palette').exists()).toBe(false);
+    await wrapper.get('.command-trigger').trigger('click');
+    input = wrapper.get('[role="combobox"]');
     // Read-only members can still search, even when everyone can control playback.
     socket.frame('room.snapshot', {
       ...room,
@@ -261,7 +300,7 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
       socket.sent
         .map((raw) => JSON.parse(raw))
         .filter((frame) => frame.type === 'media.select'),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
     socket.frame('room.snapshot', {
       ...room,
       mediaGeneration: 2,

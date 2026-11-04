@@ -80,6 +80,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   snapshot: [snapshot: Snapshot];
   connection: [connected: boolean];
+  episodeSelected: [];
   recheck: [];
   ended: [reason: EndReason];
 }>();
@@ -767,6 +768,7 @@ const transport = new RoomSocket(
           ? { error: roomError.value || message('episodes.failed') }
           : {}),
       };
+      if (accepted) emit('episodeSelected');
     },
     ended(reason) {
       if (reason === 'replaced') replaced.value = true;
