@@ -219,7 +219,7 @@
     "valid": true,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": "12345678901234567890",
       "part": 2,
       "durationMs": 125000
@@ -231,7 +231,7 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": "12345678901234567890",
       "part": 2,
       "durationMs": 125000,
@@ -249,7 +249,7 @@
       "sizeBytes": 10485760,
       "durationMs": 125000,
       "label": "Test pattern",
-      "bvid": "BV17x411w7KC"
+      "bvid": "BV1TESTaaaac"
     }
   },
   {
@@ -258,7 +258,7 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": 12345,
       "part": 2,
       "durationMs": 125000
@@ -270,7 +270,7 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": "012345",
       "part": 2,
       "durationMs": 125000
@@ -282,7 +282,7 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": "123\n",
       "part": 2,
       "durationMs": 125000
@@ -306,7 +306,7 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV17x411w7KC",
+      "bvid": "BV1TESTaaaac",
       "cid": "12345678901234567890",
       "part": 10001,
       "durationMs": 125000
@@ -390,11 +390,11 @@
     "valid": true,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
-      "episodeId": "103591"
+      "episodeId": "9000000000011"
     }
   },
   {
@@ -403,8 +403,8 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
       "episodeId": ""
@@ -416,8 +416,8 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
       "episodeId": "0"
@@ -429,37 +429,37 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
       "episodeId": "01"
     }
   },
   {
-    "name": "invalid bangumi episode ID \"https://example.invalid/ep103591\"",
+    "name": "invalid bangumi episode ID \"https://example.invalid/ep9000000000011\"",
     "contract": "media",
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
-      "episodeId": "https://example.invalid/ep103591"
+      "episodeId": "https://example.invalid/ep9000000000011"
     }
   },
   {
-    "name": "invalid bangumi episode ID 103591",
+    "name": "invalid bangumi episode ID 9000000000011",
     "contract": "media",
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 1,
       "durationMs": 120000,
-      "episodeId": 103591
+      "episodeId": 9000000000011
     }
   },
   {
@@ -468,11 +468,11 @@
     "valid": false,
     "input": {
       "kind": "bilibili",
-      "bvid": "BV1wx411Q7kh",
-      "cid": "335952122",
+      "bvid": "BV1TESTaaaag",
+      "cid": "9000000000003",
       "part": 2,
       "durationMs": 120000,
-      "episodeId": "103591"
+      "episodeId": "9000000000011"
     }
   }
 ]

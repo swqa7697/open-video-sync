@@ -552,13 +552,13 @@ test('independent identities manage a private room over direct HTTP', async ({
 
     await page
       .getByRole('combobox')
-      .fill('$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
+      .fill('$ https://www.bilibili.com/video/BV1TESTaaaaa/?p=2');
     await page.getByRole('combobox').press('Enter');
     await expect(
       page.getByRole('dialog', { name: 'Change the video', exact: true }),
     ).toBeVisible();
     await expect(page.locator('#bilibili-url')).toBeFocused();
-    await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+    await expect(page.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
     await expect(page.locator('#bilibili-part')).toHaveValue('2');
     await page.keyboard.press('Escape');
     const unchangedMedia = await (
@@ -637,7 +637,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(
       other.getByRole('option').filter({ hasText: '/video' }),
     ).toHaveCount(0);
-    await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
+    await other.getByRole('combobox').fill('$ BV1TESTaaaaa');
     await expect(other.getByRole('option')).toHaveCount(0);
     await other.keyboard.press('Escape');
     await expect(other.locator('.command-palette')).toHaveCount(0);

@@ -178,7 +178,7 @@ function fixture(
     async (op, args = {}) => {
       if (op === 'open')
         return {
-          bvid: 'BV1hf4y1N75G',
+          bvid: 'BV1TESTaaaaa',
           cid: '1',
           part: 1,
           duration: lengths.length * 5,
@@ -221,7 +221,7 @@ function fixture(
   const overlay = document.createElement('div');
   const adapter = new BilibiliAdapter(video, overlay, onError);
   const load = () =>
-    adapter.load('BV1hf4y1N75G', 1, new AbortController().signal, 120);
+    adapter.load('BV1TESTaaaaa', 1, new AbortController().signal, 120);
   const until = async (done: () => boolean) => {
     for (let i = 0; i < 100 && !done(); i++)
       await vi.advanceTimersByTimeAsync(250);

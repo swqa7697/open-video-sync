@@ -85,26 +85,26 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
 
   await runQuickAction(
     page,
-    '$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2&tracking=synthetic',
+    '$ https://www.bilibili.com/video/BV1TESTaaaaa/?p=2&tracking=synthetic',
   );
   await expect(page.locator('#bilibili-url')).toBeFocused();
-  await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+  await expect(page.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
   await expect(page.locator('#bilibili-part')).toHaveValue('2');
   await expect(name).toHaveValue('Keep this draft');
   await runQuickAction(
     page,
-    'https://www.bilibili.com/video/BV1hf4y1N75G/?p=3',
+    'https://www.bilibili.com/video/BV1TESTaaaaa/?p=3',
   );
   await expect(page.locator('#bilibili-part')).toHaveValue('3');
-  await runQuickAction(page, 'BV1hf4y1N75G');
+  await runQuickAction(page, 'BV1TESTaaaaa');
   await expect(page.locator('#bilibili-part')).toBeHidden();
   await expect(page.getByRole('spinbutton')).toHaveCount(0);
   for (const [query, expected] of [
     [
-      'https://www.bilibili.com/bangumi/play/ss6038?tracking=synthetic',
-      'ss6038',
+      'https://www.bilibili.com/bangumi/play/ss9000000000021?tracking=synthetic',
+      'ss9000000000021',
     ],
-    ['$ ep103591', 'ep103591'],
+    ['$ ep9000000000011', 'ep9000000000011'],
   ]) {
     await runQuickAction(page, query!);
     await expect(page.locator('#bilibili-url')).toHaveValue(expected!);

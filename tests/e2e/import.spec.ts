@@ -103,9 +103,9 @@ test('video imports create rooms and replace media through the existing tab with
     });
   });
   const start = async (target: Page, part: number) => {
-    await target.goto(`/import#v=1&bvid=BV1hf4y1N75G&part=${part}`);
+    await target.goto(`/import#v=1&bvid=BV1TESTaaaaa&part=${part}`);
     await expect(target).toHaveURL(/\/import$/);
-    await expect(target.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+    await expect(target.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
     await expect(target.getByRole('dialog')).toHaveCount(0);
     await expectImportFits(target, 'Preview and continue');
     await target
@@ -115,14 +115,14 @@ test('video imports create rooms and replace media through the existing tab with
       target.getByRole('heading', { name: 'Where would you like to watch?' }),
     ).toBeVisible();
   };
-  await page.goto('/import#v=1&bvid=BV1hf4y1N75G&part=1');
+  await page.goto('/import#v=1&bvid=BV1TESTaaaaa&part=1');
   if (
     !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(page.url()).hostname)
   )
     expect(await page.evaluate(() => isSecureContext)).toBe(false);
-  await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+  await expect(page.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
   await page.reload();
-  await expect(page.locator('#bilibili-url')).toHaveValue('BV1hf4y1N75G');
+  await expect(page.locator('#bilibili-url')).toHaveValue('BV1TESTaaaaa');
   for (const [width, height] of [
     [1440, 900],
     [1024, 768],

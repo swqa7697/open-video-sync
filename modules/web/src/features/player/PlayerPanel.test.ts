@@ -183,7 +183,7 @@ test('quality and all danmaku choices survive player recreation', async () => {
   );
   const media = {
     kind: 'bilibili' as const,
-    bvid: 'BV1hf4y1N75G',
+    bvid: 'BV1TESTaaaaa',
     cid: '1',
     part: 1,
     durationMs: 10000,
@@ -258,7 +258,7 @@ test('quality and all danmaku choices survive player recreation', async () => {
     await flushPromises();
     const playerMenu = wrapper.get('.player-context-menu');
     expect(playerMenu.get('a').attributes('href')).toBe(
-      'https://www.bilibili.com/video/BV1hf4y1N75G?p=1',
+      'https://www.bilibili.com/video/BV1TESTaaaaa?p=1',
     );
     expect(playerMenu.get('a').attributes('rel')).toBe('noopener noreferrer');
     await playerMenu
@@ -606,8 +606,8 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
 // Media replacement is owned by the player, independently of the sidebar's presentation.
 test('host episode selection publishes resolved metadata and retains the list during loading', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
-  const first = { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
-    second = { bvid: 'BV17Jx76CEje', part: 2, title: 'Second' },
+  const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'First' },
+    second = { bvid: 'BV1TESTaaaab', part: 2, title: 'Second' },
     playlist: Playlist = { title: 'Collection', episodes: [first, second] };
   let media = {
     kind: 'bilibili' as const,
@@ -774,7 +774,7 @@ test('a failed Bilibili player keeps readiness valid and video replacement avail
     mediaGeneration: 1,
     media: {
       kind: 'bilibili',
-      bvid: 'BV1hf4y1N75G',
+      bvid: 'BV1TESTaaaaa',
       cid: '1',
       part: 1,
       durationMs: 10000,
@@ -1143,7 +1143,7 @@ test('imported media retains its guarded command until the matching server ackno
     },
     media: {
       kind: 'bilibili',
-      bvid: 'BV1hf4y1N75G',
+      bvid: 'BV1TESTaaaaa',
       cid: '1',
       part: 1,
       durationMs: 10000,

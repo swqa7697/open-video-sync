@@ -271,7 +271,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 	if !result.SecureCookie {
 		return errors.New("HTTPS origin did not set a Secure HttpOnly session cookie")
 	}
-	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "1", "part": 1, "durationMs": 100000}})
+	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
 	if err != nil {
 		return err
 	}
@@ -295,7 +295,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 		kind    string
 		payload map[string]any
 	}{
-		{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1hf4y1N75G", "cid": "400306737", "part": 1, "durationMs": 60000}}},
+		{"media.select", map[string]any{"media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "9000000000001", "part": 1, "durationMs": 60000}}},
 		{"playback.command", map[string]any{"action": "seek", "positionMs": 12000}},
 		{"playback.command", map[string]any{"action": "play"}},
 	} {

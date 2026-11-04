@@ -31,7 +31,7 @@ test('instance helpers share a Bilibili launcher and import the current video', 
         <p class="description">Video details and episode information</p></main></body></html>`,
     }),
   );
-  await page.goto('https://www.bilibili.com/video/BV1hf4y1N75G?p=2');
+  await page.goto('https://www.bilibili.com/video/BV1TESTaaaaa?p=2');
   // Bilibili hydrates its action bar after userscripts start.
   const actions = await page.locator('#video-actions').innerHTML();
   await page
@@ -85,11 +85,11 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   const alternate = launcher.locator(`a[data-ovs-origin="${otherOrigin}"]`);
   await expect(destination).toHaveAttribute(
     'href',
-    `${origin}/import#v=1&bvid=BV1hf4y1N75G&part=2`,
+    `${origin}/import#v=1&bvid=BV1TESTaaaaa&part=2`,
   );
   await expect(alternate).toHaveAttribute(
     'href',
-    `${otherOrigin}/import#v=1&bvid=BV1hf4y1N75G&part=2`,
+    `${otherOrigin}/import#v=1&bvid=BV1TESTaaaaa&part=2`,
   );
   await expect(destination).toHaveAttribute('rel', 'noopener noreferrer');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -106,9 +106,9 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   await expect(launcher.locator('a').first()).not.toBeVisible();
 
   for (const [path, input, part] of [
-    ['/video/BV1hf4y1N75G?p=2&token=SYNTHETIC', 'BV1hf4y1N75G', '2'],
-    ['/bangumi/play/ep103591?from=tracking', 'ep103591', '1'],
-    ['/bangumi/play/ss6038', 'ss6038', '1'],
+    ['/video/BV1TESTaaaaa?p=2&token=SYNTHETIC', 'BV1TESTaaaaa', '2'],
+    ['/bangumi/play/ep9000000000011?from=tracking', 'ep9000000000011', '1'],
+    ['/bangumi/play/ss9000000000021', 'ss9000000000021', '1'],
   ] as const) {
     // Bilibili changes the current video without replacing the document.
     await page.evaluate((path) => history.replaceState(null, '', path), path);
@@ -134,13 +134,13 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   }
 
   await page.evaluate(() =>
-    history.replaceState(null, '', '/video/BV1hf4y1N75G?p=0'),
+    history.replaceState(null, '', '/video/BV1TESTaaaaa?p=0'),
   );
   await destination.click();
   await expect(destination).not.toHaveAttribute('href');
   await expect(launcher.locator('[role="status"]')).toBeVisible();
   await expect(page).toHaveURL(
-    'https://www.bilibili.com/video/BV1hf4y1N75G?p=0',
+    'https://www.bilibili.com/video/BV1TESTaaaaa?p=0',
   );
   expect(context.pages()).toHaveLength(1);
 
@@ -153,7 +153,7 @@ test('instance helpers share a Bilibili launcher and import the current video', 
           client: 'a'.repeat(32),
           id: 1,
           op: 'preview',
-          bvid: 'BV1hf4y1N75G',
+          bvid: 'BV1TESTaaaaa',
           part: 1,
         });
         const delivered = (event: MessageEvent<unknown>) => {
@@ -181,7 +181,7 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   // Scrolling a longer site list must not dismiss the menu itself.
   await page.keyboard.press('Escape');
   await page.evaluate(() =>
-    history.replaceState(null, '', '/video/BV1hf4y1N75G'),
+    history.replaceState(null, '', '/video/BV1TESTaaaaa'),
   );
   for (let site = 0; site < 10; site++) {
     const code = script.replaceAll(origin, `https://ovs-${site}.example`);

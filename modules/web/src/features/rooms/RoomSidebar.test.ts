@@ -9,9 +9,9 @@ import RoomSidebar from './RoomSidebar.vue';
 
 // This new surface owns tab navigation, current-episode marking, and read-only viewing.
 test('episode tabs preserve keyboard access and allow only available host selections', async () => {
-  const first = { bvid: 'BV1hf4y1N75G', part: 1, title: 'Opening' },
+  const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'Opening' },
     second = {
-      bvid: 'BV17Jx76CEje',
+      bvid: 'BV1TESTaaaab',
       part: 2,
       title: '<script>Finale</script>',
     };

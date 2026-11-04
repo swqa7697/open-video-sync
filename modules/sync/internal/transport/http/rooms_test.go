@@ -34,7 +34,7 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 	host, guest, third := bootstrapPeer(t, a), bootstrapPeer(t, a), bootstrapPeer(t, a)
 	newKey := func() string { k, _ := contracts.RandomID(rand.Reader); return k }
 	// Use explicit requests for create/redeem headers while keeping the common transport helper.
-	createBody, _ := json.Marshal(map[string]any{"title": "Room", "settings": contracts.DefaultSettings(), "media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "1", Part: 1, DurationMs: 100000}})
+	createBody, _ := json.Marshal(map[string]any{"title": "Room", "settings": contracts.DefaultSettings(), "media": contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "1", Part: 1, DurationMs: 100000}})
 	keyed := func(p apiPeer, path, body, key string) []byte {
 		t.Helper()
 		r := newRequest(p, path, body, key)

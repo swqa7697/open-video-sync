@@ -48,7 +48,7 @@ const room = {
 };
 const media = {
   kind: 'bilibili' as const,
-  bvid: 'BV1hf4y1N75G',
+  bvid: 'BV1TESTaaaaa',
   cid: '1',
   part: 1,
   durationMs: 10000,

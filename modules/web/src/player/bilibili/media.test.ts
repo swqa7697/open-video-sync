@@ -218,37 +218,39 @@ test('reduced motion keeps comments stationary and expires them without overlapp
 test('selection resolves only canonical IDs and exact parts without forwarding pasted credentials', () => {
   expect(
     parseSelection(
-      'https://www.bilibili.com/video/BV1hf4y1N75G?p=2&token=synthetic',
+      'https://www.bilibili.com/video/BV1TESTaaaaa?p=2&token=synthetic',
       1,
     ),
-  ).toEqual({ bvid: 'BV1hf4y1N75G', part: 2 });
-  expect(parseSelection('BV1hf4y1N75G', 3)).toEqual({
-    bvid: 'BV1hf4y1N75G',
+  ).toEqual({ bvid: 'BV1TESTaaaaa', part: 2 });
+  expect(parseSelection('BV1TESTaaaaa', 3)).toEqual({
+    bvid: 'BV1TESTaaaaa',
     part: 3,
   });
   for (const input of [
-    'ss91812',
-    'https://www.bilibili.com/bangumi/play/ss91812?from=search',
-    'https://www.bilibili.com/bangumi/play/ss6038',
+    'ss9000000000022',
+    'https://www.bilibili.com/bangumi/play/ss9000000000022?from=search',
+    'https://www.bilibili.com/bangumi/play/ss9000000000021',
   ])
     expect(parseSelection(input, 2)).toEqual({
-      seasonId: input.includes('6038') ? '6038' : '91812',
+      seasonId: input.includes('9000000000021')
+        ? '9000000000021'
+        : '9000000000022',
       part: 1,
     });
-  expect(parseSelection('ep103591', 1)).toEqual({
-    episodeId: '103591',
+  expect(parseSelection('ep9000000000011', 1)).toEqual({
+    episodeId: '9000000000011',
     part: 1,
   });
   expect(
-    parseSelection('https://www.bilibili.com/bangumi/play/ep103591', 1),
-  ).toEqual({ episodeId: '103591', part: 1 });
+    parseSelection('https://www.bilibili.com/bangumi/play/ep9000000000011', 1),
+  ).toEqual({ episodeId: '9000000000011', part: 1 });
   for (const input of [
     'https://b23.tv/example',
-    'https://www.bilibili.com.evil.invalid/video/BV1hf4y1N75G',
-    'https://user:secret@www.bilibili.com/video/BV1hf4y1N75G',
-    'https://www.bilibili.com/video/BV1hf4y1N75G?p=0',
-    'https://www.bilibili.com.evil.invalid/bangumi/play/ss6038',
-    'https://user:secret@www.bilibili.com/bangumi/play/ep103591',
+    'https://www.bilibili.com.evil.invalid/video/BV1TESTaaaaa',
+    'https://user:secret@www.bilibili.com/video/BV1TESTaaaaa',
+    'https://www.bilibili.com/video/BV1TESTaaaaa?p=0',
+    'https://www.bilibili.com.evil.invalid/bangumi/play/ss9000000000021',
+    'https://user:secret@www.bilibili.com/bangumi/play/ep9000000000011',
     'https://www.bilibili.com/bangumi/play/ss0',
     'ep01',
     'ss-1',
@@ -283,9 +285,9 @@ test('SIDX decoding accepts the full reference size and rejects truncated, neste
   }
 });
 test('helper metadata and display comments reject foreign payload fields and script modes', () => {
-  const first = { bvid: 'BV1hf4y1N75G', part: 1, title: 'First' },
+  const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'First' },
     second = {
-      bvid: 'BV17Jx76CEje',
+      bvid: 'BV1TESTaaaab',
       part: 1,
       title: '<script>Second</script>',
     },
@@ -345,31 +347,40 @@ test('helper metadata and display comments reject foreign payload fields and scr
     ).toThrow();
   const bangumi = {
     ...preview,
-    episodeId: '103591',
+    episodeId: '9000000000011',
     playlist: {
       ...playlist,
       episodes: [
-        { ...first, episodeId: '103591' },
-        { ...second, episodeId: '250984' },
+        { ...first, episodeId: '9000000000011' },
+        { ...second, episodeId: '9000000000012' },
       ],
     },
   };
-  expect(decodePreview(bangumi, { seasonId: '6038', part: 1 })).toEqual(
-    bangumi,
-  );
-  expect(decodePreview(bangumi, { episodeId: '103591', part: 1 })).toEqual(
-    bangumi,
-  );
   expect(
-    decodeInfo({ ...bangumi, handle: 'h1-1234' }, first.bvid, 1, '103591')
-      .episodeId,
-  ).toBe('103591');
-  expect(() => decodePreview(preview, { seasonId: '6038', part: 1 })).toThrow();
+    decodePreview(bangumi, { seasonId: '9000000000021', part: 1 }),
+  ).toEqual(bangumi);
+  expect(
+    decodePreview(bangumi, { episodeId: '9000000000011', part: 1 }),
+  ).toEqual(bangumi);
+  expect(
+    decodeInfo(
+      { ...bangumi, handle: 'h1-1234' },
+      first.bvid,
+      1,
+      '9000000000011',
+    ).episodeId,
+  ).toBe('9000000000011');
   expect(() =>
-    decodePreview(bangumi, { episodeId: '250984', part: 1 }),
+    decodePreview(preview, { seasonId: '9000000000021', part: 1 }),
   ).toThrow();
   expect(() =>
-    decodePreview({ ...bangumi, playlist }, { episodeId: '103591', part: 1 }),
+    decodePreview(bangumi, { episodeId: '9000000000012', part: 1 }),
+  ).toThrow();
+  expect(() =>
+    decodePreview(
+      { ...bangumi, playlist },
+      { episodeId: '9000000000011', part: 1 },
+    ),
   ).toThrow();
   expect(decodeInfo({ ...preview, handle: 'h1-1234' }, first.bvid, 1)).toEqual({
     ...preview,
@@ -451,8 +462,8 @@ test('helper metadata and display comments reject foreign payload fields and scr
   ).toThrow();
   expect(() =>
     decodeInfo(
-      { bvid: 'BV1hf4y1N75G', part: 1, signedURL: 'synthetic' },
-      'BV1hf4y1N75G',
+      { bvid: 'BV1TESTaaaaa', part: 1, signedURL: 'synthetic' },
+      'BV1TESTaaaaa',
       1,
     ),
   ).toThrow();

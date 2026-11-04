@@ -112,7 +112,7 @@ func TestPersistentFailureLeavesMemoryAndExistingPlaybackAvailable(t *testing.T)
 		t.Fatal(err)
 	}
 	ownOther := other.Snapshot
-	for _, f := range []contracts.ClientFrame{{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}, {Type: "playback.command", Action: "play"}} {
+	for _, f := range []contracts.ClientFrame{{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "9000000000001", Part: 1, DurationMs: 60000}}, {Type: "playback.command", Action: "play"}} {
 		f.CommandID = recoveryKey(t)
 		f.Epoch = ownOther.Epoch
 		f.ExpectedRevision = ownOther.Revision
