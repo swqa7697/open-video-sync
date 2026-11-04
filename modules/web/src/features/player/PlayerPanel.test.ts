@@ -349,6 +349,7 @@ test('quality and all danmaku choices survive player recreation', async () => {
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
     expect(wrapper.get('.danmaku-menu').text()).not.toContain('Reload danmaku');
+    expect(wrapper.find('.danmaku-menu [role="status"]').exists()).toBe(false);
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
     ).toBe('20');
@@ -379,7 +380,6 @@ test('quality and all danmaku choices survive player recreation', async () => {
     ).toBe('24');
     await trigger.trigger('click');
     expect(trigger.attributes('aria-pressed')).toBe('false');
-    expect(wrapper.get('.danmaku-menu').text()).toContain('Hidden by you');
     expect(area.element.value).toBe('0.25');
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
@@ -503,10 +503,21 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await stage.trigger('pointerenter', pointer);
     await advance(3000);
     expect(hidden()).toBe(true);
-    for (const key of ['ArrowUp', 'ArrowDown', 'm', 'm', 'z']) {
+    for (const key of ['ArrowUp', 'ArrowDown', 'm', 'm', 's', 's', 'z']) {
       await stage.trigger('keydown', { key });
       expect(hidden()).toBe(true);
     }
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'isComposing']) {
+      await stage.trigger('keydown', { key: 's', [modifier]: true });
+      expect(stage.classes()).not.toContain('window-fullscreen');
+    }
+    await stage.trigger('keydown', { key: 's' });
+    expect(stage.classes()).toContain('window-fullscreen');
+    await stage.trigger('keydown', { key: 's', repeat: true });
+    expect(stage.classes()).toContain('window-fullscreen');
+    await stage.trigger('keydown', { key: 'Escape' });
+    expect(stage.classes()).not.toContain('window-fullscreen');
+    expect(hidden()).toBe(true);
     // A playback acknowledgement must not reveal controls hidden before the command.
     socket.frame('room.snapshot', {
       ...snapshot,

@@ -93,9 +93,9 @@ let escapeKeyboard: EscapeKeyboard | undefined;
 let keyboardGeneration = 0;
 let wasFullscreen = false;
 let exitingFullscreen = false;
+const windowFullscreen = ref(false);
 const preferences = readPlayerPreferences();
-const danmakuStatus = ref<Message | ''>(''),
-  showDanmaku = ref(preferences.danmakuVisible),
+const showDanmaku = ref(preferences.danmakuVisible),
   density = ref(preferences.danmakuDensity),
   danmakuSize = ref(preferences.danmakuSize),
   danmakuSpeed = ref(preferences.danmakuSpeed),
@@ -880,7 +880,6 @@ function clearMedia(): void {
   probedBarrier = '';
   probingBarrier = '';
   loading.value = false;
-  danmakuStatus.value = '';
   publishing = false;
   streamInfo.value = undefined;
 }
@@ -1052,6 +1051,13 @@ function releaseFullscreenKeyboard(): void {
   escapeKeyboard?.unlock();
   escapeKeyboard = undefined;
 }
+async function toggleWindowFullscreen(): Promise<void> {
+  if (document.fullscreenElement === stage.value) {
+    await fullscreen();
+    if (disposed || document.fullscreenElement === stage.value) return;
+    windowFullscreen.value = true;
+  } else windowFullscreen.value = !windowFullscreen.value;
+}
 function fullscreenChanged(): void {
   const active = document.fullscreenElement === stage.value;
   if (!active) {
@@ -1096,9 +1102,6 @@ async function chooseBilibili(
   const local = new BilibiliAdapter(
     video.value,
     overlay.value,
-    (value) => {
-      if (adapter === local) danmakuStatus.value = value;
-    },
     (failure) => {
       if (adapter === local) showError(failure.text, failure.reload);
     },
@@ -1371,6 +1374,21 @@ const commands = computed<QuickCommand[]>(() => [
     },
   },
   {
+    id: 'window-fullscreen',
+    label: t(
+      windowFullscreen.value
+        ? 'player.exitWindowFullscreen'
+        : 'player.windowFullscreen',
+    ),
+    group: 'watch',
+    icon: 'window-fullscreen',
+    shortcut: '/window-fullscreen',
+    aliases: 'window fullscreen theater theatre 网页全屏 浏览器窗口全屏',
+    run: () => {
+      void toggleWindowFullscreen();
+    },
+  },
+  {
     id: 'fullscreen',
     label: t('player.fullscreen'),
     group: 'watch',
@@ -1557,6 +1575,11 @@ function keyboard(event: KeyboardEvent): void {
     if (!event.repeat) void fullscreen();
     return;
   }
+  if (key === 'escape' && windowFullscreen.value) {
+    event.preventDefault();
+    if (!event.repeat) windowFullscreen.value = false;
+    return;
+  }
   if (
     event.target instanceof Element &&
     event.target.closest(
@@ -1596,6 +1619,9 @@ function keyboard(event: KeyboardEvent): void {
   } else if (key === 'f') {
     event.preventDefault();
     void fullscreen();
+  } else if (key === 's') {
+    event.preventDefault();
+    if (!event.repeat) void toggleWindowFullscreen();
   } else return;
 }
 async function sample(): Promise<void> {
@@ -1852,6 +1878,7 @@ onUnmounted(() => {
         class="video-stage"
         :class="{
           'controls-idle': idle,
+          'window-fullscreen': windowFullscreen,
         }"
         tabindex="0"
         :aria-label="t('player.shortcuts')"
@@ -2119,7 +2146,6 @@ onUnmounted(() => {
                         ? 'replay'
                         : 'play'
                   "
-                  :size="22"
                 />
               </button>
               <button
@@ -2160,7 +2186,6 @@ onUnmounted(() => {
                 :font-size="danmakuSize"
                 :speed="danmakuSpeed"
                 :area="danmakuArea"
-                :status="translate(danmakuStatus)"
                 :stage="stage"
                 @update:open="
                   (value) => {
@@ -2211,6 +2236,26 @@ onUnmounted(() => {
                     ? qualityName(streamInfo.quality)
                     : t('player.quality')
                 }}<Icon name="chevron" :size="14" />
+              </button>
+              <button
+                class="icon-button"
+                :aria-label="
+                  t(
+                    windowFullscreen
+                      ? 'player.exitWindowFullscreen'
+                      : 'player.windowFullscreen',
+                  )
+                "
+                :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
+                :aria-pressed="windowFullscreen"
+                aria-keyshortcuts="s"
+                @click="toggleWindowFullscreen"
+              >
+                <Icon
+                  :name="
+                    windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                  "
+                />
               </button>
               <button
                 class="icon-button"

@@ -71,7 +71,10 @@ export async function openPlayerMenu(
   if (input === 'keyboard') {
     await stage.focus();
     await page.keyboard.press('Shift+F10');
-  } else await stage.click({ button: 'right', position: { x: 80, y: 60 } });
+  } else {
+    // Keep the pointer on exposed video above a wrapped narrow-screen control bar.
+    await stage.click({ button: 'right', position: { x: 80, y: 20 } });
+  }
   await expect(page.getByRole('menu', { name: 'Player menu' })).toBeVisible();
 }
 export async function openQuickActions(page: Page, query = ''): Promise<void> {

@@ -1175,6 +1175,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   });
   await danmaku.hover();
   await expect(preferences).toBeVisible();
+  await expect(preferences.getByRole('status')).toHaveCount(0);
   expect(
     await preferences.evaluate(
       (panel) => panel.scrollWidth - panel.clientWidth,

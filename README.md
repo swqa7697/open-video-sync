@@ -88,7 +88,7 @@ OVS automatically adjusts buffering and tries available CDN alternatives when de
 
 Selecting another episode from **Episodes** starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
 
-The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Reload danmaku is available in this menu; hovering the danmaku toggle opens its display preferences and status.
+The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Reload danmaku is available in this menu; hovering the danmaku toggle opens its display preferences.
 
 Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Only the host can switch; members can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
 
@@ -101,17 +101,20 @@ Danmaku visibility, density, text size, scrolling speed, and display area are re
 
 ### Keyboard shortcuts
 
-| Shortcut                                        | Action             |
-| ----------------------------------------------- | ------------------ |
-| <kbd>Space</kbd> / <kbd>K</kbd>                 | Play or pause      |
-| <kbd>Left</kbd> / <kbd>Right</kbd>              | Seek five seconds  |
-| <kbd>Up</kbd> / <kbd>Down</kbd>                 | Adjust volume      |
-| <kbd>M</kbd>                                    | Mute               |
-| <kbd>D</kbd>                                    | Toggle danmaku     |
-| <kbd>F</kbd>                                    | Fullscreen         |
-| <kbd>Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>K</kbd> | Open Quick actions |
+| Shortcut                                        | Action                    |
+| ----------------------------------------------- | ------------------------- |
+| <kbd>Space</kbd> / <kbd>K</kbd>                 | Play or pause             |
+| <kbd>Left</kbd> / <kbd>Right</kbd>              | Seek five seconds         |
+| <kbd>Up</kbd> / <kbd>Down</kbd>                 | Adjust volume             |
+| <kbd>M</kbd>                                    | Mute                      |
+| <kbd>D</kbd>                                    | Toggle danmaku            |
+| <kbd>S</kbd>                                    | Browser-window fullscreen |
+| <kbd>F</kbd>                                    | Fullscreen                |
+| <kbd>Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>K</kbd> | Open Quick actions        |
 
 Shortcuts respect text inputs, menus, and dialogs. If the browser blocks autoplay, select **Enable playback** in the player.
+
+Use **Browser-window fullscreen** in the player controls or press <kbd>S</kbd> to fill the browser content area while keeping the browser toolbar. Press <kbd>S</kbd> again or <kbd>Esc</kbd> to return. <kbd>Esc</kbd> closes an open overlay first. <kbd>F</kbd> uses native fullscreen; leaving native fullscreen restores the previous browser-window mode.
 
 ---
 

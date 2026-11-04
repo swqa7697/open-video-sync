@@ -6,6 +6,14 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+
+- Fill the browser content area with the player using its browser-window fullscreen button, Quick actions, or S. Keep browser chrome visible, use S or Esc to return, and preserve playback and the previous mode across native fullscreen.
+
+### Changed
+
+- Keep danmaku settings focused on density, text size, scrolling speed, and display area, without a status footer.
+
 ### Fixed
 
 - Scale each video proportionally until it reaches the available width or height, without a fixed room-width cap, cropping, or added black bars. Fit the room card and toolbar to the video plus any visible member pane, leaving unused space outside the card. Keep long video titles inside the viewing column so they cannot shift the video or cover the member pane and controls. Keep narrow and tall layouts coordinated, the window free of scrolling, and playback controls reachable.

@@ -1484,6 +1484,13 @@ fieldset select {
 .player-controls button.icon-button {
   width: 38px;
 }
+.control-start > .icon-button > svg,
+.control-end > .icon-button > svg,
+.danmaku-toggle > svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
 .player-controls button:disabled {
   opacity: 0.4;
 }
@@ -1640,10 +1647,6 @@ fieldset select {
   height: 20px;
   margin: 0;
 }
-.player-menu .hint {
-  margin: 12px 0 8px;
-  font-size: 0.68rem;
-}
 .quality-menu {
   width: min(190px, calc(100% - 36px));
   padding: 6px;
@@ -1758,14 +1761,21 @@ fieldset select {
 .player-details > .notice {
   margin: 0 18px 12px;
 }
-.video-stage:fullscreen {
+.video-stage.window-fullscreen {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+}
+.video-stage:fullscreen,
+.video-stage.window-fullscreen {
   aspect-ratio: auto;
   max-height: none;
   width: 100vw;
   height: 100dvh;
   border-radius: 0;
 }
-.video-stage:fullscreen .player-controls {
+.video-stage:fullscreen .player-controls,
+.video-stage.window-fullscreen .player-controls {
   padding-bottom: max(18px, env(safe-area-inset-bottom));
 }
 .modal .members-heading {
@@ -2084,8 +2094,11 @@ fieldset select {
   .control-end {
     gap: 0;
   }
-  .player-controls svg {
+  .control-start > .icon-button > svg,
+  .control-end > .icon-button > svg,
+  .danmaku-toggle > svg {
     width: 18px;
+    height: 18px;
   }
   .volume-slider {
     width: 45px;

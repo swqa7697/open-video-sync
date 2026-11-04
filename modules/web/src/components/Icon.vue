@@ -1,5 +1,12 @@
 <script setup lang="ts">
-defineProps<{ name: string; size?: number }>();
+import { computed } from 'vue';
+
+const props = defineProps<{ name: string; size?: number }>();
+const filled = computed(
+  () => props.name === 'window-fullscreen' || props.name === 'window-restore',
+);
+const windowFrame =
+  'M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z';
 const paths: Record<string, string> = {
   github:
     'M9 19c-4.3 1.3-4.3-2.5-6-3m12 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 19 4.77 5.07 5.07 0 0 0 18.91 1S17.73.65 15 2.48a13.38 13.38 0 0 0-7 0C5.27.65 4.09 1 4.09 1A5.07 5.07 0 0 0 4 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 8 18.13V22',
@@ -22,6 +29,8 @@ const paths: Record<string, string> = {
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
   mute: 'm11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6',
   fullscreen: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
+  'window-fullscreen': `${windowFrame}M5 5v5h2V7h3V5ZM14 5v2h3v3h2V5ZM5 14v5h5v-2H7v-3ZM17 14v3h-3v2h5v-5Z`,
+  'window-restore': `${windowFrame}M8 5v3H5v2h5V5ZM14 5v5h5V8h-3V5ZM5 14v2h3v3h2v-5ZM14 14v5h2v-3h3v-2Z`,
   settings:
     'M9.5 3h5l.6 2.4 1.2.7 2.4-.7 2.5 4.2-1.8 1.7v1.4l1.8 1.7-2.5 4.2-2.4-.7-1.2.7-.6 2.4h-5l-.6-2.4-1.2-.7-2.4.7-2.5-4.2 1.8-1.7v-1.4L2.8 9.6l2.5-4.2 2.4.7 1.2-.7ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
   users:
@@ -52,6 +61,11 @@ const paths: Record<string, string> = {
     stroke-linejoin="round"
     aria-hidden="true"
   >
-    <path :d="paths[name] ?? paths.screen" />
+    <path
+      :d="paths[name] ?? paths.screen"
+      :fill="filled ? 'currentColor' : undefined"
+      :stroke="filled ? 'none' : undefined"
+      fill-rule="evenodd"
+    />
   </svg>
 </template>

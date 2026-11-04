@@ -60,6 +60,10 @@ onMounted(() => closeButton.value?.focus({ preventScroll: true }));
         <dd>{{ t('player.shortcutDanmaku') }}</dd>
       </div>
       <div>
+        <dt><kbd>S</kbd></dt>
+        <dd>{{ t('player.shortcutWindowFullscreen') }}</dd>
+      </div>
+      <div>
         <dt><kbd>F</kbd></dt>
         <dd>{{ t('player.shortcutFullscreen') }}</dd>
       </div>

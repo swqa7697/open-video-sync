@@ -12,7 +12,6 @@ const props = defineProps<{
   fontSize: number;
   speed: number;
   area: number;
-  status: string;
   stage: HTMLElement | undefined;
 }>();
 const emit = defineEmits<{
@@ -266,9 +265,6 @@ onUnmounted(() => {
         <option :value="0.5">{{ t('player.danmakuAreaHalf') }}</option>
         <option :value="0.25">{{ t('player.danmakuAreaQuarter') }}</option>
       </select>
-      <p class="hint" role="status">
-        {{ visible ? status : t('player.hiddenDanmaku', { status }) }}
-      </p>
     </div>
   </div>
 </template>

@@ -253,13 +253,73 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);
+    const windowButton = page.locator('[aria-keyshortcuts="s"]');
+    const stageBefore = await page.locator('.video-stage').boundingBox();
+    const retainedVideo = await page.locator('video').elementHandle();
+    await page.keyboard.down('s');
+    await page.keyboard.down('s');
+    await page.keyboard.up('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual({
+      x: 0,
+      y: 0,
+      ...page.viewportSize()!,
+    });
+    expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+    await windowButton.click({ trial: true });
+    expect(
+      await page
+        .locator('video')
+        .evaluate((video, retained) => video === retained, retainedVideo),
+    ).toBe(true);
+    await runQuickAction(page, '/shortcuts');
+    await expect(page.locator('.player-shortcuts')).toContainText(
+      'Enter or exit browser-window fullscreen',
+    );
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.player-shortcuts')).toHaveCount(0);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual(
+      stageBefore,
+    );
+    await page.locator('.video-stage').hover();
+    await windowButton.click();
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('s');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    await page.keyboard.press('f');
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(false);
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.locator('.video-stage').boundingBox()).toEqual(
+      stageBefore,
+    );
+    await retainedVideo?.dispose();
     await page.keyboard.press('f');
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
       .toBe(true);
     await openQuickActions(page);
     const paletteKeys = await observePageKeyboard(page);
-    await page.getByRole('combobox').pressSequentially('m f k d ');
+    await page.getByRole('combobox').pressSequentially('m f k d s ');
     await page.getByRole('combobox').press('Control+a');
     await page.getByRole('combobox').press('Backspace');
     await page.keyboard.press('Tab');
@@ -292,6 +352,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await appearance.getByRole('button', { name: 'Close dialog' }).focus();
     await page.keyboard.press('m');
     await page.keyboard.press('f');
+    await page.keyboard.press('s');
     await page.keyboard.press('Control+k');
     await expect(appearance).toBeVisible();
     await expect(page.locator('.command-palette')).toHaveCount(0);
@@ -407,10 +468,11 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.locator('.profile-button').click();
     const nameInput = page.getByLabel('Display name (optional)');
     await nameInput.fill('');
-    await nameInput.pressSequentially('m d f k ');
+    await nameInput.pressSequentially('m d f k s ');
     await nameInput.press('ArrowDown');
     await nameInput.press('ArrowUp');
-    await expect(nameInput).toHaveValue('m d f k ');
+    await expect(nameInput).toHaveValue('m d f k s ');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('#local-volume')).toHaveValue('0.6');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
@@ -424,6 +486,8 @@ test('independent identities manage a private room over direct HTTP', async ({
       .focus();
     await page.keyboard.press('m');
     await page.keyboard.press('f');
+    await page.keyboard.press('s');
+    await expect(windowButton).toHaveAttribute('aria-pressed', 'false');
     expect(
       await page.locator('video').evaluate((v: HTMLVideoElement) => v.muted),
     ).toBe(true);

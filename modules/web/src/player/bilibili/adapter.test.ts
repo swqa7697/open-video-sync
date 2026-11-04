@@ -219,7 +219,7 @@ function fixture(
   );
   const onError = vi.fn();
   const overlay = document.createElement('div');
-  const adapter = new BilibiliAdapter(video, overlay, () => {}, onError);
+  const adapter = new BilibiliAdapter(video, overlay, onError);
   const load = () =>
     adapter.load('BV1hf4y1N75G', 1, new AbortController().signal, 120);
   const until = async (done: () => boolean) => {
