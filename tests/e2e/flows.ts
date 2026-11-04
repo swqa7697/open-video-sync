@@ -26,6 +26,8 @@ export async function openAppPanel(page: Page, name: string): Promise<void> {
   await page.getByRole('menuitem', { name, exact: true }).click();
 }
 export async function dismissHelper(page: Page): Promise<void> {
+  // A reload can commit before Vue mounts the helper check and its setup dialog.
+  await expect(page.locator('.shell')).toBeVisible();
   await expect
     .poll(
       async () =>
@@ -38,7 +40,15 @@ export async function dismissHelper(page: Page): Promise<void> {
     )
     .not.toContain('Checking');
   const later = page.getByRole('button', { name: 'Later', exact: true });
-  if (await later.isVisible()) await later.click();
+  if (await later.count()) {
+    await later.click();
+    await expect(
+      page.getByRole('dialog', {
+        name: 'Set up Bilibili playback',
+        exact: true,
+      }),
+    ).toHaveCount(0);
+  }
 }
 // Pointer actions reveal the bar first, as users do when controls are hidden.
 export async function clickPlayerControl(
@@ -105,6 +115,7 @@ export async function invitationLink(page: Page): Promise<string> {
     .getByLabel('Invitation link', { exact: true })
     .inputValue();
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   return value;
 }
 export async function settings(

@@ -78,7 +78,7 @@ make build
 ```
 
 For browser behavior, install Playwright browsers with `make browser-install`, then run `make test-e2e`.
-Browser journeys use up to four workers, bounded by available CPUs, with a fresh application instance and database for each test.
+Browser journeys use up to four workers locally and two in CI, bounded by available CPUs, with a fresh application instance and database for each test. CI retains browser failure screenshots and traces for seven days.
 Set `OVS_E2E_PORT` to choose the first worker port when running another suite at the same time; the default is 18080.
 Use observable state or explicit response gates instead of sleeps. Keep timer boundaries in fake-clock tests.
 The routine suite captures screenshots on failure and retains failure traces.

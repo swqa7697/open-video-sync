@@ -575,6 +575,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
     await expect(other.getByRole('option')).toHaveCount(0);
     await other.keyboard.press('Escape');
+    await expect(other.locator('.command-palette')).toHaveCount(0);
     await runQuickAction(page, '/play');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',

@@ -49,6 +49,16 @@ jobs:
         if: steps.plan.outputs.mode == 'full'
       - run: make test-e2e
         if: steps.plan.outputs.mode == 'full'
+      - name: Upload browser failure evidence
+        if: failure() && steps.plan.outputs.mode == 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .misc/e2e/results
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          archive: true
       - run: make image image-smoke
       - run: make proxy-smoke
         if: steps.plan.outputs.mode == 'full'
