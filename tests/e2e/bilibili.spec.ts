@@ -20,7 +20,7 @@ import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
 test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
   page,
   browser,
-}, testInfo) => {
+}) => {
   test.setTimeout(90000);
   const tracks = await generatedDASHMedia(browser);
   const fixturePage = await browser.newPage();
@@ -64,7 +64,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     const held = new Set();
     const heldThumbnails = new Set();
     const heldEpisodes = new Set();
-    let owner, traffic, trafficID = 100000;
+    let owner, trafficID = 100000;
     window.addEventListener('message', event => {
       if (typeof event.data !== 'string') return;
       try {
@@ -73,13 +73,13 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       } catch {}
     });
     document.addEventListener('begin-thumbnail-competition', () => {
-      traffic = setInterval(() => {
-        if (owner) window.postMessage(JSON.stringify({
+      if (!owner) throw Error('Synthetic helper owner unavailable.');
+      for (let request = 0; request < 4; request++) {
+        window.postMessage(JSON.stringify({
           channel: 'ovs-bilibili-request', client: owner, id: ++trafficID, op: 'session'
         }), location.origin);
-      }, 100);
+      }
     });
-    document.addEventListener('end-thumbnail-competition', () => clearInterval(traffic));
     document.addEventListener('resume-thumbnails', () => {
       sessionStorage.removeItem('hold-thumbnails');
       for (const resume of [...heldThumbnails]) resume();
@@ -166,7 +166,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0,
           [url.pathname.startsWith('/pgc/') ? 'result' : 'data']: data }) });
       };
-      const timer = setTimeout(() => {
+      queueMicrotask(() => {
+        if (cancelled) return;
         if (thumbnail && sessionStorage.getItem('hold-thumbnails')) {
           heldThumbnails.add(respond);
           sessionStorage.setItem('thumbnail-held', '1');
@@ -174,8 +175,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         else if (url.pathname === '/pgc/view/web/season' && sessionStorage.getItem('hold-episodes')) heldEpisodes.add(respond);
         else if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
         else respond();
-      }, details.headers.Range ? Number(sessionStorage.getItem('seek-delay') || 25) : url.hostname.endsWith('.hdslb.com') ? 500 : 0);
-      return { abort() { cancelled = true; clearTimeout(timer); held.delete(respond); heldThumbnails.delete(respond); heldEpisodes.delete(respond); details.onabort(); } };
+      });
+      return { abort() { cancelled = true; held.delete(respond); heldThumbnails.delete(respond); heldEpisodes.delete(respond); details.onabort(); } };
     };
     ${script}
   })();`,
@@ -237,9 +238,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     expect(menuBox.y).toBeGreaterThanOrEqual(0);
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width);
     expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height);
-    await page.screenshot({
-      path: testInfo.outputPath(`player-menu-${viewport.width}.png`),
-    });
     await playerMenu
       .getByRole('menuitem', { name: 'Video statistics', exact: true })
       .click();
@@ -257,9 +255,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         (panel) => panel.scrollWidth - panel.clientWidth,
       ),
     ).toBe(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`player-statistics-${viewport.width}.png`),
-    });
     if (viewport.width === 1440) {
       const pendingDownload = page.waitForEvent('download');
       await statistics
@@ -326,9 +321,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       ),
     )
     .toBe(2);
-  await page.evaluate(() =>
-    document.dispatchEvent(new Event('end-thumbnail-competition')),
-  );
   await expect(page.locator('.seek-preview canvas')).toBeVisible();
   const thumbnailRequests = await page.evaluate(() =>
     Number(sessionStorage.getItem('thumbnail-requests')),
@@ -409,7 +401,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(spinner).toHaveCSS('animation-name', 'playback-spin');
   await page.evaluate(() => {
     sessionStorage.removeItem('hold-seek');
-    sessionStorage.setItem('seek-delay', '450');
     document.dispatchEvent(new Event('resume-seek-downloads'));
   });
   for (const target of [20, 7.9, 23.9, 2.9]) {
@@ -495,16 +486,9 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   expect(
     (await (await page.request.get(roomPath)).json()).media.episodeId,
   ).toBe('103591');
-  await page.setViewportSize({ width: 1440, height: 900 });
   await input.fill('@');
-  await page.screenshot({
-    path: testInfo.outputPath('episodes-quick-desktop.png'),
-  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.screenshot({
-    path: testInfo.outputPath('episodes-quick-mobile.png'),
-  });
   expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
   const paletteBounds = (await palette.boundingBox())!;
   expect(paletteBounds.x + paletteBounds.width).toBeLessThanOrEqual(390);
@@ -517,9 +501,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   expect(
     (await (await page.request.get(roomPath)).json()).media.episodeId,
   ).toBe('103591');
-  await page.screenshot({
-    path: testInfo.outputPath('episodes-quick-failure.png'),
-  });
   await page.evaluate(() => {
     sessionStorage.removeItem('fail-episode');
     sessionStorage.setItem('hold-episodes', '1');
@@ -533,9 +514,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'true',
   );
   await input.press('Enter');
-  await page.screenshot({
-    path: testInfo.outputPath('episodes-quick-pending.png'),
-  });
   await page.evaluate(() =>
     document.dispatchEvent(new Event('resume-episodes')),
   );
@@ -554,10 +532,6 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('tab', { name: /Episodes/ }).click();
-  await page.screenshot({
-    path: testInfo.outputPath('episode-selected.png'),
-    fullPage: true,
-  });
   await settings(page, 'host', false);
   await clickPlayerControl(page, 'Play together');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
@@ -576,7 +550,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
   page,
   browser,
-}, testInfo) => {
+}) => {
   test.setTimeout(60000);
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   expect(response.ok()).toBe(true);
@@ -904,9 +878,6 @@ test('previewing another Bilibili link preserves the active helper and room unti
         );
       }),
     ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`preview-form-${locale}-${width}.png`),
-    });
     await dialog.locator('.modal-heading button').click();
     if (locale === 'zh-CN') await runQuickAction(page, '/language en');
   }

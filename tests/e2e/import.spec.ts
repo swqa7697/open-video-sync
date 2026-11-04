@@ -32,7 +32,7 @@ async function selectExistingDestination(page: Page): Promise<void> {
 test('video imports create rooms and replace media through the existing tab with recoverable receipts', async ({
   page,
   context,
-}, testInfo) => {
+}) => {
   test.setTimeout(90000);
   const script = await (
     await page.request.get('/userscripts/ovs-bilibili.user.js')
@@ -45,7 +45,7 @@ test('video imports create rooms and replace media through the existing tab with
     if (typeof MediaSource !== 'undefined') MediaSource.isTypeSupported = () => true;
     const GM_xmlhttpRequest = details => {
       let cancelled = false;
-      const timer = setTimeout(() => {
+      queueMicrotask(() => {
         if (cancelled) return;
         const url = new URL(details.url);
         let data;
@@ -67,8 +67,8 @@ test('video imports create rooms and replace media through the existing tab with
         else if (url.pathname.endsWith('/nav')) data = {isLogin:false};
         else { details.onload({status:404,finalUrl:details.url,responseText:'{}'}); return; }
         details.onload({status:200,finalUrl:details.url,responseText:JSON.stringify({code:0,data})});
-      },0);
-      return {abort(){cancelled=true;clearTimeout(timer);details.onabort?.();}};
+      });
+      return {abort(){cancelled=true;details.onabort?.();}};
     };
     ${script}
   })();`,
@@ -276,10 +276,6 @@ test('video imports create rooms and replace media through the existing tab with
       await importer.keyboard.press('Escape');
       await expect(details).toHaveAttribute('aria-expanded', 'false');
     }
-    await importer.screenshot({
-      path: testInfo.outputPath(`import-${width}.png`),
-      fullPage: true,
-    });
   }
   await runQuickAction(importer, '/theme light');
   await expect(importer.locator('html')).toHaveAttribute('data-mode', 'light');
@@ -291,10 +287,6 @@ test('video imports create rooms and replace media through the existing tab with
   ]) {
     await importer.setViewportSize({ width: width!, height: height! });
     await expectImportFits(importer, 'Replace video');
-    await importer.screenshot({
-      path: testInfo.outputPath(`import-${width}-light.png`),
-      fullPage: true,
-    });
   }
   await runQuickAction(importer, '/theme dark');
   await importer.setViewportSize({ width: 390, height: 844 });
@@ -305,15 +297,6 @@ test('video imports create rooms and replace media through the existing tab with
   await expect(importer.getByRole('dialog')).toContainText(
     'Import destination',
   );
-  await importer.getByRole('dialog').evaluate(async (dialog) => {
-    await Promise.all(
-      dialog.getAnimations().map((animation) => animation.finished),
-    );
-  });
-  await importer.screenshot({
-    path: testInfo.outputPath('confirm-390.png'),
-    fullPage: false,
-  });
   cutResult = true;
   await importer
     .getByRole('dialog')

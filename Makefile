@@ -24,7 +24,7 @@ ifneq ($(VERBOSE),1)
 .SILENT:
 endif
 
-.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e test-e2e-measure browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 .PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
 .PHONY: ci-plan ci-finish
 
@@ -149,6 +149,10 @@ browser-install: ## Install the pinned Playwright Chromium and Firefox browsers
 test-e2e: build ## Run Chromium, Firefox, and mixed rooms against the production application
 	@$(INFO) "Running production browser journeys..."
 	pnpm --dir $(WEB) run test:e2e
+
+test-e2e-measure: build ## Run optional decoded-frame and control-latency measurements
+	@$(INFO) "Running isolated browser measurement trials..."
+	OVS_E2E_MEASUREMENTS=1 pnpm --dir $(WEB) run test:e2e
 
 image: ## Build the single non-root application image
 	@$(INFO) "Building the application image..."

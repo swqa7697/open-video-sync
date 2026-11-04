@@ -1,40 +1,39 @@
 import { defineConfig, devices } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
+import { availableParallelism } from 'node:os';
 
 import type { BrowserOptions } from './playwright-fixtures';
 
-const host = process.env.OVS_E2E_HOST ?? '127.0.0.1';
-const baseURL = `http://${host}:18080`;
+const measurements = process.env.OVS_E2E_MEASUREMENTS === '1';
 
 export default defineConfig<BrowserOptions>({
   testDir: '../../tests/e2e',
-  // Scenarios share one instance and its address-based admission budgets.
-  workers: 1,
-  outputDir: '../../.misc/e2e/results',
+  // Each test owns its application instance, database, and admission budgets.
+  fullyParallel: true,
+  workers: measurements ? 1 : Math.min(4, availableParallelism()),
+  testMatch: measurements ? 'measurement.spec.ts' : '**/*.spec.ts',
+  testIgnore: measurements ? [] : ['measurement.spec.ts'],
+  outputDir: measurements
+    ? '../../.misc/e2e/measurements'
+    : '../../.misc/e2e/results',
   reporter: 'list',
   use: {
-    baseURL,
+    screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    {
-      name: 'chromium-firefox',
-      testMatch: 'playback.spec.ts',
-      use: { ...devices['Desktop Chrome'], guestBrowserName: 'firefox' },
-    },
+    ...(!measurements
+      ? [
+          {
+            name: 'chromium-firefox',
+            testMatch: 'playback.spec.ts',
+            use: {
+              ...devices['Desktop Chrome'],
+              guestBrowserName: 'firefox' as const,
+            },
+          },
+        ]
+      : []),
   ],
-  webServer: {
-    command: '../sync/build/ovs',
-    url: `${baseURL}/health/ready`,
-    reuseExistingServer: false,
-    env: {
-      OVS_LISTEN_ADDR: `${host}:18080`,
-      OVS_PUBLIC_ORIGIN: baseURL,
-      OVS_DATA_DIR: fileURLToPath(
-        new URL('../../.misc/e2e/data', import.meta.url),
-      ),
-    },
-  },
 });

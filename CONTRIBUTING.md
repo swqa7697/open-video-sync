@@ -78,6 +78,11 @@ make build
 ```
 
 For browser behavior, install Playwright browsers with `make browser-install`, then run `make test-e2e`.
+Browser journeys use up to four workers, bounded by available CPUs, with a fresh application instance and database for each test.
+Set `OVS_E2E_PORT` to choose the first worker port when running another suite at the same time; the default is 18080.
+Use observable state or explicit response gates instead of sleeps. Keep timer boundaries in fake-clock tests.
+The routine suite captures screenshots on failure and retains failure traces.
+Run optional decoded-frame and control-latency trials separately with `make test-e2e-measure`.
 Container checks use `make image image-smoke`; reverse-proxy checks use `make proxy-smoke`.
 See [deployment validation](deploy/README.md#remote-deployment-validation) and [network checks](tests/network/README.md) for specialized checks.
 Routine tests remain offline. Live Bilibili and actual-network checks require separate validation.

@@ -4,7 +4,7 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   page,
   context,
   baseURL,
-}, testInfo) => {
+}) => {
   test.setTimeout(60000);
   if (!baseURL) throw new Error('Browser base URL required.');
   const origin = new URL(baseURL).origin;
@@ -79,7 +79,6 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   await page.keyboard.press('Escape');
   await expect(launcher.locator('a').first()).not.toBeVisible();
   await expect(launcher.locator('summary')).toBeFocused();
-  await page.screenshot({ path: testInfo.outputPath('launcher-1440.png') });
   await launcher.locator('summary').click();
   await expect(launcher.locator('a')).toHaveCount(2);
   const destination = launcher.locator(`a[data-ovs-origin="${origin}"]`);
@@ -93,21 +92,16 @@ test('instance helpers share a Bilibili launcher and import the current video', 
     `${otherOrigin}/import#v=1&bvid=BV1hf4y1N75G&part=2`,
   );
   await expect(destination).toHaveAttribute('rel', 'noopener noreferrer');
-  await page.screenshot({
-    path: testInfo.outputPath('launcher-menu-1440.png'),
-  });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(launcher.locator('a').first()).not.toBeVisible();
   const bounds = (await launcher.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: testInfo.outputPath('launcher-390.png') });
   await launcher.locator('summary').click();
   const menu = (await launcher.locator('[data-ovs-menu]').boundingBox())!;
   expect(menu.x).toBeGreaterThanOrEqual(0);
   expect(menu.x + menu.width).toBeLessThanOrEqual(390);
   expect(menu.y + menu.height).toBeLessThanOrEqual(844);
-  await page.screenshot({ path: testInfo.outputPath('launcher-menu-390.png') });
   await page.getByRole('heading').click();
   await expect(launcher.locator('a').first()).not.toBeVisible();
 
@@ -151,20 +145,31 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   expect(context.pages()).toHaveLength(1);
 
   // Platform-page code cannot use the OVS privileged bridge, even with its envelope.
-  await page.evaluate(async () => {
-    window.postMessage(
-      JSON.stringify({
-        channel: 'ovs-bilibili-request',
-        client: 'a'.repeat(32),
-        id: 1,
-        op: 'preview',
-        bvid: 'BV1hf4y1N75G',
-        part: 1,
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const request = JSON.stringify({
+          channel: 'ovs-bilibili-request',
+          client: 'a'.repeat(32),
+          id: 1,
+          op: 'preview',
+          bvid: 'BV1hf4y1N75G',
+          part: 1,
+        });
+        const delivered = (event: MessageEvent<unknown>) => {
+          if (
+            event.source !== window ||
+            event.origin !== location.origin ||
+            event.data !== request
+          )
+            return;
+          window.removeEventListener('message', delivered);
+          resolve();
+        };
+        window.addEventListener('message', delivered);
+        window.postMessage(request, location.origin);
       }),
-      location.origin,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  );
   await expect(page.locator('html')).toHaveAttribute(
     'data-launcher-requests',
     '0',

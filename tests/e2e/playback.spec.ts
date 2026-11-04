@@ -135,10 +135,6 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         );
       }),
     ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath('player-375.png'),
-      fullPage: true,
-    });
     await page.setViewportSize({ width: 1280, height: 1000 });
     const stage = page.locator('.video-stage');
     // The player menu provides local tools without sending a playback command.
@@ -300,18 +296,6 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         .toBeCloseTo(10, 1);
       await expect.poll(() => decodedFrame(player)).toBe(300);
     }
-    const viewport = page.viewportSize()!;
-    for (const size of [
-      { width: 1440, height: 900 },
-      { width: 390, height: 844 },
-    ]) {
-      await page.setViewportSize(size);
-      await page.screenshot({
-        path: testInfo.outputPath(`seek-result-${size.width}.png`),
-        fullPage: true,
-      });
-    }
-    await page.setViewportSize(viewport);
     // Seeking again while paused keeps both players at the new target.
     await seekTo(page, 12);
     for (const player of [page, other])
@@ -468,10 +452,6 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
           subtle: !!crypto.subtle,
         })),
       ).toEqual({ secure: false, subtle: false });
-    await tab.screenshot({
-      path: testInfo.outputPath('local-player.png'),
-      fullPage: true,
-    });
     await tab.close();
     expect(failures).toEqual([]);
   } finally {
