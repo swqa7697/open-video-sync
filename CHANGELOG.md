@@ -6,6 +6,8 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-03]
+
 ### Added
 
 - Open a player context menu with video statistics and keyboard help, plus Bilibili original-page access and local danmaku controls. Keep Reload danmaku in this menu. View available resolution, frame rate, track bitrates, segments, forward buffer, and real-time media download activity in a persistent overlay, and copy or download a browser-local statistics snapshot. Statistics and shortcut help are also available in Quick actions. Bilibili statistics require the updated playback helper.
