@@ -186,26 +186,27 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       .getByRole('button', { name: 'Close video statistics', exact: true })
       .click();
     await expect(statistics).toHaveCount(0);
-    // Clamp to the visible viewport even when the video extends below it.
+    // Open from the exposed video surface, above the controls on a short player.
     await page.setViewportSize({ width: 390, height: 360 });
-    await page.evaluate(() => {
-      scrollTo(0, 0);
-      return new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve()),
-      );
-    });
+    // Hover waits for the fitted player to settle before sampling edge coordinates.
+    await stage.hover({ position: { x: 16, y: 8 } });
     const clippedStage = (await stage.boundingBox())!;
     await page.mouse.click(
       clippedStage.x + clippedStage.width - 20,
-      clippedStage.y + clippedStage.height / 2,
+      clippedStage.y + 8,
       { button: 'right' },
     );
     await expect(playerMenu).toBeVisible();
     const clippedMenu = (await playerMenu.boundingBox())!;
     expect(clippedMenu.x + clippedMenu.width).toBeLessThanOrEqual(390);
     expect(clippedMenu.y + clippedMenu.height).toBeLessThanOrEqual(360);
+    expect(clippedMenu.y).toBeGreaterThanOrEqual(clippedStage.y);
+    expect(clippedMenu.y + clippedMenu.height).toBeLessThanOrEqual(
+      clippedStage.y + clippedStage.height,
+    );
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 1280, height: 1000 });
+    await stage.hover({ position: { x: 16, y: 8 } });
     const pausedIndicator = page.getByRole('img', {
       name: 'Paused',
       exact: true,

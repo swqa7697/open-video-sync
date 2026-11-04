@@ -7,6 +7,7 @@ import {
 import {
   clickPlayerControl,
   closeRoom,
+  expectFittedPlayer,
   invitationLink,
   observePageKeyboard,
   openPlayerMenu,
@@ -16,6 +17,19 @@ import {
   settings,
 } from './flows';
 import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
+
+// Public titles from the reported videos; media bytes and helper replies stay synthetic.
+const reportedVideos = [
+  {
+    bvid: 'BV1CyxS6yEzL',
+    title:
+      '米提亚神了！顶级大c，专武必抽？冰神达妮卡实装在即！回顾芙宁娜历史？原神7.2怎抽！最懂强度的男人怎看安娜丝塔夏！桑多涅薇斯纳会被爆？揭秘原神策划的至冬布局！',
+  },
+  {
+    bvid: 'BV1ED4g6AEnK',
+    title: '这怎么可能是人类的思维呢？太夸张了！王天一VS省冠',
+  },
+] as const;
 
 test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
   page,
@@ -53,6 +67,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     sessionStorage.setItem('danmaku-requests', '0');
     const tracks = ${JSON.stringify(tracks)};
     const sheets = ${JSON.stringify(sheets)};
+    const reportedTitles = ${JSON.stringify(Object.fromEntries(reportedVideos.map(({ bvid, title }) => [bvid, title])))};
     for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
     const unsafeWindow = window;
     const addBuffer = MediaSource.prototype.addSourceBuffer;
@@ -123,7 +138,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           ]
         };
         else if (url.pathname.endsWith('/view')) data = {
-          title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }],
+          title: reportedTitles[url.searchParams.get('bvid')] ?? 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }],
           ugc_season: { title: 'Large collection', sections: [{
             episodes: Array(929).fill({
               bvid: 'BV17Jx76CEje', title: 'Episode', page: { page: 1 },
@@ -132,7 +147,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
           }] }
         };
         else if (url.pathname.endsWith('/pagelist')) data = [
-          { cid: 1, page: 1, part: 'Streamed Bilibili seeks' }
+          { cid: 1, page: 1, part: reportedTitles[url.searchParams.get('bvid')] ?? 'Streamed Bilibili seeks' }
         ];
         else if (url.pathname.endsWith('/videoshot')) data = {
           img_x_len: 2, img_y_len: 2, img_x_size: 480, img_y_size: 270,
@@ -182,12 +197,12 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   })();`,
   });
   await page.goto('/');
-  await page.getByLabel('Video URL or identifier').fill('BV17Jx76CEje');
+  await page.getByLabel('Video URL or identifier').fill(reportedVideos[0].bvid);
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();
   await expect(page.locator('.media-preview')).toContainText(
-    'Streamed Bilibili seeks',
+    reportedVideos[0].title,
   );
   await page.getByRole('button', { name: 'Create room', exact: true }).click();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
@@ -207,10 +222,46 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     exact: true,
   });
   for (const viewport of [
+    { width: 1966, height: 654 },
+    { width: 864, height: 1365 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectFittedPlayer(page);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  const replacement = page.getByRole('dialog', {
+    name: 'Change the video',
+    exact: true,
+  });
+  await replacement
+    .getByLabel('Video URL or identifier')
+    .fill(reportedVideos[1].bvid);
+  await replacement
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(replacement.locator('.media-preview')).toContainText(
+    reportedVideos[1].title,
+  );
+  await replacement
+    .getByRole('button', { name: 'Use this video', exact: true })
+    .click();
+  await expect(replacement).toHaveCount(0);
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await expect(page.locator('.video-description h3')).toContainText(
+    reportedVideos[1].title,
+  );
+  for (const viewport of [
     { width: 1440, height: 900 },
+    { width: 1966, height: 654 },
+    { width: 864, height: 1365 },
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
+    await expectFittedPlayer(page);
     await page.evaluate(
       () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
@@ -222,7 +273,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     });
     await expect(original).toHaveAttribute(
       'href',
-      'https://www.bilibili.com/video/BV17Jx76CEje?p=1',
+      `https://www.bilibili.com/video/${reportedVideos[1].bvid}?p=1`,
     );
     await expect(original).toHaveAttribute('target', '_blank');
     const menuBox = (await playerMenu.boundingBox())!;

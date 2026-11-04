@@ -157,3 +157,99 @@ export async function closeRoom(page: Page): Promise<void> {
     .getByRole('button', { name: 'Confirm close room', exact: true })
     .click();
 }
+
+export async function expectFittedPlayer(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.locator('.video-stage').evaluate((node) => {
+        const stage = node.getBoundingClientRect(),
+          video = node.querySelector('video')!,
+          viewport = node.parentElement!.getBoundingClientRect(),
+          column = node.closest('.viewing-column')!.getBoundingClientRect();
+        if (stage.width <= 0 || stage.height <= 0) return Infinity;
+        const room = node.closest<HTMLElement>('.room')!,
+          space = room.parentElement!,
+          spacing = getComputedStyle(space),
+          card = room.querySelector('.room-layout')!.getBoundingClientRect(),
+          layoutStyle = getComputedStyle(room.querySelector('.room-layout')!),
+          sidebarWidth =
+            room.querySelector('.member-panel')?.getBoundingClientRect()
+              .width ?? 0,
+          detailsHeight =
+            node.closest('.player-panel')!.getBoundingClientRect().height -
+            viewport.height,
+          availableWidth =
+            space.clientWidth -
+            parseFloat(spacing.paddingLeft) -
+            parseFloat(spacing.paddingRight) -
+            parseFloat(layoutStyle.borderLeftWidth) -
+            parseFloat(layoutStyle.borderRightWidth) -
+            sidebarWidth,
+          availableHeight =
+            space.getBoundingClientRect().height -
+            parseFloat(spacing.paddingTop) -
+            parseFloat(spacing.paddingBottom) -
+            room.querySelector('.room-toolbar')!.getBoundingClientRect()
+              .height -
+            parseFloat(layoutStyle.borderTopWidth) -
+            parseFloat(layoutStyle.borderBottomWidth) -
+            detailsHeight,
+          ratio = video.videoWidth / video.videoHeight,
+          fittedHeight = Math.min(availableHeight, availableWidth / ratio);
+        return Math.max(
+          Math.abs(column.width - stage.width),
+          Math.abs(viewport.height - stage.height),
+          Math.abs(
+            card.width -
+              stage.width -
+              sidebarWidth -
+              parseFloat(layoutStyle.borderLeftWidth) -
+              parseFloat(layoutStyle.borderRightWidth),
+          ),
+          Math.abs(stage.height - fittedHeight),
+          Math.abs(stage.width - fittedHeight * ratio),
+          Math.abs(
+            stage.width - (stage.height * video.videoWidth) / video.videoHeight,
+          ),
+          viewport.left - stage.left,
+          stage.right - viewport.right,
+          viewport.top - stage.top,
+          stage.bottom - viewport.bottom,
+          column.left - stage.left,
+          stage.right - column.right,
+          stage.bottom - column.bottom,
+          ...[
+            '.video-information',
+            '.playback-status',
+            '.change-media',
+          ].flatMap((selector) => {
+            const element = node
+              .closest('.player-panel')!
+              .querySelector(selector);
+            if (!element) return [Infinity];
+            const bounds = element.getBoundingClientRect();
+            if (bounds.width <= 0 || bounds.height <= 0) return [Infinity];
+            return [
+              column.left - bounds.left,
+              bounds.right - column.right,
+              bounds.bottom - column.bottom,
+            ];
+          }),
+          ...Array.from(
+            node.querySelectorAll(
+              '.player-controls button, .player-controls input',
+            ),
+          ).flatMap((control) => {
+            const bounds = control.getBoundingClientRect();
+            return [
+              stage.left - bounds.left,
+              bounds.right - stage.right,
+              stage.top - bounds.top,
+              bounds.bottom - stage.bottom,
+            ];
+          }),
+        );
+      }),
+    )
+    .toBeLessThanOrEqual(1);
+}

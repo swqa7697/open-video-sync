@@ -11,6 +11,7 @@ import {
   closeRoom,
   createLocalRoom,
   dismissHelper,
+  expectFittedPlayer,
   invitationLink,
   observePageKeyboard,
   openAppPanel,
@@ -1226,6 +1227,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       [1966, 654],
       [1440, 900],
       [1024, 768],
+      [1080, 1706],
       [900, 500],
       [320, 844],
     ]) {
@@ -1246,9 +1248,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         }
         await expectViewportStructure(page, '.room');
         expect(await playerColors()).toEqual(darkPlayerColors);
-        expect(
-          (await page.locator('.room').boundingBox())!.width,
-        ).toBeLessThanOrEqual(1600);
+        await expectFittedPlayer(page);
       }
       if (width! > 760) {
         const members = page.locator('.room-actions button[aria-expanded]');
@@ -1258,36 +1258,31 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
             'aria-expanded',
             String(expanded),
           );
-          // The container fills the available area; its shape is independent
-          // of the source media, which may letterbox in either direction.
-          await expect
-            .poll(() =>
-              page.locator('.room').evaluate((root) => {
-                const room = root.getBoundingClientRect(),
-                  layout = root
-                    .querySelector('.room-layout')!
-                    .getBoundingClientRect(),
-                  viewport = root
-                    .querySelector('.player-viewport')!
-                    .getBoundingClientRect(),
-                  stage = root
-                    .querySelector('.video-stage')!
-                    .getBoundingClientRect(),
-                  sidebar =
-                    root.querySelector('.member-panel')?.getBoundingClientRect()
-                      .width ?? 0;
-                const bottomSpace =
-                  room.bottom -
-                  parseFloat(getComputedStyle(root).paddingBottom) -
-                  layout.bottom;
-                return Math.max(
-                  Math.abs(layout.width - stage.width - sidebar - 2),
-                  Math.abs(viewport.height - stage.height),
-                  Math.abs(bottomSpace),
-                );
-              }),
-            )
-            .toBeLessThanOrEqual(1);
+          if (width === 1080 && expanded) {
+            // Layout-only copies exercise a long roster without creating more sessions.
+            await page.locator('.roster').evaluate((roster) => {
+              const entry = roster.lastElementChild!;
+              for (let index = 0; index < 12; index++) {
+                const item = entry.cloneNode(true) as HTMLElement;
+                item.dataset.layoutFixture = '';
+                roster.append(item);
+              }
+            });
+          }
+          await expectFittedPlayer(page);
+          if (width === 1080 && expanded) {
+            expect(
+              await page
+                .locator('.member-panel .sidebar-pane')
+                .evaluate((pane) => {
+                  pane.scrollTop = pane.scrollHeight;
+                  return pane.scrollTop;
+                }),
+            ).toBeGreaterThan(0);
+            await page
+              .locator('[data-layout-fixture]')
+              .evaluateAll((nodes) => nodes.forEach((node) => node.remove()));
+          }
           roomGeometry.push({
             width: width!,
             height: height!,
@@ -1330,6 +1325,7 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         .getByRole('button', { name: 'Fullscreen locally', exact: true })
         .click({ trial: true, timeout: 5000 });
       await expectViewportStructure(page, '.room');
+      await expectFittedPlayer(page);
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     writeFileSync(
@@ -1348,9 +1344,10 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
     await expectHeaderFits(page);
     await expectViewportStructure(page, '.room');
     await page.evaluate(() => (document.documentElement.style.fontSize = ''));
-    // Non-widescreen sources must not reshape the player.
-    const frameBounds = (await page.locator('.video-stage').boundingBox())!;
+    // Native dimensions must fit without cropping or app-created letterboxing,
+    // including sources larger than their available column.
     for (const [name, sourceWidth, sourceHeight] of [
+      ['wide', 1920, 886],
       ['portrait', 640, 960],
       ['square', 640, 640],
     ] as const) {
@@ -1379,17 +1376,17 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       const video = page.locator('.video-stage video');
       await expect(video).toHaveJSProperty('videoWidth', sourceWidth);
       await expect(video).toHaveJSProperty('videoHeight', sourceHeight);
-      await expect
-        .poll(async () => {
-          const bounds = (await page.locator('.video-stage').boundingBox())!;
-          return Math.max(
-            ...(['x', 'y', 'width', 'height'] as const).map((key) =>
-              Math.abs(bounds[key] - frameBounds[key]),
-            ),
-          );
-        })
-        .toBeLessThanOrEqual(1);
-      await expectViewportStructure(page, '.room');
+      for (const [width, height] of [
+        [3440, 1145],
+        [1080, 1706],
+        [390, 844],
+      ]) {
+        await page.setViewportSize({ width: width!, height: height! });
+        await expectFittedPlayer(page);
+        await expectViewportStructure(page, '.room');
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expectFittedPlayer(page);
     }
     await closeRoom(page);
     expect(failures).toEqual([]);
