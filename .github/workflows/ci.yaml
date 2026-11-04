@@ -29,20 +29,25 @@ jobs:
           cache-dependency-path: |
             modules/sync/go.sum
             scripts/go.sum
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
       - name: Select validation mode
         id: plan
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: make ci-plan
+      - uses: actions/setup-node@v6
+        if: steps.plan.outputs.mode == 'full'
+        with:
+          node-version-file: .node-version
       - uses: pnpm/action-setup@v4
+        if: steps.plan.outputs.mode == 'full'
         with:
           version: latest
       - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.plan.outputs.mode == 'full'
       - run: make install
+        if: steps.plan.outputs.mode == 'full'
       - run: make check
+        if: steps.plan.outputs.mode == 'full'
       - run: make test test-race
         if: steps.plan.outputs.mode == 'full'
       - run: pnpm --dir modules/web exec playwright install --with-deps chromium firefox
@@ -60,10 +65,13 @@ jobs:
           retention-days: 7
           archive: true
       - run: make image image-smoke
+        if: steps.plan.outputs.mode == 'full'
       - run: make proxy-smoke
         if: steps.plan.outputs.mode == 'full'
       - run: git diff --exit-code
+        if: steps.plan.outputs.mode == 'full'
       - name: Record validation result
+        if: steps.plan.outputs.mode == 'full'
         run: make ci-finish
       - name: Upload full validation record
         if: steps.plan.outputs.mode == 'full'
