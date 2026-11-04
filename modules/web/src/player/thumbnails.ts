@@ -47,7 +47,8 @@ export class LocalThumbnails {
       this.video.src = this.url;
     }
     const video = this.video;
-    await this.wait(video, signal, () => video.readyState >= 2);
+    if (video.readyState < 2)
+      await this.wait(video, signal, () => video.readyState >= 2);
     // End-of-file seeks can have no decoded frame. Use the last playable instant.
     const target = Math.max(
       0,
@@ -86,8 +87,11 @@ export class LocalThumbnails {
     operation?: () => void,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      let frame: number | undefined;
+      let presented = typeof video.requestVideoFrameCallback !== 'function';
       const cleanup = () => {
         clearTimeout(timer);
+        if (frame !== undefined) video.cancelVideoFrameCallback(frame);
         for (const event of ['loadeddata', 'seeked'])
           video.removeEventListener(event, done);
         video.removeEventListener('error', fail);
@@ -95,7 +99,7 @@ export class LocalThumbnails {
         this.lifetime.signal.removeEventListener('abort', abort);
       };
       const done = () => {
-        if (ready()) {
+        if (presented && ready()) {
           cleanup();
           resolve();
         }
@@ -119,6 +123,13 @@ export class LocalThumbnails {
         return;
       }
       try {
+        // seeked/currentTime can advance before drawImage sees the new frame.
+        // Register before changing the source position so a fast presentation is owned.
+        if (!presented)
+          frame = video.requestVideoFrameCallback(() => {
+            presented = true;
+            done();
+          });
         operation?.();
         done();
       } catch {
