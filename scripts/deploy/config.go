@@ -15,7 +15,7 @@ import (
 
 const (
 	composeVersion = "v5.6.1"
-	caddyImage     = "caddy:2.11.7-alpine"
+	caddyImage     = "caddy:alpine"
 	project        = "ovs"
 	ownerLabel     = "io.open-video-sync.deployment"
 	dataVolume     = "ovs-managed-data"

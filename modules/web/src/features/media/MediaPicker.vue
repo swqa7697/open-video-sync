@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onUnmounted, ref, watch } from 'vue';
 
+import FormFeedback from '../../components/FormFeedback.vue';
 import Icon from '../../components/Icon.vue';
 import {
   errorMessage,
@@ -12,11 +13,19 @@ import {
 } from '../../i18n';
 import { LocalAdapter } from '../../player/adapters/local';
 import { HelperBridge } from '../../player/bilibili/bridge';
-import { decodePreview, parseSelection } from '../../player/bilibili/media';
+import {
+  decodePreview,
+  parseSelection,
+  selectionInput,
+} from '../../player/bilibili/media';
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
 
-const props = defineProps<{ disabled?: boolean; roomId: string }>();
+const props = defineProps<{
+  disabled?: boolean;
+  roomId: string;
+  bilibiliOnly?: boolean;
+}>();
 const source = ref<'bilibili' | 'local'>('bilibili');
 const url = ref(''),
   part = ref(1),
@@ -61,12 +70,13 @@ function drop(event: DragEvent): void {
   choose(event.dataTransfer?.files[0]);
 }
 async function prepare(): Promise<
-  { media: MediaDescriptor; file?: File } | undefined
+  { media: MediaDescriptor; file?: File; title?: string } | undefined
 > {
   if (working.value) return;
   if (prepared)
     return {
       media: prepared,
+      ...(summary.value ? { title: summary.value } : {}),
       ...(source.value === 'local' && file ? { file } : {}),
     };
   working.value = true;
@@ -106,17 +116,17 @@ async function prepare(): Promise<
       await inspection.hello(true);
       const info = decodePreview(
         await inspection.call('preview', selected),
-        selected.bvid,
-        selected.part,
+        selected,
       );
       if (signal.aborted) return;
-      url.value = info.bvid;
+      url.value = selectionInput(info);
       part.value = info.part;
       parts.value = info.parts;
       summary.value = info.title;
       media = {
         kind: 'bilibili',
         bvid: info.bvid,
+        ...(info.episodeId ? { episodeId: info.episodeId } : {}),
         cid: info.cid,
         part: info.part,
         durationMs: Math.round(info.duration * 1000),
@@ -124,7 +134,11 @@ async function prepare(): Promise<
     }
     if (signal.aborted) return;
     prepared = media;
-    return { media, ...(source.value === 'local' && file ? { file } : {}) };
+    return {
+      media,
+      ...(summary.value ? { title: summary.value } : {}),
+      ...(source.value === 'local' && file ? { file } : {}),
+    };
   } catch (reason) {
     if (!signal.aborted)
       error.value = errorMessage(reason, 'media.prepareFailed');
@@ -146,7 +160,7 @@ async function selectBilibili(
   if (props.disabled || working.value) return;
   switchSource('bilibili');
   if (selection) {
-    url.value = selection.bvid;
+    url.value = selectionInput(selection);
     part.value = selection.part;
     parts.value = 0;
   }
@@ -163,7 +177,12 @@ defineExpose({ prepare, selectBilibili, selectLocal });
 </script>
 <template>
   <div class="media-picker">
-    <div class="source-tabs" role="group" :aria-label="t('media.source')">
+    <div
+      v-if="!bilibiliOnly"
+      class="source-tabs"
+      role="group"
+      :aria-label="t('media.source')"
+    >
       <button
         type="button"
         :aria-pressed="source === 'bilibili'"
@@ -183,12 +202,13 @@ defineExpose({ prepare, selectBilibili, selectLocal });
     </div>
     <template v-if="source === 'bilibili'">
       <label for="bilibili-url">{{ t('media.url') }}</label>
-      <div class="input-action">
+      <div class="input-action media-input">
         <input
           id="bilibili-url"
           v-model="url"
           :readonly="disabled || working"
           maxlength="2048"
+          autocomplete="off"
           :placeholder="t('media.urlPlaceholder')"
           @input="invalidate"
         /><button
@@ -197,32 +217,49 @@ defineExpose({ prepare, selectBilibili, selectLocal });
           :disabled="disabled || working || !url.trim()"
           @click="prepare"
         >
-          {{ working ? t('media.checking') : t('media.preview') }}
+          <span class="stable-label">
+            <span
+              :data-inactive="working"
+              :aria-hidden="working || undefined"
+              >{{ t('media.preview') }}</span
+            >
+            <span
+              :data-inactive="!working"
+              :aria-hidden="!working || undefined"
+              >{{ t('media.checking') }}</span
+            >
+          </span>
         </button>
-      </div>
-      <div v-if="parts > 1 || part > 1" class="part-row">
-        <label for="bilibili-part">{{ t('media.part') }}</label
-        ><input
-          id="bilibili-part"
-          v-model.number="part"
-          type="number"
-          min="1"
-          :max="parts || 10000"
-          :readonly="disabled || working"
-          @input="invalidate"
-        /><span v-if="parts" class="hint">{{
-          t('media.partTotal', { count: parts })
-        }}</span>
       </div>
     </template>
     <div v-else class="file-drop" @dragover.prevent @drop="drop">
-      <Icon name="file" :size="30" /><strong>{{
-        fileName || t('media.bringVideo')
-      }}</strong
-      ><span class="hint">{{ t('media.fileHint') }}</span>
-      <label class="file-button" for="create-local-video">{{
-        fileName ? t('common.chooseAnother') : t('media.chooseFile')
-      }}</label>
+      <Icon name="file" :size="24" />
+      <FormFeedback
+        class="file-name"
+        :text="
+          translate(error) ||
+          (working
+            ? t('common.preparingVideo')
+            : translate(localSummary) || fileName || t('media.bringVideo'))
+        "
+        :tone="error ? 'error' : localSummary ? 'success' : 'hint'"
+        :announce="!!error || working || !!localSummary"
+      />
+      <span class="hint file-privacy">{{ t('media.fileHint') }}</span>
+      <label class="file-button" for="create-local-video"
+        ><span class="stable-label">
+          <span
+            :data-inactive="!!fileName"
+            :aria-hidden="!!fileName || undefined"
+            >{{ t('media.chooseFile') }}</span
+          >
+          <span
+            :data-inactive="!fileName"
+            :aria-hidden="!fileName || undefined"
+            >{{ t('common.chooseAnother') }}</span
+          >
+        </span></label
+      >
       <input
         id="create-local-video"
         class="visually-hidden"
@@ -231,14 +268,34 @@ defineExpose({ prepare, selectBilibili, selectLocal });
         :disabled="disabled || working"
         @change="fileInput"
       />
-      <span class="hint">{{ t('media.drop') }}</span>
     </div>
-    <p v-if="summary || localSummary" class="media-preview">
-      <Icon name="check" />{{ translate(localSummary) || summary }}
-    </p>
-    <p v-if="error" role="alert" class="notice error">{{ translate(error) }}</p>
-    <p v-if="working" role="status" class="hint">
-      {{ t('common.preparingVideo') }}
-    </p>
+    <div v-if="source === 'bilibili'" class="media-info">
+      <div v-if="parts > 1 || part > 1" class="part-row">
+        <label for="bilibili-part">{{ t('media.part') }}</label
+        ><input
+          id="bilibili-part"
+          v-model.number="part"
+          type="number"
+          autocomplete="off"
+          min="1"
+          :max="parts || 10000"
+          :readonly="disabled || working"
+          @input="invalidate"
+        /><span v-if="parts" class="hint">{{
+          t('media.partTotal', { count: parts })
+        }}</span>
+      </div>
+      <FormFeedback
+        reserve
+        class="media-preview"
+        :text="
+          translate(error) ||
+          (working
+            ? t('common.preparingVideo')
+            : summary || t('media.previewHint'))
+        "
+        :tone="error ? 'error' : working || !summary ? 'hint' : 'success'"
+      />
+    </div>
   </div>
 </template>

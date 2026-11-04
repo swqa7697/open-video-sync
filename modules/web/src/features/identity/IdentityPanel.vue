@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 
+import FormFeedback from '../../components/FormFeedback.vue';
 import { t } from '../../i18n';
 import { useIdentityStore } from '../../stores/identity';
 
@@ -39,11 +40,15 @@ watch(
 <template>
   <section aria-labelledby="identity-title">
     <h2 id="identity-title" tabindex="-1">{{ t('identity.title') }}</h2>
-    <p>
-      {{ identity.session?.identity.displayName || t('common.guest') }} ·
-      {{ t('identity.browser') }}
-    </p>
-    <form @submit.prevent="!props.busy && emit('rename', name)">
+    <FormFeedback
+      class="identity-summary"
+      :text="`${identity.session?.identity.displayName || t('common.guest')} · ${t('identity.browser')}`"
+      :announce="false"
+    />
+    <form
+      autocomplete="off"
+      @submit.prevent="!props.busy && emit('rename', name)"
+    >
       <label for="display-name">{{ t('identity.name') }}</label>
       <div class="form-row">
         <input
@@ -51,7 +56,7 @@ watch(
           v-model="name"
           :readonly="props.busy"
           maxlength="96"
-          autocomplete="nickname"
+          autocomplete="off"
           :aria-invalid="props.invalid || undefined"
           :aria-describedby="props.invalid ? 'app-alert' : 'display-name-hint'"
           @input="emit('edit')"

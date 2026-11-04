@@ -2,11 +2,23 @@ export interface PlayerPreferences {
   volume: number;
   muted: boolean;
   quality?: number;
+  danmakuVisible: boolean;
+  danmakuDensity: number;
+  danmakuSize: number;
+  danmakuSpeed: number;
   danmakuArea: number;
 }
 
 export function readPlayerPreferences(): PlayerPreferences {
-  const defaults = { volume: 0.5, muted: false, danmakuArea: 0.5 };
+  const defaults = {
+    volume: 0.5,
+    muted: false,
+    danmakuVisible: true,
+    danmakuDensity: 20,
+    danmakuSize: 20,
+    danmakuSpeed: 1,
+    danmakuArea: 0.5,
+  };
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem('ovs.player') ?? 'null',
@@ -22,6 +34,31 @@ export function readPlayerPreferences(): PlayerPreferences {
           ? value.volume
           : defaults.volume,
       muted: typeof value.muted === 'boolean' ? value.muted : defaults.muted,
+      danmakuVisible:
+        typeof value.danmakuVisible === 'boolean'
+          ? value.danmakuVisible
+          : defaults.danmakuVisible,
+      danmakuDensity:
+        typeof value.danmakuDensity === 'number' &&
+        Number.isInteger(value.danmakuDensity) &&
+        value.danmakuDensity >= 1 &&
+        value.danmakuDensity <= 40
+          ? value.danmakuDensity
+          : defaults.danmakuDensity,
+      danmakuSize:
+        typeof value.danmakuSize === 'number' &&
+        Number.isInteger(value.danmakuSize) &&
+        value.danmakuSize >= 16 &&
+        value.danmakuSize <= 32
+          ? value.danmakuSize
+          : defaults.danmakuSize,
+      danmakuSpeed:
+        typeof value.danmakuSpeed === 'number' &&
+        Number.isFinite(value.danmakuSpeed) &&
+        value.danmakuSpeed >= 0.5 &&
+        value.danmakuSpeed <= 1.5
+          ? value.danmakuSpeed
+          : defaults.danmakuSpeed,
       danmakuArea:
         value.danmakuArea === 1 ||
         value.danmakuArea === 0.5 ||

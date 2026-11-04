@@ -87,11 +87,90 @@ test('a player accepts only its exact channel and disposal rejects pending repli
   const rejected = pendingCalls.map((call) =>
     expect(call).rejects.toMatchObject({ name: 'AbortError' }),
   );
+  bridge.seek('h1-1234', 1, 2);
+  expect(posted.at(-1)).toMatchObject({
+    op: 'seek',
+    handle: 'h1-1234',
+    generation: 1,
+    seek: 2,
+  });
   bridge.close(2);
   await Promise.all(rejected);
   expect(posted.at(-1)?.op).toBe('dispose');
 });
 
+test('slow resolution replies arrive without extending byte-request deadlines', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(window, 'postMessage').mockImplementation((raw) => {
+    const request = JSON.parse(raw as string) as Record<string, unknown>;
+    setTimeout(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: window,
+          origin: location.origin,
+          data: JSON.stringify({
+            channel: 'ovs-bilibili-response',
+            client: request.client,
+            id: request.id,
+            ok: true,
+            value: { completed: true },
+          }),
+        }),
+      );
+    }, 22000);
+  });
+  const bridge = new HelperBridge(),
+    resolving = ['preview', 'open'].map((op) =>
+      expect(bridge.call(op)).resolves.toEqual({ completed: true }),
+    ),
+    reading = expect(bridge.call('bytes')).rejects.toMatchObject({
+      code: 'bridge-timeout',
+    });
+  await vi.advanceTimersByTimeAsync(15000);
+  await reading;
+  await vi.advanceTimersByTimeAsync(7000);
+  await Promise.all(resolving);
+  bridge.close(2, false);
+});
+
+test('foreground and thumbnail replies have independent capacity and can complete out of order', async () => {
+  const posted: Record<string, unknown>[] = [];
+  vi.spyOn(window, 'postMessage').mockImplementation((raw) => {
+    posted.push(JSON.parse(raw as string) as Record<string, unknown>);
+  });
+  const bridge = new HelperBridge();
+  const foreground = Array.from({ length: 4 }, () => bridge.call('bytes'));
+  const cleanup = foreground.map((pending) =>
+    expect(pending).rejects.toMatchObject({ name: 'AbortError' }),
+  );
+  const otherCDN = [
+    bridge.call('thumbnail', {}, undefined, 0),
+    bridge.call('thumbnail', {}, undefined, 0),
+  ];
+  cleanup.push(
+    ...otherCDN.map((pending) =>
+      expect(pending).rejects.toMatchObject({ name: 'AbortError' }),
+    ),
+  );
+  const admitted = bridge.call('thumbnail', {}, undefined, 1);
+  const request = posted.at(-1)!;
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      source: window,
+      origin: location.origin,
+      data: JSON.stringify({
+        channel: 'ovs-bilibili-response',
+        client: request.client,
+        id: request.id,
+        ok: true,
+        value: { base64: 'Kg==' },
+      }),
+    }),
+  );
+  await expect(admitted).resolves.toEqual({ base64: 'Kg==' });
+  bridge.close(2);
+  await Promise.all(cleanup);
+});
 test('startup waits for late manager registration without opening media first', async () => {
   vi.useFakeTimers();
   let requests = 0;

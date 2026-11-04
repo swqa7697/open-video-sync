@@ -111,6 +111,7 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	api := transport.NewAPI(cfg.origin.String(), identities)
 	api.WithVersions(transport.Versions{
 		Sync: version, Web: webRelease.Version, Helper: helperVersion,
+		Image: webRelease.Image, Release: webRelease.Release,
 		Commit: webRelease.Commit, Dirty: webRelease.Dirty, Tag: webRelease.Tag,
 	})
 	api.TrustedProxies = cfg.trustedProxies

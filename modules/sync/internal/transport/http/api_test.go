@@ -58,7 +58,7 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
 	service := &identity.Service{Repository: store, Now: func() time.Time { return now }, Random: rand.Reader}
 	a := NewAPI("http://watch.example", service)
-	wantVersions := Versions{Sync: "1.2.3", Web: "2.3.4", Helper: "3.4.5", Commit: strings.Repeat("a", 40), Dirty: true, Tag: "v1.2.3"}
+	wantVersions := Versions{Sync: "1.2.3", Web: "2.3.4", Helper: "3.4.5", Image: "ovs:dev", Release: false, Commit: strings.Repeat("a", 40), Dirty: true, Tag: "v1.2.3"}
 	a.WithVersions(wantVersions)
 	release := call(t, a, apiPeer{}, "GET", "/api/v2/version", "")
 	var versions Versions

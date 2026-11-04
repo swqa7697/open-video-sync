@@ -8,10 +8,14 @@ const version = readVersions().helper;
 const code = await readFile(new URL('helper.user.js', root), 'utf8');
 const parser = await readFile(new URL('bridge-json.js', root), 'utf8');
 const codecs = await readFile(new URL('media-codecs.js', root), 'utf8');
+const delivery = await readFile(new URL('media-delivery.js', root), 'utf8');
+const launcher = await readFile(new URL('launcher.js', root), 'utf8');
 const source = code
   .replaceAll('{{HELPER_VERSION}}', version)
+  .replace('/* OVS_BILIBILI_LAUNCHER */', launcher.replace(/^export /m, ''))
   .replace('/* OVS_BRIDGE_JSON */', parser.replace(/^export /, ''))
-  .replace('/* OVS_MEDIA_CODECS */', codecs.replace(/^export /m, ''));
+  .replace('/* OVS_MEDIA_CODECS */', codecs.replace(/^export /m, ''))
+  .replace('/* OVS_MEDIA_DELIVERY */', delivery.replace(/^export /m, ''));
 // Development checkouts can change the helper without changing its release version.
 const build = createHash('sha256').update(source).digest('hex');
 const release = { version, protocol: 1, build };

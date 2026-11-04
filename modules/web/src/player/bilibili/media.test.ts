@@ -227,10 +227,31 @@ test('selection resolves only canonical IDs and exact parts without forwarding p
     part: 3,
   });
   for (const input of [
+    'ss91812',
+    'https://www.bilibili.com/bangumi/play/ss91812?from=search',
+    'https://www.bilibili.com/bangumi/play/ss6038',
+  ])
+    expect(parseSelection(input, 2)).toEqual({
+      seasonId: input.includes('6038') ? '6038' : '91812',
+      part: 1,
+    });
+  expect(parseSelection('ep103591', 1)).toEqual({
+    episodeId: '103591',
+    part: 1,
+  });
+  expect(
+    parseSelection('https://www.bilibili.com/bangumi/play/ep103591', 1),
+  ).toEqual({ episodeId: '103591', part: 1 });
+  for (const input of [
     'https://b23.tv/example',
     'https://www.bilibili.com.evil.invalid/video/BV1hf4y1N75G',
     'https://user:secret@www.bilibili.com/video/BV1hf4y1N75G',
     'https://www.bilibili.com/video/BV1hf4y1N75G?p=0',
+    'https://www.bilibili.com.evil.invalid/bangumi/play/ss6038',
+    'https://user:secret@www.bilibili.com/bangumi/play/ep103591',
+    'https://www.bilibili.com/bangumi/play/ss0',
+    'ep01',
+    'ss-1',
   ])
     expect(() => parseSelection(input, 1)).toThrow();
 });
@@ -295,7 +316,61 @@ test('helper metadata and display comments reject foreign payload fields and scr
       },
     ],
   };
-  expect(decodePreview(preview, first.bvid, 1)).toEqual(preview);
+  expect(decodePreview(preview, first)).toEqual(preview);
+  const statistics = {
+    ...preview,
+    tracks: [
+      { ...preview.tracks[0], bitrate: 2183000, frameRate: 60000 / 1001 },
+      preview.tracks[1],
+    ],
+  };
+  expect(decodePreview(statistics, first)).toEqual(statistics);
+  for (const fields of [
+    { bitrate: -1 },
+    { bitrate: 1073741825 },
+    { bitrate: '2183000' },
+    { frameRate: NaN },
+    { frameRate: 0 },
+    { frameRate: 1001 },
+    { host: 'credential.invalid' },
+  ])
+    expect(() =>
+      decodePreview(
+        {
+          ...preview,
+          tracks: [{ ...preview.tracks[0], ...fields }, preview.tracks[1]],
+        },
+        first,
+      ),
+    ).toThrow();
+  const bangumi = {
+    ...preview,
+    episodeId: '103591',
+    playlist: {
+      ...playlist,
+      episodes: [
+        { ...first, episodeId: '103591' },
+        { ...second, episodeId: '250984' },
+      ],
+    },
+  };
+  expect(decodePreview(bangumi, { seasonId: '6038', part: 1 })).toEqual(
+    bangumi,
+  );
+  expect(decodePreview(bangumi, { episodeId: '103591', part: 1 })).toEqual(
+    bangumi,
+  );
+  expect(
+    decodeInfo({ ...bangumi, handle: 'h1-1234' }, first.bvid, 1, '103591')
+      .episodeId,
+  ).toBe('103591');
+  expect(() => decodePreview(preview, { seasonId: '6038', part: 1 })).toThrow();
+  expect(() =>
+    decodePreview(bangumi, { episodeId: '250984', part: 1 }),
+  ).toThrow();
+  expect(() =>
+    decodePreview({ ...bangumi, playlist }, { episodeId: '103591', part: 1 }),
+  ).toThrow();
   expect(decodeInfo({ ...preview, handle: 'h1-1234' }, first.bvid, 1)).toEqual({
     ...preview,
     handle: 'h1-1234',
@@ -311,7 +386,7 @@ test('helper metadata and display comments reject foreign payload fields and scr
       ...preview,
       tracks: [{ ...preview.tracks[0], codec }, preview.tracks[1]],
     };
-    expect(decodePreview(candidate, first.bvid, 1)).toEqual(candidate);
+    expect(decodePreview(candidate, first)).toEqual(candidate);
   }
   for (const codec of [
     'vp09.00.10.08',
@@ -327,8 +402,7 @@ test('helper metadata and display comments reject foreign payload fields and scr
           ...preview,
           tracks: [{ ...preview.tracks[0], codec }, preview.tracks[1]],
         },
-        first.bvid,
-        1,
+        first,
       ),
     ).toThrow();
   }
@@ -339,7 +413,7 @@ test('helper metadata and display comments reject foreign payload fields and scr
     { ...preview, duration: 0 },
     { ...preview, part: 2 },
   ])
-    expect(() => decodePreview(invalid, first.bvid, 1)).toThrow();
+    expect(() => decodePreview(invalid, first)).toThrow();
   expect(decodePlaylist(playlist, first.bvid, 1)).toEqual(playlist);
   for (const episodes of [
     [first, first],

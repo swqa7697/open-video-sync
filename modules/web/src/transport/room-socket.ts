@@ -24,7 +24,7 @@ export interface Command {
   payload:
     | { action: 'play' | 'pause' | 'replay' }
     | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor };
+    | { media: MediaDescriptor; autoPlay?: boolean };
 }
 // Why a room connection ended for good. Other closures reconnect with backoff.
 export type EndReason =
@@ -46,6 +46,7 @@ export interface SocketEvents {
     options?: { reload?: boolean; recheck?: boolean },
   ): void;
   pending(command: Command | undefined): void;
+  result?(command: Command, accepted: boolean): void;
   ended(reason: EndReason): void;
 }
 export class RoomSocket {
@@ -236,6 +237,7 @@ export class RoomSocket {
         this.publicError(object(p.error));
       }
       if (this.pending?.commandId === key) {
+        this.events.result?.(this.pending, p.accepted);
         this.pending = undefined;
         this.events.pending(undefined);
       }
@@ -343,26 +345,38 @@ export class RoomSocket {
     }
     if (this.pings.size > 20) this.pings = new Map([...this.pings].slice(-20));
   }
-  command(payload: Command['payload']): void {
+  command(
+    payload: Command['payload'],
+    intent?: Pick<
+      Command,
+      'commandId' | 'epoch' | 'mediaGeneration' | 'expectedRevision'
+    >,
+  ): boolean {
     const s = this.snapshot;
     if (!s || !this.connected || !this.active || this.pending) {
       this.events.error(message('socket.controls'));
-      return;
+      return false;
     }
     const safePayload =
-      'media' in payload ? { media: decodeMedia(payload.media) } : payload;
+      'media' in payload
+        ? {
+            media: decodeMedia(payload.media),
+            ...(payload.autoPlay === true ? { autoPlay: true } : {}),
+          }
+        : payload;
     const command: Command = {
       v: 2,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',
-      commandId: requestKey(),
-      epoch: s.epoch,
-      mediaGeneration: s.mediaGeneration,
-      expectedRevision: s.revision,
+      commandId: intent?.commandId ?? requestKey(),
+      epoch: intent?.epoch ?? s.epoch,
+      mediaGeneration: intent?.mediaGeneration ?? s.mediaGeneration,
+      expectedRevision: intent?.expectedRevision ?? s.revision,
       payload: safePayload,
     };
     this.pending = command;
     this.events.pending(command);
     this.send(command);
+    return true;
   }
   resolveUncertain(): void {
     if (

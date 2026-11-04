@@ -39,6 +39,24 @@ func (s *Service) startBarrier(l *liveRoom, reason string, required []string, no
 	return nil
 }
 
+func (s *Service) startPlayback(l *liveRoom, r Room, now int64) error {
+	l.playback.Phase = "playing"
+	l.playback.DesiredPlaying = true
+	l.barrier = nil
+	l.cohort = make(map[string]bool)
+	required := []string{}
+	for _, m := range r.Members {
+		if l.connections[l.active[m.ID]] != nil {
+			l.cohort[m.ID] = true
+			required = append(required, m.ID)
+		}
+	}
+	if r.Settings.WaitForAll {
+		return s.startBarrier(l, "play", required, now)
+	}
+	return nil
+}
+
 func capable(report *contracts.Readiness) bool {
 	if report == nil {
 		return false

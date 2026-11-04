@@ -10,7 +10,7 @@ CHANNEL ?= dev
 VERBOSE ?= 0
 CLEAN ?= 0
 IMAGE ?= ovs:$(shell node scripts/versions.mjs image-tag)
-CADDY_IMAGE ?= caddy:2
+CADDY_IMAGE ?= caddy:alpine
 export CHANNEL VERBOSE CLEAN IMAGE CADDY_IMAGE
 export HOST URL DEPLOY_DIR PROXY PROXY_NETWORK TRUSTED_PROXIES PROXY_SUBNET
 
@@ -24,8 +24,9 @@ ifneq ($(VERBOSE),1)
 .SILENT:
 endif
 
-.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
+.PHONY: help install setup uninstall clean deps upgrade upgrade-backend upgrade-tools upgrade-frontend format tidy format-check lint check test test-race helper-build web-build build dev dev-web test-e2e test-e2e-measure browser-install image image-smoke proxy-smoke bump-major bump-minor bump-patch release-commit release-tag
 .PHONY: deploy deploy-status deploy-logs deploy-restart deploy-stop deploy-smoke
+.PHONY: ci-plan ci-finish
 
 help: ## Show available commands
 	@printf 'Usage: make <target> [VERBOSE=1]\n\n'
@@ -149,6 +150,10 @@ test-e2e: build ## Run Chromium, Firefox, and mixed rooms against the production
 	@$(INFO) "Running production browser journeys..."
 	pnpm --dir $(WEB) run test:e2e
 
+test-e2e-measure: build ## Run optional decoded-frame and control-latency measurements
+	@$(INFO) "Running isolated browser measurement trials..."
+	OVS_E2E_MEASUREMENTS=1 pnpm --dir $(WEB) run test:e2e
+
 image: ## Build the single non-root application image
 	@$(INFO) "Building the application image..."
 	build_info="$$(node scripts/versions.mjs build-info)" && \
@@ -185,6 +190,12 @@ deploy-stop: ## Stop managed remote services and preserve persistent volumes
 deploy-smoke: ## Exercise deployment through isolated SSH and Docker (requires privileged Docker and SSH tools)
 	@$(INFO) "Running the isolated deployment smoke test..."
 	OVS_DEPLOY_SMOKE=1 go -C $(SCRIPTS) test -count=1 -timeout=10m ./deploy -run TestDeploymentSmoke -v
+
+ci-plan: ## Select full or release validation for the current GitHub PR run
+	go -C $(SCRIPTS) run ./ci plan
+
+ci-finish: ## Record completed CI checks and verify release source/base freshness
+	go -C $(SCRIPTS) run ./ci finish
 
 bump-major: ## Bump the selected module version in versions.toml; major (X.0.0); no Git mutations
 	go -C $(SCRIPTS) run ./release bump major $(MODULE)

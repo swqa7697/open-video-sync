@@ -8,18 +8,34 @@ export interface TrackInfo {
   mime: string;
   init: [number, number];
   index: [number, number];
+  bitrate?: number;
+  frameRate?: number;
 }
 export interface Episode {
   bvid: string;
   part: number;
   title: string;
+  episodeId?: string;
 }
+export type BilibiliSelection =
+  | { bvid: string; part: number; episodeId?: string }
+  | { seasonId: string; part: 1 }
+  | { episodeId: string; part: 1 };
 export interface Playlist {
   title: string;
   episodes: Episode[];
 }
+export function sameEpisode(
+  a: Pick<Episode, 'bvid' | 'part' | 'episodeId'> | undefined,
+  b: Pick<Episode, 'bvid' | 'part' | 'episodeId'>,
+): boolean {
+  return (
+    !!a && a.bvid === b.bvid && a.part === b.part && a.episodeId === b.episodeId
+  );
+}
 export interface MediaPreview {
   bvid: string;
+  episodeId?: string;
   cid: string;
   part: number;
   duration: number;
@@ -37,6 +53,7 @@ export function decodePlaylist(
   value: unknown,
   bvid: string,
   part: number,
+  episodeId?: string,
 ): Playlist {
   const v = object(value);
   exact(v, ['title', 'episodes']);
@@ -49,7 +66,12 @@ export function decodePlaylist(
   const seen = new Set<string>();
   const episodes = v.episodes.map((value) => {
     const e = object(value);
-    exact(e, ['bvid', 'part', 'title']);
+    exact(e, [
+      'bvid',
+      'part',
+      'title',
+      ...(Object.hasOwn(e, 'episodeId') ? ['episodeId'] : []),
+    ]);
     const id = boundedText(e.bvid, 12),
       page = integer(e.part, 1, 10000),
       title = boundedText(e.title, 160),
@@ -57,9 +79,20 @@ export function decodePlaylist(
     if (!/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(id) || !title || seen.has(key))
       throw new HelperError('invalid-reply');
     seen.add(key);
-    return { bvid: id, part: page, title };
+    const episodeId = Object.hasOwn(e, 'episodeId')
+      ? decodeEpisodeId(e.episodeId)
+      : undefined;
+    if (episodeId && page !== 1) throw new HelperError('invalid-reply');
+    return { bvid: id, part: page, title, ...(episodeId ? { episodeId } : {}) };
   });
   if (!seen.has(`${bvid}:${part}`)) throw new HelperError('invalid-reply');
+  if (
+    episodeId &&
+    (episodes.some((e) => !e.episodeId) ||
+      episodes.find((e) => e.bvid === bvid && e.part === part)?.episodeId !==
+        episodeId)
+  )
+    throw new HelperError('invalid-reply');
   return { title: boundedText(v.title, 160), episodes };
 }
 export interface Segment {
@@ -68,10 +101,7 @@ export interface Segment {
   time: number;
   end: number;
 }
-export function parseSelection(
-  input: string,
-  part: number,
-): { bvid: string; part: number } {
+export function parseSelection(input: string, part: number): BilibiliSelection {
   const raw = input.trim();
   if (
     !Number.isSafeInteger(part) ||
@@ -81,6 +111,11 @@ export function parseSelection(
   )
     throw new LocalizedError(message('media.validSelection'));
   if (/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(raw)) return { bvid: raw, part };
+  const bangumi = raw.match(/^(ss|ep)([1-9][0-9]{0,14})$/i);
+  if (bangumi)
+    return bangumi[1]!.toLowerCase() === 'ss'
+      ? { seasonId: bangumi[2]!, part: 1 }
+      : { episodeId: bangumi[2]!, part: 1 };
   let url: URL;
   try {
     url = new URL(raw);
@@ -95,6 +130,13 @@ export function parseSelection(
     url.port
   )
     throw new LocalizedError(message('media.noShortLinks'));
+  const episode = url.pathname.match(
+    /^\/bangumi\/play\/(ss|ep)([1-9][0-9]{0,14})\/?$/,
+  );
+  if (episode)
+    return episode[1] === 'ss'
+      ? { seasonId: episode[2]!, part: 1 }
+      : { episodeId: episode[2]!, part: 1 };
   const match = url.pathname.match(
     /^\/video\/(BV[1-9A-HJ-NP-Za-km-z]{10})\/?$/,
   );
@@ -106,20 +148,38 @@ export function parseSelection(
     throw new LocalizedError(message('media.validPart'));
   return { bvid: match[1]!, part: selected };
 }
+function decodeEpisodeId(value: unknown): string {
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,14}$/.test(value))
+    throw new HelperError('invalid-reply');
+  return value;
+}
+export function selectionInput(selection: BilibiliSelection): string {
+  if ('episodeId' in selection && selection.episodeId)
+    return `ep${selection.episodeId}`;
+  if ('seasonId' in selection) return `ss${selection.seasonId}`;
+  return 'bvid' in selection ? selection.bvid : '';
+}
 export function decodeInfo(
   value: unknown,
   bvid: string,
   part: number,
+  episodeId?: string,
 ): MediaInfo {
   const { handle: rawHandle, ...preview } = object(value);
   const handle = boundedText(rawHandle, 100);
   if (!/^h[0-9]+-[0-9-]+$/.test(handle)) throw new HelperError('invalid-reply');
-  return { ...decodePreview(preview, bvid, part), handle };
+  return {
+    ...decodePreview(preview, {
+      bvid,
+      part,
+      ...(episodeId ? { episodeId } : {}),
+    }),
+    handle,
+  };
 }
 export function decodePreview(
   value: unknown,
-  bvid: string,
-  part: number,
+  selection: BilibiliSelection,
 ): MediaPreview {
   const v = object(value);
   exact(v, [
@@ -132,10 +192,20 @@ export function decodePreview(
     'tracks',
     'quality',
     'qualities',
+    ...(Object.hasOwn(v, 'episodeId') ? ['episodeId'] : []),
     ...(Object.hasOwn(v, 'playlist') ? ['playlist'] : []),
   ]);
+  const bvid = boundedText(v.bvid, 12),
+    part = selection.part;
+  const episodeId = Object.hasOwn(v, 'episodeId')
+    ? decodeEpisodeId(v.episodeId)
+    : undefined;
   if (
-    v.bvid !== bvid ||
+    !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
+    ('bvid' in selection && bvid !== selection.bvid) ||
+    (('seasonId' in selection || 'episodeId' in selection) && !episodeId) ||
+    ('episodeId' in selection && episodeId !== selection.episodeId) ||
+    (episodeId && part !== 1) ||
     v.part !== part ||
     typeof v.cid !== 'string' ||
     !/^[1-9][0-9]{0,19}$/.test(v.cid) ||
@@ -156,7 +226,14 @@ export function decodePreview(
   };
   const tracks = v.tracks.map((value, index) => {
     const t = object(value);
-    exact(t, ['id', 'codec', 'mime', 'init', 'index']);
+    exact(t, [
+      'id',
+      'codec',
+      'mime',
+      'init',
+      'index',
+      ...['bitrate', 'frameRate'].filter((key) => Object.hasOwn(t, key)),
+    ]);
     const codec = boundedText(t.codec, 60);
     if (
       t.mime !== (index === 0 ? 'video/mp4' : 'audio/mp4') ||
@@ -171,6 +248,12 @@ export function decodePreview(
       mime: t.mime as string,
       init: range(t.init),
       index: range(t.index),
+      ...(Object.hasOwn(t, 'bitrate')
+        ? { bitrate: integer(t.bitrate, 1, 1073741824) }
+        : {}),
+      ...(Object.hasOwn(t, 'frameRate')
+        ? { frameRate: decodeFrameRate(t.frameRate) }
+        : {}),
     };
   });
   const quality = integer(v.quality, 1, 127);
@@ -190,6 +273,7 @@ export function decodePreview(
     quality,
     qualities,
     bvid,
+    ...(episodeId ? { episodeId } : {}),
     cid: v.cid,
     part,
     duration: v.duration,
@@ -197,9 +281,19 @@ export function decodePreview(
     parts: integer(v.parts, part, 10000),
     tracks,
     ...(Object.hasOwn(v, 'playlist')
-      ? { playlist: decodePlaylist(v.playlist, bvid, part) }
+      ? { playlist: decodePlaylist(v.playlist, bvid, part, episodeId) }
       : {}),
   };
+}
+function decodeFrameRate(value: unknown): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > 1000
+  )
+    throw new HelperError('invalid-reply');
+  return value;
 }
 // Parse a bounded ISO-BMFF SIDX. Nested indexes and unsafe offsets are unsupported.
 export function parseIndex(data: Uint8Array, offset: number): Segment[] {

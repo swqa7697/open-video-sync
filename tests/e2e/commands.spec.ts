@@ -5,9 +5,17 @@ import { dismissHelper, openQuickActions, runQuickAction } from './flows';
 // Room permissions and playback through this menu extend the existing room journey.
 test('quick actions search locally, prefill videos, and preserve keyboard focus', async ({
   page,
-}, testInfo) => {
+}) => {
   const failures: string[] = [];
   const mutations: string[] = [];
+  const documentFits = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      return {
+        horizontal: root.scrollWidth <= root.clientWidth + 1,
+        vertical: root.scrollHeight <= root.clientHeight + 1,
+      };
+    });
   page.on('pageerror', (error) => failures.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
@@ -28,9 +36,6 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
     'none',
   );
   expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
-  await page.screenshot({
-    path: testInfo.outputPath('commands-desktop-dark.png'),
-  });
   await input.fill('/theme');
   await input.press('ArrowDown');
   await expect(palette.getByRole('option', { selected: true })).toContainText(
@@ -67,6 +72,11 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await expect(input).not.toHaveAttribute('aria-activedescendant');
   await input.press('Enter');
   await expect(palette).toBeVisible();
+  await input.fill('@');
+  await expect(palette.getByRole('option')).toHaveCount(0);
+  await expect(palette.getByRole('status')).toContainText('Join a room');
+  await input.press('Enter');
+  await expect(palette).toBeVisible();
   await input.fill('$ https://example.com/private-video');
   await expect(palette.getByRole('option')).toHaveCount(0);
   await expect(palette.getByRole('status')).toBeVisible();
@@ -87,7 +97,20 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   );
   await expect(page.locator('#bilibili-part')).toHaveValue('3');
   await runQuickAction(page, 'BV1hf4y1N75G');
-  await expect(page.locator('#bilibili-part')).toHaveCount(0);
+  await expect(page.locator('#bilibili-part')).toBeHidden();
+  await expect(page.getByRole('spinbutton')).toHaveCount(0);
+  for (const [query, expected] of [
+    [
+      'https://www.bilibili.com/bangumi/play/ss6038?tracking=synthetic',
+      'ss6038',
+    ],
+    ['$ ep103591', 'ep103591'],
+  ]) {
+    await runQuickAction(page, query!);
+    await expect(page.locator('#bilibili-url')).toHaveValue(expected!);
+    await expect(page.locator('#bilibili-part')).toBeHidden();
+    await expect(page.getByRole('spinbutton')).toHaveCount(0);
+  }
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
   await expect(
@@ -95,11 +118,6 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   ).toHaveCSS('outline-style', 'none');
   await runQuickAction(page, '/language zh-CN');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
-  await openQuickActions(page);
-  await page.screenshot({
-    path: testInfo.outputPath('commands-desktop-zh.png'),
-  });
-  await page.keyboard.press('Escape');
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
   await openQuickActions(page, '/theme dark');
@@ -123,9 +141,6 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(height!);
-    await page.screenshot({
-      path: testInfo.outputPath(`commands-${width}-${height}.png`),
-    });
     await input.fill('/about');
     await input.press('Enter');
     await expect(
@@ -133,35 +148,15 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('.command-trigger')).toBeFocused();
-    await page.screenshot({
-      path: testInfo.outputPath(`home-${width}-${height}.png`),
-      fullPage: true,
-    });
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
+    expect(await documentFits()).toEqual({ horizontal: true, vertical: true });
   }
   await runQuickAction(page, '/theme light');
-  await openQuickActions(page, '/language');
-  await page.screenshot({
-    path: testInfo.outputPath('commands-mobile-light.png'),
-  });
-  await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => {
     document.documentElement.style.fontSize = '200%';
   });
   await openQuickActions(page);
-  await page.screenshot({
-    path: testInfo.outputPath('commands-200-percent.png'),
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  expect(await documentFits()).toEqual({ horizontal: true, vertical: true });
   await page.keyboard.press('Control+k');
   await expect(palette).toHaveCount(0);
   await page.evaluate(() => {

@@ -10,6 +10,7 @@ Use root Make targets as the common entry point:
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `gofmt/`          | `format`, `format-check`                                                                  | Format Go source and organize imports, or check without writing     |
 | `release/`        | `bump-major`, `bump-minor`, `bump-patch`, `release-commit`, `release-tag`                 | Prepare module versions and manage approved release Git actions     |
+| `ci/`             | `ci-plan`, `ci-finish`                                                                    | Select CI validation mode and record full-run evidence              |
 | `deploy/`         | `deploy`, `deploy-status`, `deploy-logs`, `deploy-restart`, `deploy-stop`, `deploy-smoke` | Deploy and manage the complete application through SSH              |
 | `notices/`        | `build`, `image`                                                                          | Collect compiled server and frontend production dependency licenses |
 | `image-smoke/`    | `image-smoke`                                                                             | Check the application image and persistence across replacement      |

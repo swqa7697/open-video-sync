@@ -9,13 +9,549 @@ import {
   closeRoom,
   invitationLink,
   observePageKeyboard,
+  openPlayerMenu,
+  openQuickActions,
+  runQuickAction,
+  seekTo,
+  settings,
 } from './flows';
-import { generatedVideo } from './media';
+import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
+
+test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90000);
+  const tracks = await generatedDASHMedia(browser);
+  const fixturePage = await browser.newPage();
+  const sheets = await fixturePage.evaluate(() =>
+    [0, 1].map((sheet) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 960;
+      canvas.height = 540;
+      const context = canvas.getContext('2d')!;
+      for (let cell = 0; cell < 4; cell++) {
+        context.fillStyle = `rgb(${24 + (sheet * 4 + cell) * 28},60,80)`;
+        const x = (cell % 2) * 480,
+          y = Math.floor(cell / 2) * 270;
+        context.fillRect(x, y, 480, 270);
+        context.fillStyle = '#fff';
+        context.font = '60px sans-serif';
+        context.fillText(`Scene ${sheet * 4 + cell + 1}`, x + 60, y + 150);
+      }
+      return canvas.toDataURL('image/png').split(',')[1]!;
+    }),
+  );
+  await fixturePage.close();
+  const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
+  const script = await response.text();
+  await page.addInitScript({
+    content: `(() => {
+    sessionStorage.setItem('hold-thumbnails', '1');
+    sessionStorage.setItem('thumbnail-requests', '0');
+    sessionStorage.setItem('thumbnail-completed', '0');
+    sessionStorage.setItem('danmaku-requests', '0');
+    const tracks = ${JSON.stringify(tracks)};
+    const sheets = ${JSON.stringify(sheets)};
+    for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
+    const unsafeWindow = window;
+    const addBuffer = MediaSource.prototype.addSourceBuffer;
+    MediaSource.isTypeSupported = () => true;
+    MediaSource.prototype.addSourceBuffer = function(mime) {
+      return addBuffer.call(this, mime.startsWith('video/')
+        ? 'video/webm; codecs="vp8"' : 'audio/webm; codecs="opus"');
+    };
+    const held = new Set();
+    const heldThumbnails = new Set();
+    const heldEpisodes = new Set();
+    let owner, trafficID = 100000;
+    window.addEventListener('message', event => {
+      if (typeof event.data !== 'string') return;
+      try {
+        const request = JSON.parse(event.data);
+        if (request.channel === 'ovs-bilibili-request' && request.op === 'open') owner = request.client;
+      } catch {}
+    });
+    document.addEventListener('begin-thumbnail-competition', () => {
+      if (!owner) throw Error('Synthetic helper owner unavailable.');
+      for (let request = 0; request < 4; request++) {
+        window.postMessage(JSON.stringify({
+          channel: 'ovs-bilibili-request', client: owner, id: ++trafficID, op: 'session'
+        }), location.origin);
+      }
+    });
+    document.addEventListener('resume-thumbnails', () => {
+      sessionStorage.removeItem('hold-thumbnails');
+      for (const resume of [...heldThumbnails]) resume();
+    });
+    document.addEventListener('resume-seek-downloads', () => {
+      for (const resume of [...held]) resume();
+    });
+    document.addEventListener('resume-episodes', () => {
+      sessionStorage.removeItem('hold-episodes');
+      for (const resume of [...heldEpisodes]) resume();
+    });
+    const GM_xmlhttpRequest = (details) => {
+      let cancelled = false;
+      const url = new URL(details.url);
+      const thumbnail = url.pathname.endsWith('/videoshot') || url.hostname.endsWith('.hdslb.com');
+      if (url.hostname.endsWith('.hdslb.com'))
+        sessionStorage.setItem('thumbnail-requests', String(Number(sessionStorage.getItem('thumbnail-requests')) + 1));
+      const respond = () => {
+        held.delete(respond);
+        heldThumbnails.delete(respond);
+        heldEpisodes.delete(respond);
+        if (cancelled) return;
+        if (url.pathname === '/pgc/view/web/season' && sessionStorage.getItem('fail-episode')) {
+          details.onload({ status: 403, finalUrl: details.url, responseText: '{}' });
+          return;
+        }
+        if (details.headers.Range) {
+          const track = tracks[Number(url.searchParams.get('track'))];
+          const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
+          const start = Number(range[1]), end = Number(range[2]);
+          details.onload({ status: 206, finalUrl: details.url,
+            response: track.data.slice(start, end + 1).buffer,
+            responseHeaders: 'Content-Range: bytes ' + start + '-' + end + '/' + track.data.length });
+          return;
+        }
+        let data;
+        if (url.pathname === '/pgc/view/web/season') data = {
+          season_id: 6038, title: 'Synthetic bangumi', episodes: [
+            { id: 103591, bvid: 'BV1hf4y1N75G', cid: 1, title: '1', long_title: 'Opening' },
+            { id: 250984, bvid: 'BV17Jx76CEje', cid: 2, title: '2', long_title: 'Finale' }
+          ]
+        };
+        else if (url.pathname.endsWith('/view')) data = {
+          title: 'Streamed Bilibili seeks', pages: [{ cid: 1, page: 1 }],
+          ugc_season: { title: 'Large collection', sections: [{
+            episodes: Array(929).fill({
+              bvid: 'BV17Jx76CEje', title: 'Episode', page: { page: 1 },
+              arc: { desc: 'x'.repeat(5000) }
+            })
+          }] }
+        };
+        else if (url.pathname.endsWith('/pagelist')) data = [
+          { cid: 1, page: 1, part: 'Streamed Bilibili seeks' }
+        ];
+        else if (url.pathname.endsWith('/videoshot')) data = {
+          img_x_len: 2, img_y_len: 2, img_x_size: 480, img_y_size: 270,
+          index: [0, 0, 3, 7, 11, 16, 21, 26, 29],
+          image: ['//bimp.hdslb.com/videoshotpvhdboss/1.png', '//bimp.hdslb.com/videoshotpvhdboss/1-1.png'],
+        };
+        else if (url.hostname.endsWith('.hdslb.com')) {
+          if (sessionStorage.getItem('fail-thumbnail')) sessionStorage.setItem('thumbnail-failures', String(Number(sessionStorage.getItem('thumbnail-failures')) + 1));
+          else sessionStorage.setItem('thumbnail-completed', String(Number(sessionStorage.getItem('thumbnail-completed')) + 1));
+          details.onload({ status: sessionStorage.getItem('fail-thumbnail') ? 404 : 200,
+            finalUrl: details.url,
+            response: Uint8Array.from(atob(sheets[url.pathname.endsWith('-1.png') ? 1 : 0]), c => c.charCodeAt(0)).buffer });
+          return;
+        }
+        else if (url.pathname.endsWith('/playurl')) {
+          const media = tracks.map((track, i) => ({
+            id: i === 0 ? 120 : 30216,
+            codecs: i === 0 ? 'avc1.64001E' : 'mp4a.40.2',
+            mimeType: i === 0 ? 'video/mp4' : 'audio/mp4',
+            bandwidth: i === 0 ? 2183000 : 177000,
+            ...(i === 0 ? { frameRate: '30000/1001' } : {}),
+            baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?track=' + i,
+            SegmentBase: { Initialization: track.init.join('-'), indexRange: track.index.join('-') }
+          }));
+          data = { timelength: 30000, dash: { video: [media[0]], audio: [media[1]] } };
+        } else if (url.pathname.endsWith('/seg.so')) {
+          sessionStorage.setItem('danmaku-requests', String(Number(sessionStorage.getItem('danmaku-requests')) + 1));
+          details.onload({ status: 200, finalUrl: details.url, response: new ArrayBuffer(0) });
+          return;
+        } else data = { isLogin: false };
+        details.onload({ status: 200, finalUrl: details.url, responseText: JSON.stringify({ code: 0,
+          [url.pathname.startsWith('/pgc/') ? 'result' : 'data']: data }) });
+      };
+      queueMicrotask(() => {
+        if (cancelled) return;
+        if (thumbnail && sessionStorage.getItem('hold-thumbnails')) {
+          heldThumbnails.add(respond);
+          sessionStorage.setItem('thumbnail-held', '1');
+        }
+        else if (url.pathname === '/pgc/view/web/season' && sessionStorage.getItem('hold-episodes')) heldEpisodes.add(respond);
+        else if (details.headers.Range && sessionStorage.getItem('hold-seek')) held.add(respond);
+        else respond();
+      });
+      return { abort() { cancelled = true; held.delete(respond); heldThumbnails.delete(respond); heldEpisodes.delete(respond); details.onabort(); } };
+    };
+    ${script}
+  })();`,
+  });
+  await page.goto('/');
+  await page.getByLabel('Video URL or identifier').fill('BV17Jx76CEje');
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-preview')).toContainText(
+    'Streamed Bilibili seeks',
+  );
+  await page.getByRole('button', { name: 'Create room', exact: true }).click();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  const notifications = page.getByRole('button', {
+    name: 'Dismiss notification',
+    exact: true,
+  });
+  while (await notifications.count()) await notifications.first().click();
+  await expect(page.getByRole('tab', { name: /Episodes/ })).toHaveCount(0);
+  const stage = page.locator('.video-stage');
+  const playerMenu = page.getByRole('menu', { name: 'Player menu' });
+  const statistics = page.getByRole('region', {
+    name: 'Video statistics',
+    exact: true,
+  });
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    await openPlayerMenu(page);
+    const original = playerMenu.getByRole('menuitem', {
+      name: 'Open on Bilibili',
+      exact: true,
+    });
+    await expect(original).toHaveAttribute(
+      'href',
+      'https://www.bilibili.com/video/BV17Jx76CEje?p=1',
+    );
+    await expect(original).toHaveAttribute('target', '_blank');
+    const menuBox = (await playerMenu.boundingBox())!;
+    const stageBox = (await stage.boundingBox())!;
+    expect(menuBox.x).toBeGreaterThanOrEqual(stageBox.x);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(
+      stageBox.x + stageBox.width + 1,
+    );
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(
+      stageBox.y + stageBox.height + 1,
+    );
+    expect(menuBox.x).toBeGreaterThanOrEqual(0);
+    expect(menuBox.y).toBeGreaterThanOrEqual(0);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height);
+    await playerMenu
+      .getByRole('menuitem', { name: 'Video statistics', exact: true })
+      .click();
+    await expect(statistics).toBeVisible();
+    await expect(statistics).toContainText(/640\s*[×x]\s*360/);
+    await expect(statistics).toContainText('Video bitrate');
+    await expect(statistics).toContainText('Audio bitrate');
+    await expect(statistics).toContainText('Video segments');
+    await expect(statistics).toContainText('Audio segments');
+    await expect(statistics).toContainText('Network activity');
+    await expect(statistics.locator('.network-graph')).toBeVisible();
+    await expect(statistics).not.toContainText('Video Host');
+    expect(
+      await statistics.evaluate(
+        (panel) => panel.scrollWidth - panel.clientWidth,
+      ),
+    ).toBe(0);
+    if (viewport.width === 1440) {
+      const pendingDownload = page.waitForEvent('download');
+      await statistics
+        .getByRole('button', { name: 'Download statistics', exact: true })
+        .click();
+      const download = await pendingDownload;
+      const stream = await download.createReadStream();
+      if (!stream) throw new Error('The statistics download must have a body.');
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      const snapshot = Buffer.concat(chunks).toString('utf8');
+      expect(() => JSON.parse(snapshot)).not.toThrow();
+      expect(snapshot).toContain('2183000');
+      expect(snapshot).not.toContain('bilivideo.com');
+      expect(snapshot).not.toContain('blob:');
+      expect(snapshot).not.toContain('handle');
+    }
+    await page.keyboard.press('Escape');
+    await expect(statistics).toHaveCount(0);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openPlayerMenu(page);
+  const danmakuRequests = await page.evaluate(() =>
+    Number(sessionStorage.getItem('danmaku-requests')),
+  );
+  await playerMenu
+    .getByRole('menuitem', { name: 'Reload danmaku', exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => Number(sessionStorage.getItem('danmaku-requests'))),
+    )
+    .toBeGreaterThan(danmakuRequests);
+  // Initial preparation and seeks complete while thumbnail metadata never replies.
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('thumbnail-held')))
+    .toBe('1');
+  await seekTo(page, 3);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(90);
+  await seekTo(page, 0);
+  await expect.poll(() => decodedFrame(page)).toBe(0);
+  await stage.hover({ position: { x: 100, y: 100 } });
+  const track = page.locator('.seek-track');
+  const bounds = (await track.boundingBox())!;
+  const hoverAt = (fraction: number) =>
+    page.mouse.move(
+      Math.round(bounds.x + bounds.width * fraction),
+      bounds.y + bounds.height / 2,
+    );
+  const frameBeforeHover = await decodedFrame(page);
+  await hoverAt(0.02);
+  await expect(page.locator('.seek-preview')).toBeVisible();
+  await expect(page.locator('.seek-preview canvas')).toBeHidden();
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event('begin-thumbnail-competition'));
+    document.dispatchEvent(new Event('resume-thumbnails'));
+  });
+  // Background work fills every sheet without requiring pointer movement.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Number(sessionStorage.getItem('thumbnail-completed')),
+      ),
+    )
+    .toBe(2);
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  const thumbnailRequests = await page.evaluate(() =>
+    Number(sessionStorage.getItem('thumbnail-requests')),
+  );
+  for (const [fraction, scene] of [
+    [0.02, 0],
+    [0.27, 2],
+    [0.45, 3],
+    [0.85, 5],
+    [0.98, 7],
+  ] as const) {
+    await hoverAt(fraction);
+    const thumbnail = page.locator('.seek-preview canvas');
+    await expect(thumbnail).toBeVisible();
+    await expect
+      .poll(() =>
+        thumbnail.evaluate(
+          (canvas: HTMLCanvasElement) =>
+            canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data[0],
+        ),
+      )
+      .toBe(24 + scene * 28);
+  }
+  // Cached sheets remain usable when the CDN becomes unavailable.
+  await page.evaluate(() => sessionStorage.setItem('fail-thumbnail', '1'));
+  await hoverAt(0.08);
+  await expect(page.locator('.seek-preview')).toHaveText('0:02');
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  await hoverAt(0.2);
+  await hoverAt(0.95);
+  await expect(page.locator('.seek-preview canvas')).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator('.seek-preview canvas')
+        .evaluate(
+          (canvas: HTMLCanvasElement) =>
+            canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data[0],
+        ),
+    )
+    .toBe(24 + 6 * 28);
+  expect(
+    await page.evaluate(() =>
+      Number(sessionStorage.getItem('thumbnail-requests')),
+    ),
+  ).toBe(thumbnailRequests);
+  expect(await decodedFrame(page)).toBe(frameBeforeHover);
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await page.mouse.move(0, 0);
+  await expect(page.locator('.seek-preview')).toHaveCount(0);
+  await clickPlayerControl(page, 'Play together');
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));
+  await seekTo(page, 20);
+  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).playback.phase,
+    )
+    .toBe('paused');
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await expect(
+    page.getByRole('img', { name: 'Buffering…', exact: true }),
+  ).toBeVisible();
+  const spinner = page.locator('.playback-spinner');
+  const initialTransform = await spinner.evaluate(
+    (element) => getComputedStyle(element).transform,
+  );
+  await expect
+    .poll(() =>
+      spinner.evaluate((element) => getComputedStyle(element).transform),
+    )
+    .not.toBe(initialTransform);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(spinner).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(spinner).toHaveCSS('animation-name', 'playback-spin');
+  await page.evaluate(() => {
+    sessionStorage.removeItem('hold-seek');
+    document.dispatchEvent(new Event('resume-seek-downloads'));
+  });
+  for (const target of [20, 7.9, 23.9, 2.9]) {
+    if (target !== 20) await seekTo(page, target);
+    await expect
+      .poll(async () => {
+        const frame = await decodedFrame(page);
+        return Math.abs(frame - target * 30) <= 2;
+      })
+      .toBe(true);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await clickPlayerControl(page, 'Play together');
+    await expect
+      .poll(() => decodedFrame(page))
+      .toBeGreaterThan(target * 30 + 5);
+    await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  }
+  await clickPlayerControl(page, 'Pause together');
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  await expect(
+    page.getByRole('img', { name: 'Paused', exact: true }),
+  ).toBeVisible();
+  await seekTo(page, 10);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThanOrEqual(300);
+  // Reuse the actual decoder and helper to cover SS resolution, EP persistence,
+  // reloading the selected episode, and host episode changes.
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await page
+    .getByLabel('Video URL or identifier')
+    .fill('https://www.bilibili.com/bangumi/play/ss6038');
+  await page
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(page.locator('.media-preview')).toContainText(
+    'Synthetic bangumi · 1 · Opening',
+  );
+  await page
+    .getByRole('button', { name: 'Use this video', exact: true })
+    .click();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('103591');
+  await page.reload();
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await page.getByRole('tab', { name: /Episodes/ }).click();
+  await openQuickActions(page, '换集');
+  const palette = page.locator('.command-palette'),
+    input = palette.getByRole('combobox');
+  await input.press('Enter');
+  await expect(input).toHaveValue('@');
+  await expect(input).toBeFocused();
+  await expect(palette.getByRole('option')).toHaveCount(2);
+  await expect(palette.locator('[aria-current="true"]')).toContainText(
+    'Opening',
+  );
+  await input.press('Enter');
+  await expect(palette).toBeVisible();
+  await input.fill('@3');
+  await expect(palette.getByRole('status')).toContainText('No item 3');
+  await input.fill('@fINaLE');
+  await expect(palette.getByRole('option')).toHaveCount(1);
+  await expect(palette.locator('.command-episode-number')).toHaveText('2');
+  await input.evaluate((node) =>
+    node.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+      }),
+    ),
+  );
+  await expect(palette).toBeVisible();
+  expect(
+    (await (await page.request.get(roomPath)).json()).media.episodeId,
+  ).toBe('103591');
+  await input.fill('@');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await palette.evaluate((node) => node.getAnimations().length)).toBe(0);
+  const paletteBounds = (await palette.boundingBox())!;
+  expect(paletteBounds.x + paletteBounds.width).toBeLessThanOrEqual(390);
+  expect(paletteBounds.y + paletteBounds.height).toBeLessThanOrEqual(844);
+  await input.fill('@02');
+  await page.evaluate(() => sessionStorage.setItem('fail-episode', '1'));
+  await input.press('Enter');
+  await expect(palette.getByRole('alert')).toBeVisible();
+  await expect(input).toHaveValue('@02');
+  expect(
+    (await (await page.request.get(roomPath)).json()).media.episodeId,
+  ).toBe('103591');
+  await page.evaluate(() => {
+    sessionStorage.removeItem('fail-episode');
+    sessionStorage.setItem('hold-episodes', '1');
+  });
+  await input.press('Enter');
+  await expect(palette.locator('[aria-busy="true"]')).toContainText(
+    'Switching',
+  );
+  await expect(palette.getByRole('option')).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await input.press('Enter');
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event('resume-episodes')),
+  );
+  await expect(palette).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('250984');
+  await expect(page.getByTestId('media-status')).toHaveAttribute(
+    'data-state',
+    'ready',
+  );
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole('tab', { name: /Episodes/ }).click();
+  await settings(page, 'host', false);
+  await clickPlayerControl(page, 'Play together');
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await page.getByRole('button', { name: /Opening/ }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('103591');
+  await expect(page.locator('video')).toHaveJSProperty('paused', false);
+  await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await closeRoom(page);
+});
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
   page,
   browser,
 }) => {
+  test.setTimeout(60000);
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   expect(response.ok()).toBe(true);
   const script = await response.text();
@@ -40,20 +576,29 @@ test('previewing another Bilibili link preserves the active helper and room unti
       const respond = () => {
         if (cancelled) return;
         if (media) {
+          if (sessionStorage.getItem('cdn-failure') === new URL(details.url).hostname) {
+            details.onerror();
+            return;
+          }
           const range = details.headers.Range.match(/bytes=(\\d+)-(\\d+)/);
           const bytes = new Uint8Array(Number(range[2]) - Number(range[1]) + 1).fill(42);
-          details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer });
+          details.onload({ status: 206, finalUrl: details.url, response: bytes.buffer,
+            responseHeaders: 'Content-Range: bytes ' + range[1] + '-' + range[2] + '/9007199254740991' });
           return;
         }
         const url = new URL(details.url);
         let data;
         if (url.pathname.endsWith('/view')) data = {
-          title: 'Replacement preview', pages: [{ page: 1, cid: 2 }]
+          title: sessionStorage.getItem('preview-title') || 'Replacement preview',
+          pages: sessionStorage.getItem('preview-multipart')
+            ? [{ page: 1, cid: 2 }, { page: 2, cid: 3 }]
+            : [{ page: 1, cid: 2 }]
         };
         else if (url.pathname.endsWith('/nav')) data = { isLogin: false };
         else if (url.pathname.endsWith('/playurl')) {
           const track = { id: 32, codecs: 'avc1.64001E', mimeType: 'video/mp4',
             baseUrl: 'https://cdn.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY',
+            backupUrl: ['https://backup.bilivideo.com/upgcxcode/synthetic.m4s?token=SYNTHETIC_REPLACEMENT_CANARY'],
             SegmentBase: { Initialization: '0-31', indexRange: '32-63' }
           };
           data = { timelength: 5000, dash: { video: [track, { ...track, codecs: 'av01.0.08M.08' }], audio: [
@@ -67,10 +612,13 @@ test('previewing another Bilibili link preserves the active helper and room unti
         holdNextRead = false;
         document.addEventListener('release-media-read', respond, { once: true });
         document.dispatchEvent(new Event('media-read-held'));
+      } else if (!media && new URL(details.url).pathname.endsWith('/view') && sessionStorage.getItem('hold-preview')) {
+        document.addEventListener('release-preview', respond, { once: true });
       } else queueMicrotask(respond);
       return { abort() {
         cancelled = true;
         document.removeEventListener('release-media-read', respond);
+        document.removeEventListener('release-preview', respond);
         details.onabort?.();
       } };
     };
@@ -156,6 +704,9 @@ test('previewing another Bilibili link preserves the active helper and room unti
     offset: 0,
     length: 32,
     generation: 1,
+    seek: 0,
+    end: 2 * 1024 * 1024 - 1,
+    rate: 2 * 1024 * 1024,
   };
   const roomPath = `/api/v2${new URL(page.url()).pathname}`;
   const before = await (await page.request.get(roomPath)).json();
@@ -177,7 +728,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
   };
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page
-    .getByLabel('Video URL or BV identifier')
+    .getByLabel('Video URL or identifier')
     .fill('https://www.bilibili.com/video/BV17Jx76CEje');
   const held = page.evaluate(
     () =>
@@ -206,6 +757,135 @@ test('previewing another Bilibili link preserves the active helper and room unti
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await expectOriginalMedia();
   expect((await helper('bytes', read)).ok).toBe(true);
+  // Reuse the active-room isolation journey for the distinct layout contract.
+  // Each viewport exercises one bounded title and response rather than a full cross-product.
+  const longTitle = 'A long synthetic preview title 中文 '.repeat(4).trim();
+  for (const [width, height, locale, multipart] of [
+    [1440, 900, 'en', false],
+    [1024, 768, 'en', true],
+    [390, 844, 'en', true],
+    [320, 844, 'zh-CN', true],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    if (locale === 'zh-CN') await runQuickAction(page, '/language zh-CN');
+    await page.evaluate(
+      ({ title, multipart }) => {
+        sessionStorage.setItem('preview-title', title);
+        sessionStorage.setItem('hold-preview', '1');
+        if (multipart) sessionStorage.setItem('preview-multipart', '1');
+        else sessionStorage.removeItem('preview-multipart');
+      },
+      { title: longTitle, multipart },
+    );
+    await page.locator('.change-media').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    await dialog.locator('#bilibili-url').fill('BV17Jx76CEje');
+    const geometry = () =>
+      dialog
+        .locator(
+          '.modal-heading, .media-picker .input-action button, form > button',
+        )
+        .evaluateAll((nodes) =>
+          nodes.flatMap((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return [x, y, width, height];
+          }),
+        );
+    const idle = await geometry();
+    expect(idle).toHaveLength(12);
+    const expectStable = async () => {
+      await expect
+        .poll(async () =>
+          Math.max(
+            ...(await geometry()).map((value, index) =>
+              Math.abs(value - idle[index]!),
+            ),
+          ),
+        )
+        .toBeLessThanOrEqual(1);
+    };
+    const preview = dialog.locator('.media-picker .input-action button');
+    await preview.click();
+    await expect(preview).toBeDisabled();
+    await expect(dialog.locator('.media-picker [role="status"]')).toContainText(
+      /Preparing your video|正在准备视频/,
+    );
+    await expectStable();
+    await page.evaluate(() => {
+      sessionStorage.removeItem('hold-preview');
+      document.dispatchEvent(new Event('release-preview'));
+    });
+    await expect(dialog.locator('.media-preview .feedback-text')).toHaveText(
+      longTitle,
+    );
+    await expectStable();
+    if (multipart) await expect(dialog.locator('.part-row')).toBeVisible();
+    else await expect(dialog.locator('.part-row')).toBeHidden();
+    expect(
+      await dialog.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+    if (width === 390) {
+      const details = dialog.locator('.media-preview .feedback-toggle');
+      await expect(details).toBeVisible();
+      await details.focus();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      const popover = dialog.locator('.feedback-details');
+      await expect(popover.locator('> p')).toHaveText(longTitle);
+      await expect(popover.getByRole('button')).toBeFocused();
+      await expectStable();
+      await expectOriginalMedia();
+      await page.keyboard.press('Space');
+      await expect(details).toHaveAttribute('aria-expanded', 'false');
+      await expect(details).toBeFocused();
+      await expectStable();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(details).toHaveAttribute('aria-expanded', 'false');
+      await expect(dialog).toBeVisible();
+      await expect(details).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(details).toHaveAttribute('aria-expanded', 'true');
+      await dialog.locator('#bilibili-url').fill('invalid');
+      await expect(dialog.locator('.feedback-details')).toBeHidden();
+      await preview.click();
+      await expect(
+        dialog.locator('.media-picker [role="alert"]'),
+      ).toBeVisible();
+      await expectStable();
+      await dialog.locator('#bilibili-url').fill('BV17Jx76CEje');
+      await preview.click();
+      await expect(dialog.locator('.media-preview .feedback-text')).toHaveText(
+        longTitle,
+      );
+      await expectStable();
+      await expectOriginalMedia();
+    }
+    expect(
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        return (
+          root.scrollHeight <= root.clientHeight + 1 &&
+          root.scrollWidth <= root.clientWidth + 1
+        );
+      }),
+    ).toBe(true);
+    await dialog.locator('.modal-heading button').click();
+    if (locale === 'zh-CN') await runQuickAction(page, '/language en');
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    sessionStorage.removeItem('preview-title');
+    sessionStorage.removeItem('preview-multipart');
+  });
   for (const [failure, text] of [
     ['access', 'unavailable'],
     ['no-audio', 'cannot decode'],
@@ -217,13 +897,30 @@ test('previewing another Bilibili link preserves the active helper and room unti
       (mode) => sessionStorage.setItem('preview-failure', mode),
       failure,
     );
-    await page.getByLabel('Video URL or BV identifier').fill('BV17Jx76CEje');
+    await page.getByLabel('Video URL or identifier').fill('BV17Jx76CEje');
+    const failureDialog = page.getByRole('dialog');
+    await failureDialog.evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const beforeFailure = await failureDialog.boundingBox();
     await page
       .getByRole('button', { name: 'Preview video', exact: true })
       .click();
     await expect(page.locator('.media-picker [role="alert"]')).toContainText(
       text,
     );
+    await expect
+      .poll(async () => {
+        const afterFailure = (await failureDialog.boundingBox())!;
+        return Math.max(
+          ...(['x', 'y', 'width', 'height'] as const).map((key) =>
+            Math.abs(afterFailure[key] - beforeFailure![key]),
+          ),
+        );
+      })
+      .toBeLessThanOrEqual(1);
     expect((await helper('bytes', read)).ok).toBe(true);
     await page
       .getByRole('button', { name: 'Close dialog', exact: true })
@@ -233,6 +930,26 @@ test('previewing another Bilibili link preserves the active helper and room unti
   expect(await page.locator('body').innerText()).not.toContain(
     'SYNTHETIC_REPLACEMENT_CANARY',
   );
+  // Fail the primary, then the backup. Later reads must reuse the recovered primary.
+  for (const [index, host] of [
+    'cdn.bilivideo.com',
+    'backup.bilivideo.com',
+  ].entries()) {
+    await page.evaluate(
+      (value) => sessionStorage.setItem('cdn-failure', value),
+      host,
+    );
+    expect(
+      (
+        await helper('bytes', {
+          ...read,
+          offset: (index + 1) * 2 * 1024 * 1024,
+          end: (index + 2) * 2 * 1024 * 1024 - 1,
+        })
+      ).ok,
+    ).toBe(true);
+    await expectOriginalMedia();
+  }
   await page.getByRole('button', { name: 'Change video', exact: true }).click();
   await page.getByRole('button', { name: 'Local file', exact: true }).click();
   await page.locator('#create-local-video').setInputFiles({
@@ -337,7 +1054,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'Update helper',
   );
   await page.getByRole('button', { name: 'Later', exact: true }).click();
-  await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
+  await page.getByLabel('Video URL or identifier').fill('BV1hf4y1N75G');
   await page.evaluate(() => sessionStorage.setItem('synthetic-helper', 'old'));
   await page.getByRole('button', { name: 'Reload page', exact: true }).click();
   // The development version 0.0.0 has no older valid release. The component
@@ -362,7 +1079,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('complementary', { name: 'Playback helper' }),
   ).toHaveCount(0);
-  await page.getByLabel('Video URL or BV identifier').fill('BV1hf4y1N75G');
+  await page.getByLabel('Video URL or identifier').fill('BV1hf4y1N75G');
   await page
     .getByRole('button', { name: 'Preview video', exact: true })
     .click();
@@ -422,6 +1139,16 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(
     page.getByRole('slider', { name: 'Danmaku density', exact: true }),
   ).toBeFocused();
+  const density = page.getByRole('slider', {
+    name: 'Danmaku density',
+    exact: true,
+  });
+  const size = page.getByRole('slider', {
+    name: 'Danmaku text size',
+    exact: true,
+  });
+  await density.press('End');
+  await size.press('End');
   const speed = page.getByRole('slider', {
     name: 'Danmaku speed',
     exact: true,
@@ -499,10 +1226,36 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(preferences).toHaveCount(0);
   await expect(danmaku).toBeFocused();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await openPlayerMenu(page, 'keyboard');
+  await page
+    .getByRole('menuitem', { name: 'Video statistics', exact: true })
+    .click();
+  const fullscreenStatistics = page.getByRole('region', {
+    name: 'Video statistics',
+    exact: true,
+  });
+  await expect(fullscreenStatistics).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(fullscreenStatistics).toHaveCount(0);
+  expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await page.keyboard.press('Escape');
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(false);
+  await clickPlayerControl(page, 'Fullscreen locally');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await openPlayerMenu(page, 'keyboard');
+  await page
+    .getByRole('menuitem', { name: 'Video statistics', exact: true })
+    .click();
+  await expect(fullscreenStatistics).toBeVisible();
+  // Browser-owned fullscreen exits must also dismiss the floating panel.
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(fullscreenStatistics).toHaveCount(0);
+  await danmaku.press('Enter');
+  await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
@@ -522,6 +1275,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await danmaku.focus();
     await danmaku.press('ArrowDown');
     await expect(preferences).toBeVisible();
+    await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
+    await expect(density).toHaveValue('40');
+    await expect(size).toHaveValue('32');
+    await expect(speed).toHaveValue('0.6');
     await expect(area).toHaveValue('0.25');
     expect(
       await preferences.evaluate(
@@ -534,16 +1291,14 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
           (panel) => panel.scrollHeight - panel.clientHeight,
         ),
       ).toBe(0);
-    const reload = preferences.getByRole('button', {
-      name: 'Reload danmaku',
-      exact: true,
-    });
-    await reload.scrollIntoViewIfNeeded();
-    await expect(reload).toBeInViewport();
+    await expect(
+      preferences.getByRole('button', { name: 'Reload danmaku', exact: true }),
+    ).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(danmaku).toBeFocused();
     await expect(preferences).toHaveCount(0);
   }
+  await danmaku.press('Enter');
   await expect(danmaku).toHaveAttribute('aria-pressed', 'true');
   const enabledIcon = await danmaku.locator('path').getAttribute('d');
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });

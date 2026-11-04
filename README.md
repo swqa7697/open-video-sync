@@ -80,11 +80,24 @@ Replace the example address with your server's address. Direct HTTP works withou
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
 
+The updated helper also adds a small **OVS** action beside Bilibili's video controls, including bangumi pages. Helpers installed from multiple OVS sites share one menu with a separate entry for each site. Select a site to import the current video and part or episode. Preview it in OVS, then create a room or select a room you host and confirm replacing its video for everyone. Replacements start paused at zero. An existing room tab submits the change through its current connection. If no room tab responds, OVS offers to open the room here and take over your playback connection. An unconfirmed result keeps the original request available for checking. Reinstall the helper from each site to enable the entry.
+
+Paste a normal video link or BV identifier, or a bangumi link such as `https://www.bilibili.com/bangumi/play/ss6038`. Bare `ss6038` (season) and `ep103591` (episode) identifiers also work. Season links select the first main episode; the host can switch through Episodes. OVS preserves the selected episode when members join or reload. Each member needs their own access, including any required login, subscription, purchase, and region eligibility. A restricted or trial-only response leaves that member unready. Install the updated helper for bangumi support.
+
+OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
+
+Selecting another episode from **Episodes** starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
+
+The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Reload danmaku is available in this menu; hovering the danmaku toggle opens its display preferences and status.
+
+Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Only the host can switch; members can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
+
 ### Rooms and preferences
 
 Invitations remain reusable until the host replaces them or closes the room. A room closes when everyone leaves, with a short grace for disconnected pages. After a server restart, rooms resume paused at the beginning.
 
 Volume, mute, quality, danmaku, language, and appearance affect only your browser. Use **Settings** in the header to change application preferences.
+Danmaku visibility, density, text size, scrolling speed, and display area are remembered across reloads and rooms in the same browser.
 
 ### Keyboard shortcuts
 

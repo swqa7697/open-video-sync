@@ -1,10 +1,13 @@
 services:
   ovs:
-    image: ${IMAGE:?Set IMAGE from the combined sync/web/helper versions in versions.toml}
+    image: ${IMAGE:?Set IMAGE to ovs:<tag> from node scripts/versions.mjs image-tag or use an explicit override}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       pull: true
+      args:
+        OVS_IMAGE: ${IMAGE}
+        OVS_BUILD_INFO: ${OVS_BUILD_INFO:-}
     environment:
       OVS_PUBLIC_ORIGIN: ${OVS_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
       OVS_LOG_LEVEL: ${OVS_LOG_LEVEL:-info}

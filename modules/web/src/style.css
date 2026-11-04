@@ -95,6 +95,12 @@
 body {
   margin: 0;
 }
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+}
 button,
 input,
 select {
@@ -272,12 +278,13 @@ small {
   top: 1rem;
 }
 .shell {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 .app-header {
-  min-height: 76px;
+  min-height: 64px;
   flex-shrink: 0;
   padding: 8px clamp(1rem, 3vw, 3rem);
   display: flex;
@@ -544,8 +551,11 @@ small {
   padding: 6px;
 }
 main {
-  flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .notice {
   display: flex;
@@ -569,25 +579,34 @@ main {
   margin: 0;
 }
 .home {
-  max-width: 560px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: calc(100% - 32px);
+  max-width: 520px;
   margin: 0 auto;
-  padding: 48px 0 28px;
+  padding: 16px 0;
+}
+.home > * {
+  flex-shrink: 0;
 }
 .home-heading {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .home h1 {
-  font-size: clamp(1.65rem, 3vw, 2rem);
-  line-height: 1.35;
+  font-size: clamp(1.4rem, 2.5vw, 1.8rem);
+  line-height: 1.2;
   font-weight: 550;
   letter-spacing: -0.025em;
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
 .home-heading > p:last-child {
-  margin-top: 10px;
-  font-size: 0.86rem;
+  margin-top: 6px;
+  font-size: 0.8rem;
   color: var(--muted);
   text-wrap: pretty;
 }
@@ -595,7 +614,7 @@ main {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 25px;
+  padding: 18px;
   box-shadow: 0 12px 45px var(--shadow);
 }
 .card-heading {
@@ -603,7 +622,7 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 .private-badge {
   display: inline-flex;
@@ -615,18 +634,18 @@ main {
 }
 .source-tabs {
   display: flex;
-  padding: 4px;
+  padding: 3px;
   background: var(--input);
   border: 1px solid var(--subtle-border);
   border-radius: 8px;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 .source-tabs button {
   flex: 1;
   background: transparent;
   color: var(--muted);
-  min-height: 40px;
-  padding: 0.5rem;
+  min-height: 38px;
+  padding: 0.4rem;
   gap: 0.55rem;
   font-size: 0.8rem;
 }
@@ -640,7 +659,8 @@ main {
   height: 17px;
 }
 .input-action {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -657,16 +677,33 @@ main {
   background: transparent !important;
 }
 .input-action button {
+  flex-shrink: 0;
   white-space: nowrap;
   font-size: 0.75rem;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0.5rem 0.7rem;
 }
 .input-action:focus-within {
   background: var(--surface-raised);
 }
+.stable-label {
+  display: inline-grid;
+  min-width: 0;
+}
+.stable-label > span {
+  grid-area: 1 / 1;
+}
+.stable-label > [data-inactive='true'] {
+  visibility: hidden;
+}
+.form-action-slot {
+  display: flex;
+  align-items: start;
+  gap: 0.65rem;
+  min-block-size: 44px;
+}
 .room-draft {
-  margin-top: 22px;
+  margin-top: 10px;
 }
 .room-draft label {
   display: flex;
@@ -676,38 +713,22 @@ main {
   font-size: 0.72rem;
   color: var(--muted);
 }
-.draft-settings {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin: 8px 0 12px;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-.draft-settings > span {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-}
-.draft-settings .separator {
-  margin: 0 0.1rem;
-}
 .create-submit {
   width: 100%;
-  height: 46px;
+  min-height: 46px;
   justify-content: space-between;
   font-weight: 650;
+  margin-top: 12px;
+  text-align: start;
 }
 .join-section {
-  margin-top: 27px;
+  margin-top: 16px;
 }
 .join-section h2 {
   font-size: 0.8rem;
   color: var(--muted);
   text-align: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   font-weight: 400;
 }
 .join-section .input-action {
@@ -720,27 +741,42 @@ main {
   gap: 0.45rem;
   color: var(--muted);
   font-size: 0.7rem;
-  margin-top: 25px;
+  margin-top: 12px;
 }
 .file-drop {
   border: 1px dashed var(--control-border);
   border-radius: 8px;
-  padding: 22px 16px;
-  display: flex;
-  flex-direction: column;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  text-align: center;
-  gap: 10px;
+  gap: 4px 8px;
 }
 .file-drop > svg {
   color: var(--primary);
 }
-.file-drop strong {
-  font-size: 0.875rem;
-  overflow-wrap: anywhere;
-  max-width: 100%;
+.file-drop .file-name {
+  width: 100%;
+  margin: 0;
+  font-weight: 600;
+}
+.file-privacy {
+  grid-row: 2;
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+.file-drop .file-button {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.75rem;
 }
 .file-button {
+  max-width: 100%;
   background: var(--notice);
   border: 1px solid var(--accent-border);
   color: var(--primary);
@@ -750,35 +786,35 @@ main {
 .file-drop:focus-within {
   background: var(--hover);
 }
-.media-preview {
-  margin-top: 16px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: var(--notice);
-  color: var(--text);
+.media-info {
+  --media-info-height: max(32px, 2rem);
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
+  gap: 10px;
+  min-height: var(--media-info-height);
+  margin-top: 4px;
 }
-.media-preview svg {
-  flex-shrink: 0;
-}
-.media-picker .notice {
-  margin: 12px 0;
+.media-info > .form-feedback {
+  flex: 1;
+  min-width: 0;
 }
 .part-row {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-top: 14px;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 0.75rem;
 }
 .part-row label {
   margin: 0;
+  font-size: inherit;
 }
 .part-row input {
-  max-width: 80px;
+  width: 52px !important;
+  height: var(--media-info-height);
+  min-height: 0 !important;
+  padding: 3px 5px !important;
+  font-size: inherit;
 }
 .initializing {
   min-height: 50vh;
@@ -796,7 +832,7 @@ footer {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 20px clamp(1rem, 3vw, 3rem);
+  padding: 10px clamp(1rem, 3vw, 3rem);
   color: var(--muted);
   font-size: 0.68rem;
   border-top: 1px solid var(--subtle-border);
@@ -867,12 +903,17 @@ footer {
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;
 }
-.actions,
-.form-row {
+.actions {
   display: flex;
   align-items: center;
   gap: 0.65rem;
   flex-wrap: wrap;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.65rem;
 }
 fieldset {
   padding: 0;
@@ -916,22 +957,32 @@ fieldset select {
 .room {
   --room-gutter: clamp(1rem, 3vw, 3rem);
   --room-sidebar-width: 0px;
-  --player-max-height: max(250px, calc(100dvh - 370px));
-  padding: 0 var(--room-gutter) 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 var(--room-gutter) 12px;
   width: 100%;
   max-width: 1600px;
-  margin: auto;
+  margin: 0 auto;
 }
 .room.with-members {
   --room-sidebar-width: 260px;
+}
+@media (min-width: 761px) {
+  .room {
+    /* Balance the room footprint independently of the media aspect ratio. */
+    max-width: clamp(1040px, 160dvh, 1600px);
+  }
 }
 .room-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
-  padding: 24px 0;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  padding: 12px 0;
 }
 .room-heading {
   flex: 1 1 160px;
@@ -975,6 +1026,8 @@ fieldset select {
   color: var(--on-primary);
 }
 .room-layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   border: 1px solid var(--border);
@@ -987,6 +1040,7 @@ fieldset select {
 }
 .viewing-column {
   min-width: 0;
+  min-height: 0;
 }
 .member-panel {
   background: var(--surface);
@@ -994,8 +1048,7 @@ fieldset select {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: calc(100dvh - 235px);
-  min-height: 330px;
+  min-height: 0;
 }
 .members-content {
   display: flex;
@@ -1011,6 +1064,16 @@ fieldset select {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+}
+.sidebar-pane {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.sidebar-pane .members-content,
+.sidebar-pane .roster,
+.sidebar-pane .episode-list {
+  flex: none;
+  overflow: visible;
 }
 .sidebar-tabs {
   display: flex;
@@ -1209,14 +1272,27 @@ fieldset select {
 }
 .player-panel {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+.player-viewport {
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  container-type: size;
+  container-name: player-viewport;
+  background: #080b10;
 }
 .video-stage {
   position: relative;
   background: #080b10;
   color: var(--text);
-  aspect-ratio: 16/9;
-  max-height: var(--player-max-height);
-  min-height: 250px;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
   isolation: isolate;
   overflow: hidden;
 }
@@ -1225,6 +1301,34 @@ fieldset select {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.playback-indicator {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: clamp(52px, 7vw, 64px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #080b1059;
+  color: #ffffffb3;
+  pointer-events: none;
+}
+.playback-indicator[data-state='paused'] {
+  background: #080b1073;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .playback-spinner {
+    animation: playback-spin 900ms linear infinite;
+  }
+}
+@keyframes playback-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .volume-feedback {
   position: absolute;
@@ -1293,6 +1397,8 @@ fieldset select {
   padding: 30px 24px 100px;
   text-align: center;
   background: #0b1018eb;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .player-state > svg {
   color: var(--primary);
@@ -1429,15 +1535,37 @@ fieldset select {
 }
 .seek-preview {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: 28px;
+  /* Transform percentages use the tooltip width, keeping both edges on track. */
+  transform: translateX(
+    clamp(
+      0px,
+      calc(var(--seek-pointer-offset) - 50%),
+      calc(var(--seek-track-width) - 100%)
+    )
+  );
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 8px;
   font-size: 0.7rem;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+}
+.seek-preview.has-thumbnail {
+  width: 162px;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+}
+.seek-preview canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.seek-preview span {
+  display: block;
+  padding: 4px 8px;
 }
 .quality-trigger {
   font-size: 0.65rem;
@@ -1547,6 +1675,7 @@ fieldset select {
   padding: 18px 22px 12px;
 }
 .video-description {
+  flex: 1;
   min-width: 0;
 }
 .source-label {
@@ -1581,6 +1710,7 @@ fieldset select {
   margin-top: 4px;
 }
 .change-media {
+  flex-shrink: 0;
   font-size: 0.72rem;
   min-height: 36px;
   white-space: nowrap;
@@ -1630,14 +1760,13 @@ fieldset select {
   padding: 20px 0 0;
 }
 .modal .form-row input {
-  flex: 1;
-  min-width: 130px;
+  min-width: 0;
 }
 .modal #identity-title {
   display: none;
 }
-.modal #identity-title + p {
-  margin-bottom: 20px;
+.modal .identity-summary {
+  margin-block: 0 20px;
 }
 .modal .hint {
   margin-top: 8px;
@@ -1667,26 +1796,11 @@ fieldset select {
   }
 }
 @media (max-height: 850px) and (min-width: 761px) {
-  .home {
-    padding-top: 30px;
-  }
-  .home-heading {
-    margin-bottom: 24px;
-  }
   .app-header {
-    min-height: 66px;
-  }
-  .home .create-card {
-    padding: 22px;
-  }
-  .join-section {
-    margin-top: 22px;
+    min-height: 60px;
   }
   .room-toolbar {
-    padding: 18px 0;
-  }
-  .member-panel {
-    max-height: calc(100dvh - 210px);
+    padding: 10px 0;
   }
 }
 @media (max-width: 1000px) {
@@ -1761,18 +1875,18 @@ fieldset select {
     margin-left: 26px;
   }
   .home {
-    width: 100%;
-    max-width: 580px;
-    padding: 36px 20px 28px;
+    width: calc(100% - 24px);
+    max-width: 520px;
+    padding: 12px 0;
   }
   .home-heading {
-    margin-bottom: 24px;
+    margin-bottom: 14px;
   }
   .home-heading > p:last-child {
     font-size: 0.78rem;
   }
   .create-card {
-    padding: 19px;
+    padding: 16px;
     border-radius: 12px;
   }
   .card-heading {
@@ -1784,36 +1898,23 @@ fieldset select {
   .private-badge {
     font-size: 0.58rem;
   }
-  .create-card .input-action {
-    display: block;
-    padding: 0;
-  }
-  .create-card .input-action button {
-    width: 100%;
-    border-top: 1px solid var(--border);
-    border-radius: 0 0 8px 8px;
-  }
-  .create-card .input-action input {
+  .input-action input,
+  .form-row input,
+  .part-row input {
     font-size: 16px;
+  }
+  .form-row {
+    grid-template-columns: minmax(0, 1fr);
   }
   .room-draft input {
     font-size: 16px !important;
-  }
-  .draft-settings {
-    font-size: 0.61rem;
-  }
-  .draft-settings > span {
-    gap: 0.25rem;
-  }
-  .draft-settings .icon-button {
-    width: 36px;
   }
   .privacy-note {
     font-size: 0.62rem;
     gap: 0.3rem;
   }
   footer {
-    padding: 18px 20px;
+    padding: 10px 12px;
     font-size: 0.6rem;
     flex-wrap: wrap;
     gap: 0.3rem;
@@ -1823,10 +1924,10 @@ fieldset select {
   }
   .room {
     --room-gutter: 12px;
-    padding-bottom: 24px;
+    padding-bottom: 10px;
   }
   .room-toolbar {
-    padding: 18px 3px;
+    padding: 10px 3px;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
@@ -1861,10 +1962,6 @@ fieldset select {
   }
   .room-layout {
     border-radius: 9px;
-  }
-  .video-stage {
-    min-height: 265px;
-    max-height: none;
   }
   .player-state {
     padding: 25px 18px 94px;
@@ -2020,53 +2117,144 @@ fieldset select {
     transition: none !important;
   }
 }
-/* Keep creation and invitation entry together on ordinary desktop screens. */
-@media (min-width: 761px) {
+/* Keep the actions visible when browser chrome or a short window reduces height. */
+@media (max-height: 780px) {
+  .app-header {
+    min-height: 56px;
+  }
   .home {
-    padding-top: 30px;
-    padding-bottom: 20px;
+    padding-block: 12px;
   }
   .home-heading {
-    margin-bottom: 24px;
+    margin-bottom: 12px;
   }
-  .home-heading > p:last-child {
-    margin-top: 12px;
+  .home h1 {
+    font-size: 1.5rem;
   }
-  .create-card {
-    padding: 22px;
+  .home-heading > p:last-child,
+  .home .privacy-note,
+  .home .card-heading .private-badge {
+    display: none;
   }
-  .source-tabs {
-    margin-bottom: 16px;
+  .home .card-heading {
+    display: contents;
   }
-  .room-draft {
-    margin-top: 16px;
+  /* Room exits retain their heading focus target without another visual heading. */
+  .home .card-heading h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
-  .draft-settings {
-    margin: 4px 0 8px;
+  .home .create-card {
+    padding: 16px;
   }
-  .join-section {
-    margin-top: 20px;
+  footer {
+    padding-block: 8px;
   }
-  .privacy-note {
-    margin-top: 18px;
+}
+@media (max-height: 600px) {
+  .app-header {
+    padding-block: 4px;
+    min-height: 56px;
+  }
+  .room-toolbar {
+    padding-block: 6px;
+  }
+  .room-heading {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .room-heading .eyebrow {
+    display: none;
+  }
+  .room-heading h2 {
+    max-width: none;
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  .video-information {
+    align-items: center;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .video-description .source-label,
+  .video-description .codec-label {
+    display: none;
+  }
+  .video-description h3 {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+  .video-description .hint {
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .change-media {
+    margin: 0;
+  }
+  .playback-status {
+    padding: 4px 10px 8px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .playback-status > div {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .playback-status > span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .player-controls {
+    padding: 0 8px 4px;
+  }
+  .home {
+    padding-block: 8px;
+  }
+  .home-heading,
+  .home .join-section h2,
+  .shell > footer {
+    display: none;
+  }
+  .home .create-card {
+    padding: 12px;
+  }
+  .home .source-tabs {
+    margin-bottom: 8px;
+  }
+  .home .source-tabs button {
+    min-height: 34px;
+  }
+  .home .room-draft {
+    margin-top: 6px;
+  }
+  .home .create-submit {
+    margin-top: 8px;
+  }
+  .home .join-section {
+    margin-top: 10px;
+  }
+  .file-privacy {
+    display: none;
   }
 }
 #playback-controls {
   margin: 0 0 20px;
 }
 
-@media (min-width: 761px) {
-  .room {
-    /* Include the sidebar, page gutters, and layout border in the player height budget. */
-    max-width: min(
-      1600px,
-      calc(
-        var(--player-max-height) * 16 / 9 + var(--room-sidebar-width) +
-          var(--room-gutter) * 2 + 2px
-      )
-    );
-  }
-}
 .played-track {
   position: absolute;
   height: 3px;
@@ -2075,7 +2263,7 @@ fieldset select {
   border-radius: 2px;
   max-width: 100%;
 }
-/* Explicit width prevents the aspect ratio from expanding the stage at its minimum height. */
+/* The player fills its allotted region regardless of the media aspect ratio. */
 .video-stage {
   width: 100%;
   min-width: 0;
@@ -2083,6 +2271,21 @@ fieldset select {
 .video-stage video {
   position: absolute;
   inset: 0;
+}
+@container player-viewport (max-height: 300px) {
+  .player-state {
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 12px 14px 88px;
+  }
+  .player-state > svg,
+  .player-state .state-symbol,
+  .player-state small {
+    display: none;
+  }
+  .player-state h3 {
+    font-size: 0.95rem;
+  }
 }
 
 .appearance-panel > .hint:first-child,
@@ -2111,10 +2314,27 @@ fieldset select {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
+}
+.about-build {
+  min-width: 0;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--subtle-border);
+}
+.about-build-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.about-image {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 .about-versions {
-  margin: 24px 0 16px;
+  margin: 8px 0 0;
 }
 .about-versions > div {
   display: flex;
@@ -2137,8 +2357,12 @@ fieldset select {
 }
 .about-commit {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 .about-commit code {
   font-size: 0.8125rem;

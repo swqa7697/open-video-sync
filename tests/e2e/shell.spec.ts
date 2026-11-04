@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   appContext,
@@ -18,7 +18,7 @@ import {
   runQuickAction,
   settings,
 } from './flows';
-import { generatedVideo } from './media';
+import { decodedFrame, generatedVideo } from './media';
 
 async function expectHeaderFits(page: Page): Promise<void> {
   const header = page.getByRole('banner');
@@ -58,11 +58,81 @@ async function expectHeaderFits(page: Page): Promise<void> {
   }
 }
 
+async function expectViewportStructure(
+  page: Page,
+  surface: '.home' | '.room',
+): Promise<void> {
+  const layout = await page.evaluate((selector) => {
+    const documentElement = document.documentElement;
+    return {
+      width: documentElement.clientWidth,
+      height: documentElement.clientHeight,
+      scrollWidth: documentElement.scrollWidth,
+      scrollHeight: documentElement.scrollHeight,
+      structures: [
+        ...document.querySelectorAll<HTMLElement>(`main, ${selector}`),
+      ].map((node) => {
+        const bounds = node.getBoundingClientRect();
+        return {
+          name: node.tagName === 'MAIN' ? 'main' : selector,
+          left: bounds.left,
+          right: bounds.right,
+          top: bounds.top,
+          bottom: bounds.bottom,
+          width: node.clientWidth,
+          height: node.clientHeight,
+          scrollWidth: node.scrollWidth,
+          scrollHeight: node.scrollHeight,
+          scrollTop: node.scrollTop,
+        };
+      }),
+    };
+  }, surface);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width + 1);
+  expect(layout.scrollHeight).toBeLessThanOrEqual(layout.height + 1);
+  expect(layout.structures).toHaveLength(2);
+  for (const structure of layout.structures) {
+    expect(structure.left, `${structure.name} left`).toBeGreaterThanOrEqual(-1);
+    expect(structure.right, `${structure.name} right`).toBeLessThanOrEqual(
+      layout.width + 1,
+    );
+    expect(structure.top, `${structure.name} top`).toBeGreaterThanOrEqual(-1);
+    expect(structure.bottom, `${structure.name} bottom`).toBeLessThanOrEqual(
+      layout.height + 1,
+    );
+    expect(
+      structure.scrollWidth,
+      `${structure.name} horizontal overflow`,
+    ).toBeLessThanOrEqual(structure.width + 1);
+    expect(
+      structure.scrollHeight,
+      `${structure.name} vertical overflow`,
+    ).toBeLessThanOrEqual(structure.height + 1);
+    expect(structure.scrollTop, `${structure.name} scroll offset`).toBe(0);
+  }
+}
+
+async function expectHomeActionsReachable(page: Page): Promise<void> {
+  const viewport = page.viewportSize()!;
+  for (const selector of ['.create-submit', '#join-submit']) {
+    const action = page.locator(selector);
+    const bounds = (await action.boundingBox())!;
+    expect(bounds).not.toBeNull();
+    expect(bounds.x).toBeGreaterThanOrEqual(-1);
+    expect(bounds.y).toBeGreaterThanOrEqual(-1);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
+    await action.click({ trial: true });
+  }
+  // Trial clicks may scroll a clipped ancestor into view; reject that workaround too.
+  await expectViewportStructure(page, '.home');
+}
+
 test('independent identities manage a private room over direct HTTP', async ({
   page,
   browser,
   baseURL,
-}, testInfo) => {
+}) => {
   test.setTimeout(60000);
   if (!baseURL) throw new Error('Browser base URL required.');
   const failures: string[] = [];
@@ -193,16 +263,12 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.getByRole('combobox').press('Backspace');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
-    await page.screenshot({
-      path: testInfo.outputPath('fullscreen-quick-actions-open.png'),
-    });
+
     await page.keyboard.down('Escape');
     await expect(page.locator('.command-palette')).toHaveCount(0);
     await page.keyboard.down('Escape');
     await page.keyboard.up('Escape');
-    await page.screenshot({
-      path: testInfo.outputPath('fullscreen-quick-actions-dismissed.png'),
-    });
+
     await expect(page.locator('.command-palette')).toHaveCount(0);
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
@@ -228,9 +294,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await page.keyboard.press('Control+k');
     await expect(appearance).toBeVisible();
     await expect(page.locator('.command-palette')).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath('fullscreen-modal-open.png'),
-    });
+
     await page.keyboard.down('Escape');
     await expect(appearance).toHaveCount(0);
     await page.keyboard.down('Escape');
@@ -239,9 +303,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await modalKeys.evaluate((state) => state.stop());
     await modalKeys.dispose();
     expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath('fullscreen-modal-dismissed.png'),
-    });
+
     await page.getByRole('slider', { name: 'Seek', exact: true }).focus();
     await page.keyboard.press('Escape');
     await expect
@@ -277,7 +339,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     );
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('command-pending.png') });
+
     await expect(page.locator('.command-recovery')).toBeVisible({
       timeout: 4500,
     });
@@ -292,7 +354,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(await page.locator('.playback-status').textContent()).toBe(
       playerStatus,
     );
-    await page.screenshot({ path: testInfo.outputPath('command-delayed.png') });
+
     releaseResults();
     await expect(page.locator('.command-recovery')).toHaveCount(0);
     await expect(changeVideo).toBeEnabled();
@@ -422,9 +484,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
     ).json();
     await openQuickActions(page);
-    await page.screenshot({
-      path: testInfo.outputPath('commands-room-desktop.png'),
-    });
+
     await page
       .getByRole('combobox')
       .fill('$ https://www.bilibili.com/video/BV1hf4y1N75G/?p=2');
@@ -515,6 +575,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await other.getByRole('combobox').fill('$ BV1hf4y1N75G');
     await expect(other.getByRole('option')).toHaveCount(0);
     await other.keyboard.press('Escape');
+    await expect(other.locator('.command-palette')).toHaveCount(0);
     await runQuickAction(page, '/play');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
       'data-state',
@@ -603,6 +664,70 @@ test('independent identities manage a private room over direct HTTP', async ({
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     const box = await seek.boundingBox();
     if (!box) throw new Error('Seek control required.');
+    const track = page.locator('.seek-track');
+    const frameBeforeHover = await decodedFrame(page);
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      const previousViewport = page.viewportSize()!;
+      await page.setViewportSize(viewport);
+      await player.hover({ position: { x: 100, y: 100 } });
+      await track.scrollIntoViewIfNeeded();
+      const bounds = (await track.boundingBox())!;
+      for (const fraction of [0.02, 0.25, 0.75, 0.98]) {
+        // Firefox rounds native pointer coordinates to whole CSS pixels.
+        const pointerX = Math.round(bounds.x + bounds.width * fraction);
+        await page.mouse.move(pointerX, bounds.y + bounds.height / 2);
+        const preview = page.locator('.seek-preview');
+        await expect(preview).toBeVisible();
+        const seconds =
+          (Number(await seek.getAttribute('max')) * (pointerX - bounds.x)) /
+          bounds.width;
+        const time = Math.floor(seconds);
+        await expect(preview).toHaveText(
+          `${Math.floor(time / 60)}:${String(time % 60).padStart(2, '0')}`,
+        );
+        const thumbnail = preview.locator('canvas');
+        await expect(thumbnail).toBeVisible();
+        // Read the fixture's frame pixels; a time label alone cannot prove the preview.
+        await expect
+          .poll(async () => {
+            const frame = await thumbnail.evaluate(
+              (canvas: HTMLCanvasElement) => {
+                const context = canvas.getContext('2d')!;
+                let frame = 0;
+                for (let bit = 0; bit < 16; bit++)
+                  if (
+                    context.getImageData(bit * 8 + 4, 68, 1, 1).data[0]! > 128
+                  )
+                    frame |= 1 << bit;
+                return frame;
+              },
+            );
+            return Math.abs(frame / 30 - seconds);
+          })
+          .toBeLessThan(0.08);
+        const tooltip = (await preview.boundingBox())!;
+        const center = Math.max(
+          bounds.x + tooltip.width / 2,
+          Math.min(bounds.x + bounds.width - tooltip.width / 2, pointerX),
+        );
+        expect(Math.abs(tooltip.x + tooltip.width / 2 - center)).toBeLessThan(
+          2,
+        );
+        expect(tooltip.x).toBeGreaterThanOrEqual(bounds.x - 1);
+        expect(tooltip.x + tooltip.width).toBeLessThanOrEqual(
+          bounds.x + bounds.width + 1,
+        );
+      }
+      await page.mouse.move(0, 0);
+      await expect(page.locator('.seek-preview')).toHaveCount(0);
+      await page.setViewportSize(previousViewport);
+    }
+    expect(await decodedFrame(page)).toBe(frameBeforeHover);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await player.hover({ position: { x: 100, y: 100 } });
     const tabToSeek = async () => {
       await page.keyboard.press('Tab');
       // Firefox includes the video itself in the native Tab order.
@@ -647,9 +772,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.locator('.video-stage')).toBeFocused();
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('.volume-feedback')).toHaveText('70');
-    await page.screenshot({
-      path: testInfo.outputPath('seek-keyboard.png'),
-    });
+
     await expect(page.locator('#local-volume')).toHaveValue('0.7');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
     await page.keyboard.press('ArrowDown');
@@ -691,16 +814,28 @@ test('independent identities manage a private room over direct HTTP', async ({
     await player.hover({ position: { x: 100, y: 100 } });
     await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 4500 });
     await expect(player).toBeFocused();
-    await page.screenshot({
-      path: testInfo.outputPath('controls-playing-idle.png'),
-    });
+
+    // Headless pages do not lose OS focus. Replay window focus restoration on
+    // the retained native focus target, with the pointer inside and outside.
+    for (const outside of [false, true]) {
+      if (outside) await page.mouse.move(0, 0);
+      await player.evaluate((element) => {
+        window.dispatchEvent(new Event('blur'));
+        window.dispatchEvent(new Event('focus'));
+        element.dispatchEvent(
+          new FocusEvent('focusin', { bubbles: true, relatedTarget: null }),
+        );
+      });
+      await expect(player).toBeFocused();
+      await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
+    }
+    await player.dispatchEvent('keydown', { key: 'Tab', altKey: true });
+    await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.7);
     await expect(page.locator('.volume-feedback')).toHaveText('70');
     await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
-    await page.screenshot({
-      path: testInfo.outputPath('controls-shortcut-hidden.png'),
-    });
+
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('video')).toHaveJSProperty('volume', 0.6);
     for (const muted of [true, false]) {
@@ -732,11 +867,9 @@ test('independent identities manage a private room over direct HTTP', async ({
       'paused',
     );
     await player.hover({ position: { x: 100, y: 100 } });
-    await page.waitForTimeout(3200);
+    // The component regression checks the paused idle deadline with a fake clock.
     await expect(playerControls).toHaveCSS('opacity', '1');
-    await page.screenshot({
-      path: testInfo.outputPath('controls-paused-inside.png'),
-    });
+
     await page.mouse.move(0, 0);
     await expect(playerControls).toHaveCSS('opacity', '0', { timeout: 500 });
     await player.hover({ position: { x: 100, y: 100 } });
@@ -823,10 +956,7 @@ test('independent identities manage a private room over direct HTTP', async ({
           node.getAnimations().map((animation) => animation.finished),
         ),
       );
-    await page.screenshot({
-      path: testInfo.outputPath('leave-confirmation.png'),
-      animations: 'disabled',
-    });
+
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.locator('.room')).toBeVisible();
     await home.click();
@@ -904,28 +1034,166 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
       [320, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
+      const layoutOnly = width === 320;
+      // Saving a long name must not resize or recenter the open form.
+      if (!layoutOnly) {
+        if (width === 1024)
+          await page.evaluate(
+            () => (document.documentElement.style.fontSize = '200%'),
+          );
+        await page.locator('.profile-button').click();
+        const profile = page.getByRole('dialog');
+        await profile.evaluate(async (dialog) => {
+          await Promise.all(
+            dialog.getAnimations().map((animation) => animation.finished),
+          );
+        });
+        const profileBounds = () =>
+          profile
+            .locator('.modal-heading, .form-row input, .form-row > button')
+            .evaluateAll((nodes) =>
+              nodes.flatMap((node) => {
+                const { x, y, width, height } = node.getBoundingClientRect();
+                return [x, y, width, height];
+              }),
+            );
+        const shortNameBounds = await profileBounds();
+        expect(shortNameBounds).toHaveLength(12);
+        const longName = 'W'.repeat(48);
+        await profile.getByLabel('Display name (optional)').fill(longName);
+        await profile
+          .getByRole('button', { name: 'Save name', exact: true })
+          .click();
+        await expect(page.locator('.profile-button')).toContainText(longName);
+        await expect
+          .poll(async () =>
+            Math.max(
+              ...(await profileBounds()).map((value, index) =>
+                Math.abs(value - shortNameBounds[index]!),
+              ),
+            ),
+          )
+          .toBeLessThanOrEqual(1);
+        await profile
+          .getByLabel('Display name (optional)')
+          .fill('<b>Alice 😀</b>');
+        await profile
+          .getByRole('button', { name: 'Save name', exact: true })
+          .click();
+        await expect(page.locator('.profile-button')).toContainText(
+          '<b>Alice 😀</b>',
+        );
+        await page.keyboard.press('Escape');
+        await page.evaluate(
+          () => (document.documentElement.style.fontSize = ''),
+        );
+      }
+      const dismiss = page.getByRole('button', {
+        name: 'Dismiss notification',
+        exact: true,
+      });
+      while (await dismiss.count()) await dismiss.first().click();
+      const join = page.locator('.join-section .input-action');
+      const joinBounds = await join.boundingBox();
+      await page
+        .locator('#join-code')
+        .fill('https://watch.example.invalid/join#invite=' + 'a'.repeat(300));
+      const joinButtonBounds = (await page
+        .locator('#join-submit')
+        .boundingBox())!;
+      expect(joinButtonBounds.x).toBeGreaterThanOrEqual(joinBounds!.x);
+      expect(joinButtonBounds.x + joinButtonBounds.width).toBeLessThanOrEqual(
+        joinBounds!.x + joinBounds!.width,
+      );
+      await page.locator('#join-code').fill('');
+      if (width === 390) {
+        await page
+          .getByRole('button', { name: 'Local file', exact: true })
+          .click();
+        const create = page.locator('.create-submit');
+        const beforeFile = (await create.boundingBox())!;
+        await page.locator('#create-local-video').setInputFiles({
+          ...file,
+          name: `${'A long local filename '.repeat(8)}.webm`,
+        });
+        await expect
+          .poll(async () => {
+            const afterFile = (await create.boundingBox())!;
+            return Math.max(
+              ...(['x', 'y', 'width', 'height'] as const).map((key) =>
+                Math.abs(afterFile[key] - beforeFile[key]),
+              ),
+            );
+          })
+          .toBeLessThanOrEqual(1);
+        await page
+          .getByRole('button', { name: 'Bilibili', exact: true })
+          .click();
+      }
       await expect(page.locator('.repo-star-count')).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth),
       ).toBeLessThanOrEqual(width!);
       await expectHeaderFits(page);
-      for (const colorScheme of ['light', 'dark'] as const) {
-        await openAppPanel(page, 'Appearance');
-        await page
-          .getByRole('radio', {
-            name: colorScheme === 'light' ? 'Light' : 'Dark',
-            exact: true,
-          })
-          .check();
-        await page.keyboard.press('Escape');
-        await page.screenshot({
-          path: testInfo.outputPath(`home-${colorScheme}-${width}.png`),
-          fullPage: true,
-        });
+      for (const colorScheme of width === 1440
+        ? (['light', 'dark'] as const)
+        : (['dark'] as const)) {
+        if (width === 1440) {
+          await openAppPanel(page, 'Appearance');
+          await page
+            .getByRole('radio', {
+              name: colorScheme === 'light' ? 'Light' : 'Dark',
+              exact: true,
+            })
+            .check();
+          await page.keyboard.press('Escape');
+        }
+        await expectViewportStructure(page, '.home');
+        await expectHomeActionsReachable(page);
       }
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await createLocalRoom(page, file, 'Responsive watch party');
+    await page.getByRole('button', { name: 'Invite', exact: true }).click();
+    const invite = page.getByRole('dialog');
+    await invite.evaluate(async (dialog) => {
+      await Promise.all(
+        dialog.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const invitationBounds = async () => {
+      const bounds = await Promise.all([
+        invite.locator('.modal-heading').boundingBox(),
+        invite
+          .getByRole('button', { name: 'Copy invitation link' })
+          .boundingBox(),
+        invite
+          .getByRole('button', { name: 'Copy invitation code' })
+          .boundingBox(),
+        invite
+          .getByRole('button', { name: 'Replace invitation', exact: true })
+          .boundingBox(),
+      ]);
+      expect(bounds.every(Boolean)).toBe(true);
+      return bounds.flatMap((box) => [box!.x, box!.y, box!.width, box!.height]);
+    };
+    const beforeCopy = await invitationBounds();
+    await invite.getByRole('button', { name: 'Copy invitation link' }).click();
+    await expect(invite.getByRole('status')).toContainText(
+      /Copied|Text selected/,
+    );
+    await expect
+      .poll(async () =>
+        Math.max(
+          ...(await invitationBounds()).map((value, index) =>
+            Math.abs(value - beforeCopy[index]!),
+          ),
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+    await invite
+      .getByRole('button', { name: 'Close dialog', exact: true })
+      .click();
     const other = await guest.newPage();
     other.on('pageerror', (error) => failures.push(error.message));
     await other.goto(await invitationLink(page));
@@ -952,39 +1220,35 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         button: getComputedStyle(node.querySelector('button')!).color,
       }));
     const darkPlayerColors = await playerColors();
+    const roomGeometry: Record<string, number | boolean>[] = [];
     for (const [width, height] of [
       [3440, 1145],
       [1966, 654],
-      [2560, 1080],
       [1440, 900],
       [1024, 768],
       [900, 500],
-      [390, 844],
+      [320, 844],
     ]) {
       await page.setViewportSize({ width: width!, height: height! });
-      for (const colorScheme of ['light', 'dark'] as const) {
-        await openAppPanel(page, 'Appearance');
-        await page
-          .getByRole('radio', {
-            name: colorScheme === 'light' ? 'Light' : 'Dark',
-            exact: true,
-          })
-          .check();
-        await page.keyboard.press('Escape');
+      const layoutOnly = width !== 1440;
+      for (const colorScheme of layoutOnly
+        ? (['dark'] as const)
+        : (['light', 'dark'] as const)) {
+        if (!layoutOnly) {
+          await openAppPanel(page, 'Appearance');
+          await page
+            .getByRole('radio', {
+              name: colorScheme === 'light' ? 'Light' : 'Dark',
+              exact: true,
+            })
+            .check();
+          await page.keyboard.press('Escape');
+        }
+        await expectViewportStructure(page, '.room');
         expect(await playerColors()).toEqual(darkPlayerColors);
         expect(
           (await page.locator('.room').boundingBox())!.width,
         ).toBeLessThanOrEqual(1600);
-        if (width! > 760) {
-          const stage = (await page.locator('.video-stage').boundingBox())!;
-          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1,
-          );
-        }
-        await page.screenshot({
-          path: testInfo.outputPath(`room-${colorScheme}-${width}.png`),
-          fullPage: true,
-        });
       }
       if (width! > 760) {
         const members = page.locator('.room-actions button[aria-expanded]');
@@ -994,20 +1258,56 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
             'aria-expanded',
             String(expanded),
           );
-          const stage = (await page.locator('.video-stage').boundingBox())!;
-          expect(Math.abs(stage.width - (stage.height * 16) / 9)).toBeLessThan(
-            1,
-          );
+          // The container fills the available area; its shape is independent
+          // of the source media, which may letterbox in either direction.
+          await expect
+            .poll(() =>
+              page.locator('.room').evaluate((root) => {
+                const room = root.getBoundingClientRect(),
+                  layout = root
+                    .querySelector('.room-layout')!
+                    .getBoundingClientRect(),
+                  viewport = root
+                    .querySelector('.player-viewport')!
+                    .getBoundingClientRect(),
+                  stage = root
+                    .querySelector('.video-stage')!
+                    .getBoundingClientRect(),
+                  sidebar =
+                    root.querySelector('.member-panel')?.getBoundingClientRect()
+                      .width ?? 0;
+                const bottomSpace =
+                  room.bottom -
+                  parseFloat(getComputedStyle(root).paddingBottom) -
+                  layout.bottom;
+                return Math.max(
+                  Math.abs(layout.width - stage.width - sidebar - 2),
+                  Math.abs(viewport.height - stage.height),
+                  Math.abs(bottomSpace),
+                );
+              }),
+            )
+            .toBeLessThanOrEqual(1);
+          roomGeometry.push({
+            width: width!,
+            height: height!,
+            sidebar: expanded,
+            ...(await page.locator('.room').evaluate((root) => ({
+              roomWidth: root.getBoundingClientRect().width,
+              stageWidth: root
+                .querySelector('.video-stage')!
+                .getBoundingClientRect().width,
+              stageHeight: root
+                .querySelector('.video-stage')!
+                .getBoundingClientRect().height,
+            }))),
+          });
           const toolbar = (await page.locator('.room-actions').boundingBox())!;
           const room = (await page.locator('.room').boundingBox())!;
           expect(toolbar.x).toBeGreaterThanOrEqual(room.x);
           expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
             room.x + room.width,
           );
-          if (width === 1966 && !expanded)
-            await page.screenshot({
-              path: testInfo.outputPath('room-short-without-sidebar.png'),
-            });
         }
       }
       expect(
@@ -1022,9 +1322,20 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         const bounds = await control.boundingBox();
         expect(bounds).not.toBeNull();
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
+        expect(bounds!.y).toBeGreaterThanOrEqual(-1);
+        expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(height! + 1);
       }
+      await page.locator('.video-stage').hover({ position: { x: 16, y: 16 } });
+      await page
+        .getByRole('button', { name: 'Fullscreen locally', exact: true })
+        .click({ trial: true, timeout: 5000 });
+      await expectViewportStructure(page, '.room');
     }
     await page.setViewportSize({ width: 1440, height: 900 });
+    writeFileSync(
+      testInfo.outputPath('room-layout-geometry.json'),
+      JSON.stringify(roomGeometry, null, 2),
+    );
     await page.evaluate(
       () => (document.documentElement.style.fontSize = '200%'),
     );
@@ -1033,12 +1344,53 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath('room-200-percent.png'),
-      fullPage: true,
-    });
+
     await expectHeaderFits(page);
+    await expectViewportStructure(page, '.room');
     await page.evaluate(() => (document.documentElement.style.fontSize = ''));
+    // Non-widescreen sources must not reshape the player.
+    const frameBounds = (await page.locator('.video-stage').boundingBox())!;
+    for (const [name, sourceWidth, sourceHeight] of [
+      ['portrait', 640, 960],
+      ['square', 640, 640],
+    ] as const) {
+      const buffer = await generatedVideo(browser, 1, false, {
+        width: sourceWidth,
+        height: sourceHeight,
+      });
+      await page
+        .getByRole('button', { name: 'Change video', exact: true })
+        .click();
+      const dialog = page.getByRole('dialog', {
+        name: 'Change the video',
+        exact: true,
+      });
+      await dialog
+        .getByRole('button', { name: 'Local file', exact: true })
+        .click();
+      await dialog.locator('input[type="file"]').setInputFiles({
+        name: `${name}.webm`,
+        mimeType: 'video/webm',
+        buffer,
+      });
+      await dialog
+        .getByRole('button', { name: 'Use this video', exact: true })
+        .click();
+      const video = page.locator('.video-stage video');
+      await expect(video).toHaveJSProperty('videoWidth', sourceWidth);
+      await expect(video).toHaveJSProperty('videoHeight', sourceHeight);
+      await expect
+        .poll(async () => {
+          const bounds = (await page.locator('.video-stage').boundingBox())!;
+          return Math.max(
+            ...(['x', 'y', 'width', 'height'] as const).map((key) =>
+              Math.abs(bounds[key] - frameBounds[key]),
+            ),
+          );
+        })
+        .toBeLessThanOrEqual(1);
+      await expectViewportStructure(page, '.room');
+    }
     await closeRoom(page);
     expect(failures).toEqual([]);
   } finally {
@@ -1047,9 +1399,9 @@ test('responsive room layouts preserve controls and contrast at enlarged text si
 });
 
 // This distinct shell contract covers menu navigation and deployed release metadata.
-test('settings groups local preferences and shows packaged versions and source revision', async ({
+test('settings groups local preferences and separates build identity from packaged versions', async ({
   page,
-}, testInfo) => {
+}) => {
   await page.goto('/');
   await dismissHelper(page);
   const trigger = page.getByRole('button', { name: 'Settings', exact: true });
@@ -1084,7 +1436,7 @@ test('settings groups local preferences and shows packaged versions and source r
   await menuKeys.evaluate((state) => state.stop());
   await menuKeys.dispose();
   await trigger.click();
-  await page.getByRole('heading', { name: 'Start a watch party' }).click();
+  await page.getByRole('heading', { level: 1 }).click();
   await expect(menu).toBeHidden();
   await trigger.press('ArrowUp');
   await page.keyboard.press('Tab');
@@ -1104,9 +1456,7 @@ test('settings groups local preferences and shows packaged versions and source r
     if (!version) throw new Error(`Missing ${name} release version.`);
     return version;
   });
-  const componentValues = about.locator(
-    '.about-versions > div:nth-child(-n+3) dd',
-  );
+  const componentValues = about.locator('.about-versions dd');
   await expect(componentValues).toHaveText(componentVersions);
   await about.evaluate((node) =>
     Promise.all(node.getAnimations().map((animation) => animation.finished)),
@@ -1118,27 +1468,34 @@ test('settings groups local preferences and shows packaged versions and source r
     execFileSync('node', ['../../scripts/versions.mjs', 'build-info'], {
       encoding: 'utf8',
     }),
-  ) as { commit: string; dirty: boolean; tag: string };
+  ) as {
+    image: string;
+    release: boolean;
+    commit: string;
+    dirty: boolean;
+    tag: string;
+  };
   const deployed = { ...release, ...buildInfo };
   expect(await response.json()).toEqual(deployed);
-  const commit = about.locator('.about-commit code');
+  const image = about.locator('header .about-image');
+  const commit = about.locator('header .about-commit code');
   const dirty = about.locator('.about-dirty');
   const tag = about.locator('dt').filter({ hasText: /^Git tag$/ });
-  if (buildInfo.commit) {
+  await expect(image).toHaveText(buildInfo.image);
+  if (!buildInfo.release && buildInfo.commit) {
     await expect(commit).toHaveText(buildInfo.commit.slice(0, 12));
     await expect(commit).toHaveAttribute('title', buildInfo.commit);
   } else await expect(commit).toHaveCount(0);
-  await expect(dirty).toHaveCount(buildInfo.dirty ? 1 : 0);
-  await expect(tag).toHaveCount(buildInfo.tag ? 1 : 0);
+  await expect(dirty).toHaveCount(
+    !buildInfo.release && buildInfo.dirty ? 1 : 0,
+  );
+  await expect(tag).toHaveCount(0);
   for (const [width, height] of [
     [1440, 900],
     [390, 844],
   ]) {
     await page.setViewportSize({ width: width!, height: height! });
-    await page.screenshot({
-      path: testInfo.outputPath(`about-${width}.png`),
-      animations: 'disabled',
-    });
+
     const bounds = await about.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width!);
@@ -1149,36 +1506,55 @@ test('settings groups local preferences and shows packaged versions and source r
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await page.screenshot({ path: testInfo.outputPath('settings-mobile.png') });
+
   await page.keyboard.press('Escape');
 
   // Build-state visibility is separate from component versions and local helper state.
   for (const info of [
     {
+      image: `registry.example.invalid:5000/${'long-project-name-'.repeat(8)}/ovs:dev`,
+      release: false,
       commit: 'a'.repeat(40),
       dirty: true,
       tag: `v1.2.3-${'long-tag-'.repeat(24)}`,
     },
-    { commit: 'b'.repeat(40), dirty: false, tag: '' },
-    { commit: '', dirty: false, tag: '' },
+    {
+      image: 'ovs:v2026-11-02',
+      release: true,
+      commit: 'b'.repeat(40),
+      dirty: false,
+      tag: 'v2026-11-02',
+    },
+    {
+      image: 'ovs:dev',
+      release: false,
+      commit: 'c'.repeat(40),
+      dirty: false,
+      tag: 'v2026-11-02',
+    },
+    { image: 'ovs:dev', release: false, commit: '', dirty: false, tag: '' },
   ]) {
     await page.route('**/api/v2/version', (route) =>
       route.fulfill({ json: { ...release, ...info } }),
     );
     await openAppPanel(page, 'About');
     await expect(componentValues).toHaveText(componentVersions);
-    if (info.commit) {
+    await expect(image).toHaveText(info.image);
+    await expect(about.locator('.about-build-label')).toHaveText(
+      'Build information',
+    );
+    if (!info.release && info.commit) {
       await expect(commit).toHaveText(info.commit.slice(0, 12));
       await expect(commit).toHaveAttribute('title', info.commit);
     } else await expect(commit).toHaveCount(0);
-    await expect(dirty).toHaveCount(info.dirty ? 1 : 0);
-    await expect(tag).toHaveCount(info.tag ? 1 : 0);
-    if (info.tag) {
-      await expect(tag.locator('..').locator('dd')).toHaveText(info.tag);
-      await page.screenshot({
-        path: testInfo.outputPath('about-long-tag-390.png'),
-        animations: 'disabled',
-      });
+    await expect(dirty).toHaveCount(!info.release && info.dirty ? 1 : 0);
+    await expect(tag).toHaveCount(0);
+    if (info.release || info.dirty) {
+      await about.evaluate((node) =>
+        Promise.all(
+          node.getAnimations().map((animation) => animation.finished),
+        ),
+      );
     }
     expect(
       await about.evaluate((node) => node.scrollWidth <= node.clientWidth),
@@ -1193,6 +1569,8 @@ test('settings groups local preferences and shows packaged versions and source r
     JSON.stringify({ ...deployed, helper: 'invalid' }),
     JSON.stringify({ ...deployed, commit: 'invalid' }),
     JSON.stringify({ ...deployed, dirty: 'false' }),
+    JSON.stringify({ ...deployed, image: 'ovs:dev\nunsafe' }),
+    JSON.stringify({ ...deployed, release: 'false' }),
   ]) {
     await page.route('**/api/v2/version', (route) =>
       route.fulfill({
@@ -1233,9 +1611,7 @@ test('settings groups local preferences and shows packaged versions and source r
     'data-position',
     'center',
   );
-  await page.screenshot({
-    path: testInfo.outputPath('toast-mobile-center.png'),
-  });
+
   await openAppPanel(page, 'Notifications');
   await expect(
     page.getByRole('radio', { name: 'Center', exact: true }),
@@ -1247,7 +1623,7 @@ test('settings groups local preferences and shows packaged versions and source r
 // This scenario covers manual modes, ignored system changes, persistence, and storage failure.
 test('appearance defaults to dark and preserves manual local choices', async ({
   page,
-}, testInfo) => {
+}) => {
   const failures: string[] = [];
   page.on('pageerror', (error) => failures.push(error.message));
   const background = () =>
@@ -1312,7 +1688,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
       .locator('.appearance-tile'),
   ).toHaveCSS('outline-style', 'none');
   await expect.poll(accent).not.toBe(iris);
-  await page.screenshot({ path: testInfo.outputPath('appearance-light.png') });
+
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(appearance).toBeFocused();
@@ -1328,9 +1704,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await expect.poll(background).toBe(dark);
   await page.getByRole('radio', { name: 'Slate blue' }).check();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({
-    path: testInfo.outputPath('appearance-dark-mobile.png'),
-  });
+
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -1350,10 +1724,7 @@ test('appearance defaults to dark and preserves manual local choices', async ({
   await dialog.evaluate((node) =>
     Promise.all(node.getAnimations().map((animation) => animation.finished)),
   );
-  await page.screenshot({
-    path: testInfo.outputPath('appearance-expanded-mobile.png'),
-    animations: 'disabled',
-  });
+
   await page.keyboard.press('Escape');
   // Keyboard entry/exit is immediate; reduced motion uses a short fade without scaling.
   await appearance.press('ArrowDown');
@@ -1432,7 +1803,7 @@ test.describe('interface language', () => {
   test('follows the system and switches open workflows without changing room state', async ({
     page,
     browser,
-  }, testInfo) => {
+  }) => {
     test.setTimeout(60000);
     const failures: string[] = [];
     page.on('pageerror', (error) => failures.push(error.message));
@@ -1476,10 +1847,7 @@ test.describe('interface language', () => {
     expect(
       await page.evaluate(() => localStorage.getItem('ovs.language')),
     ).toBeNull();
-    await page.screenshot({
-      path: testInfo.outputPath('i18n-home-zh.png'),
-      fullPage: true,
-    });
+
     await page.getByRole('button', { name: '本地文件', exact: true }).click();
     await page.getByRole('button', { name: '创建房间', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText(
@@ -1538,10 +1906,7 @@ test.describe('interface language', () => {
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 375, height: 812 });
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.screenshot({
-      path: testInfo.outputPath('i18n-room-zh-mobile.png'),
-      fullPage: true,
-    });
+
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -1553,10 +1918,7 @@ test.describe('interface language', () => {
     ).toBeChecked();
     await page.keyboard.press('Escape');
     await language();
-    await page.screenshot({
-      path: testInfo.outputPath('i18n-language-zh-mobile.png'),
-      animations: 'disabled',
-    });
+
     await page.locator('input[name="language"][value="system"]').check();
     await page.keyboard.press('Escape');
     await systemLanguage(['de-DE', 'zh-CN']);

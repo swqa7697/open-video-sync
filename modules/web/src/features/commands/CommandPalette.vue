@@ -12,9 +12,21 @@ import {
 import Icon from '../../components/Icon.vue';
 import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 import { errorMessage, t, translate } from '../../i18n';
-import { searchCommands, type CommandMatch, type QuickCommand } from './search';
+import { sameEpisode, selectionInput } from '../../player/bilibili/media';
+import {
+  searchCommands,
+  searchEpisodes,
+  type CommandMatch,
+  type EpisodeActions,
+  type EpisodeMatch,
+  type QuickCommand,
+} from './search';
 
-const props = defineProps<{ commands: QuickCommand[] }>();
+const props = defineProps<{
+  commands: QuickCommand[];
+  episodes?: EpisodeActions | undefined;
+  context?: string;
+}>();
 const emit = defineEmits<{ close: [] }>();
 const id = useId();
 const dialog = ref<HTMLDialogElement>();
@@ -24,9 +36,45 @@ const query = ref('');
 const selected = ref(0);
 let trigger: HTMLElement | null = null;
 let choosing = false;
+let submitted = false;
+const episodeMode = computed(() => query.value.trim().startsWith('@'));
+const switching = computed(() =>
+  ['loading', 'pending'].includes(props.episodes?.selection?.phase ?? ''),
+);
+const currentNumber = computed(
+  () =>
+    props.episodes?.playlist?.episodes.findIndex((episode) =>
+      sameEpisode(props.episodes?.current, episode),
+    ) ?? -1,
+);
+const commands = computed<QuickCommand[]>(() =>
+  props.episodes?.playlist
+    ? [
+        {
+          id: 'episodes',
+          label: t('episodes.switch'),
+          group: 'watch',
+          icon: 'screen',
+          shortcut: '@',
+          aliases: 'episode episodes playlist 选集 换集 分集',
+          detail: t('episodes.searchHint'),
+          run: () => {
+            query.value = '@';
+            input.value?.focus();
+          },
+        },
+        ...props.commands,
+      ]
+    : props.commands,
+);
 const search = computed(() => {
   try {
-    return { matches: searchCommands(props.commands, query.value), error: '' };
+    return {
+      matches: episodeMode.value
+        ? []
+        : searchCommands(commands.value, query.value),
+      error: '',
+    };
   } catch (reason) {
     return {
       matches: [],
@@ -34,7 +82,54 @@ const search = computed(() => {
     };
   }
 });
-const matches = computed(() => search.value.matches);
+interface Option {
+  id: string;
+  label: string;
+  detail: string | undefined;
+  icon: string;
+  shortcut: string;
+  disabled: boolean;
+  group: QuickCommand['group'];
+  current?: boolean;
+  pending?: boolean;
+  command?: CommandMatch;
+  episode?: EpisodeMatch;
+}
+const matches = computed<Option[]>(() => {
+  if (episodeMode.value)
+    return props.episodes?.playlist
+      ? searchEpisodes(props.episodes.playlist, query.value).map((entry) => {
+          const current = sameEpisode(props.episodes?.current, entry.episode);
+          const pending =
+            switching.value &&
+            sameEpisode(props.episodes?.selection?.episode, entry.episode);
+          return {
+            id: `episode-${entry.number}`,
+            label: entry.episode.title,
+            detail: undefined,
+            icon: 'screen',
+            shortcut: String(entry.number),
+            disabled: !props.episodes?.canSelect || switching.value || current,
+            group: 'watch',
+            current,
+            pending,
+            episode: entry,
+          };
+        })
+      : [];
+  return search.value.matches.map((match) => ({
+    id: match.command.id,
+    label: match.command.label,
+    detail: match.selection
+      ? `${selectionInput(match.selection)} · ${t('player.part', { part: match.selection.part })}`
+      : match.command.detail,
+    icon: match.command.icon,
+    shortcut: match.command.shortcut,
+    disabled: !!match.command.disabled,
+    group: match.command.group,
+    command: match,
+  }));
+});
 const index = computed(() =>
   Math.min(selected.value, Math.max(0, matches.value.length - 1)),
 );
@@ -42,15 +137,59 @@ const activeId = computed(() =>
   matches.value.length ? `${id}-option-${index.value}` : undefined,
 );
 const hint = computed(() =>
-  query.value.trim().startsWith('$')
-    ? t('commands.videoHint')
-    : t('commands.hint'),
+  episodeMode.value
+    ? t('episodes.searchHint')
+    : query.value.trim().startsWith('$')
+      ? t('commands.videoHint')
+      : t('commands.hint'),
+);
+const empty = computed(() => {
+  if (!episodeMode.value) return search.value.error || t('commands.noResults');
+  if (!props.episodes) return t('episodes.noRoom');
+  if (!props.episodes.playlist) return props.episodes.unavailable;
+  const value = query.value.trim().slice(1).trim();
+  return /^[0-9]+$/.test(value)
+    ? t('episodes.noNumber', {
+        number: value.slice(0, 20),
+        count: props.episodes.playlist.episodes.length,
+      })
+    : t('episodes.noResults');
+});
+const playlistKey = computed(
+  () =>
+    props.episodes?.playlist?.episodes
+      .map(
+        (episode) =>
+          `${episode.bvid}:${episode.part}:${episode.episodeId ?? ''}`,
+      )
+      .join('|') ?? '',
+);
+watch([() => props.context, playlistKey], ([context], [previous]) => {
+  if (
+    context === previous &&
+    submitted &&
+    props.episodes?.selection &&
+    props.episodes.selection.phase !== 'failed'
+  )
+    return;
+  submitted = false;
+  if (episodeMode.value) query.value = '';
+});
+watch(
+  () => props.episodes?.selection?.phase,
+  (phase) => {
+    if (submitted && phase === 'accepted') emit('close');
+    if (phase === 'failed') submitted = false;
+  },
 );
 
 watch(
   query,
   () => {
-    selected.value = 0;
+    selected.value =
+      episodeMode.value && query.value.trim() === '@'
+        ? Math.max(0, currentNumber.value)
+        : 0;
   },
   { flush: 'sync' },
 );
@@ -66,13 +205,22 @@ watch([index, matches], async () => {
   else if (row.bottom > bounds.bottom)
     list.scrollTop += row.bottom - bounds.bottom;
 });
-async function choose(match: CommandMatch): Promise<void> {
-  if (match.command.disabled || choosing) return;
+async function choose(match: Option): Promise<void> {
+  if (match.disabled || choosing) return;
+  if (match.episode) {
+    submitted = true;
+    props.episodes?.select(match.episode.episode);
+    return;
+  }
+  if (match.command?.command.id === 'episodes') {
+    match.command.command.run();
+    return;
+  }
   choosing = true;
   emit('close');
   // Restore the original trigger before a destination dialog or field takes focus.
   await nextTick();
-  match.command.run(match.selection);
+  match.command?.command.run(match.command.selection);
 }
 function keyboard(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) return;
@@ -160,27 +308,51 @@ onBeforeUnmount(() => {
     </div>
     <p :id="`${id}-hint`" class="command-hint">{{ hint }}</p>
     <div
+      v-if="episodeMode && episodes?.playlist"
+      class="command-episodes-heading"
+    >
+      <strong>{{ episodes.playlist.title || t('episodes.title') }}</strong>
+      <span>{{
+        currentNumber >= 0
+          ? t('episodes.summaryCurrent', {
+              count: episodes.playlist.episodes.length,
+              current: currentNumber + 1,
+            })
+          : t('episodes.summary', { count: episodes.playlist.episodes.length })
+      }}</span>
+      <p>{{ episodes.note }}</p>
+    </div>
+    <p
+      v-if="episodeMode && episodes?.selection?.phase === 'failed'"
+      class="command-error"
+      role="alert"
+    >
+      {{ episodes.selection.error }}
+    </p>
+    <div
       :id="`${id}-results`"
       ref="results"
       class="command-results"
       role="listbox"
       :aria-label="t('commands.title')"
     >
-      <template v-for="(match, i) in matches" :key="match.command.id">
+      <template v-for="(match, i) in matches" :key="match.id">
         <p
           v-if="
-            i === 0 || matches[i - 1]?.command.group !== match.command.group
+            !episodeMode && (i === 0 || matches[i - 1]?.group !== match.group)
           "
           class="command-group"
           role="presentation"
         >
-          {{ t(`commands.${match.command.group}`) }}
+          {{ t(`commands.${match.group}`) }}
         </p>
         <div
           :id="`${id}-option-${i}`"
           role="option"
           :aria-selected="i === index"
-          :aria-disabled="match.command.disabled || undefined"
+          :aria-disabled="match.disabled || undefined"
+          :aria-current="match.current ? 'true' : undefined"
+          :aria-busy="match.pending || undefined"
           class="command-option"
           @pointermove="
             (event) => {
@@ -194,27 +366,39 @@ onBeforeUnmount(() => {
           "
           @click="choose(match)"
         >
-          <span class="command-icon"
-            ><Icon :name="match.command.icon" :size="18"
+          <span v-if="match.episode" class="command-episode-number">{{
+            match.episode.number
+          }}</span>
+          <span v-else class="command-icon"
+            ><Icon :name="match.icon" :size="18"
           /></span>
           <span class="command-label"
-            ><strong>{{ match.command.label }}</strong
-            ><span v-if="match.selection || match.command.detail">{{
-              match.selection
-                ? `${match.selection.bvid} · ${t('player.part', { part: match.selection.part })}`
-                : match.command.detail
-            }}</span></span
+            ><strong>{{ match.label }}</strong
+            ><span v-if="match.detail">{{ match.detail }}</span></span
           >
-          <code>{{ match.command.shortcut }}</code>
+          <span
+            v-if="match.pending || match.current"
+            class="command-episode-state"
+            >{{
+              match.pending ? t('episodes.switching') : t('episodes.current')
+            }}</span
+          >
+          <code v-if="!match.episode">{{ match.shortcut }}</code>
           <span class="command-enter" aria-hidden="true">↵</span>
         </div>
       </template>
     </div>
     <p v-if="!matches.length" class="command-empty" role="status">
-      {{ search.error || t('commands.noResults') }}
+      {{ empty }}
     </p>
     <div class="command-footer">
-      <span>{{ t('commands.keyboard') }}</span
+      <span>{{
+        episodeMode
+          ? episodes?.canSelect || switching
+            ? t('episodes.keyboard')
+            : t('episodes.browseKeyboard')
+          : t('commands.keyboard')
+      }}</span
       ><span><kbd>Esc</kbd> {{ t('common.cancel') }}</span>
     </div>
   </dialog>
@@ -288,6 +472,46 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font-size: 0.75rem;
 }
+.command-episodes-heading {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  overflow-wrap: anywhere;
+}
+.command-episodes-heading strong,
+.command-episodes-heading > span {
+  display: block;
+}
+.command-episodes-heading strong {
+  font-size: 0.875rem;
+}
+.command-episodes-heading > span,
+.command-episodes-heading p,
+.command-episode-state {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.command-episodes-heading > span {
+  margin-top: 4px;
+}
+.command-episodes-heading p {
+  margin: 8px 0 0;
+}
+.command-episode-number {
+  width: 30px;
+  flex-shrink: 0;
+  color: var(--muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.command-episode-state {
+  flex-shrink: 0;
+}
+.command-error {
+  margin: 8px 16px;
+  color: var(--danger-text);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
 .command-results {
   min-height: 0;
   max-height: 390px;
@@ -357,7 +581,8 @@ onBeforeUnmount(() => {
   visibility: hidden;
   color: var(--muted);
 }
-.command-option[aria-selected='true'] .command-enter {
+.command-option[aria-selected='true']:not([aria-disabled='true'])
+  .command-enter {
   visibility: visible;
 }
 .command-empty {

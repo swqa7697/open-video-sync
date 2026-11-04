@@ -325,9 +325,6 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 				if err != nil {
 					return contracts.Failure("invalid_command")
 				}
-				if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.SelectMedia(r.ID, media) }); err != nil {
-					return err
-				}
 				next.media = &media
 				next.generation++
 				next.playback = Playback{Phase: "paused", AnchorServerMs: now}
@@ -336,6 +333,14 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 				next.cohort = make(map[string]bool)
 				next.bufferSince = make(map[string]int64)
 				next.readySince = make(map[string]int64)
+				if f.AutoPlay {
+					if err := s.startPlayback(&next, r, now); err != nil {
+						return err
+					}
+				}
+				if err := s.Repository.Transact(ctx, func(tx Tx) error { return tx.SelectMedia(r.ID, media) }); err != nil {
+					return err
+				}
 				r.Media = &media
 				s.install(r)
 			case "playback.command":
@@ -352,33 +357,15 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 						return contracts.Failure("invalid_command")
 					}
 					next.playback.PositionMs = f.PositionMs
-					if next.playback.Phase == "ended" {
-						next.playback.Phase = "paused"
-					}
-					if next.playback.Phase == "waiting" {
-						if err := s.startBarrier(&next, l.barrier.Reason, l.barrier.RequiredMemberIDs, now); err != nil {
-							return err
-						}
-					}
+					next.playback.Phase = "paused"
+					next.playback.DesiredPlaying = false
+					next.barrier = nil
 				case "play", "replay":
 					if f.Action == "replay" || next.playback.PositionMs >= l.media.DurationMs {
 						next.playback.PositionMs = 0
 					}
-					next.playback.Phase = "playing"
-					next.playback.DesiredPlaying = true
-					next.barrier = nil
-					next.cohort = make(map[string]bool)
-					required := []string{}
-					for _, m := range r.Members {
-						if l.connections[l.active[m.ID]] != nil {
-							next.cohort[m.ID] = true
-							required = append(required, m.ID)
-						}
-					}
-					if r.Settings.WaitForAll {
-						if err := s.startBarrier(&next, "play", required, now); err != nil {
-							return err
-						}
+					if err := s.startPlayback(&next, r, now); err != nil {
+						return err
 					}
 				default:
 					return contracts.Failure("invalid_command")

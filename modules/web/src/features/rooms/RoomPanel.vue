@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import FormFeedback from '../../components/FormFeedback.vue';
 import Icon from '../../components/Icon.vue';
 import Modal from '../../components/Modal.vue';
 import { message, t, translate, type Message } from '../../i18n';
@@ -226,20 +227,24 @@ defineExpose({ commands });
       v-if="inviteOpen"
       :title="t('room.inviteTitle')"
       @close="inviteOpen = false"
-      ><p>
-        {{ t('room.inviteHint', { title: room.title }) }}
-      </p>
-      <template v-if="invitation"
-        ><label for="invite-link">{{ t('room.invitationLink') }}</label>
+      ><FormFeedback
+        :text="t('room.inviteHint', { title: room.title })"
+        :announce="false"
+      />
+      <div class="invitation-fields">
+        <label for="invite-link">{{ t('room.invitationLink') }}</label>
         <div class="input-action">
           <input
             id="invite-link"
             :value="shareURL"
+            autocomplete="off"
             readonly
+            :disabled="!invitation"
             @focus="selectLink"
           /><button
             class="quiet icon-button"
             :aria-label="t('room.copyLink')"
+            :disabled="!invitation"
             @click="copy(shareURL, 'invite-link')"
           >
             <Icon name="copy" />
@@ -250,21 +255,28 @@ defineExpose({ commands });
           <input
             id="invite-code"
             class="invite-code"
-            :value="invitation.code.match(/.{4}/g)?.join(' ')"
+            :value="invitation?.code.match(/.{4}/g)?.join(' ') ?? ''"
+            autocomplete="off"
             readonly
+            :disabled="!invitation"
             @focus="selectLink"
           /><button
             class="quiet icon-button"
             :aria-label="t('room.copyCode')"
-            @click="copy(invitation.code, 'invite-code')"
+            :disabled="!invitation"
+            @click="invitation && copy(invitation.code, 'invite-code')"
           >
             <Icon name="copy" />
           </button>
         </div>
-        <p role="status" class="hint">{{ translate(copied) }}</p></template
-      >
-      <p v-else class="hint">{{ t('room.retrieving') }}</p>
-      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+      </div>
+      <FormFeedback
+        reserve
+        :text="
+          error || (!invitation ? t('room.retrieving') : translate(copied))
+        "
+        :tone="error ? 'error' : 'hint'"
+      />
       <p class="hint">{{ t('room.invitationHint') }}</p>
       <button class="quiet" :disabled="busy" @click="emit('rotate')">
         {{ t('room.replaceInvitation') }}
@@ -281,7 +293,7 @@ defineExpose({ commands });
         "
       >
         <SettingsForm v-model="settings" :disabled="busy" />
-        <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+        <FormFeedback reserve :text="error || ''" tone="error" />
         <button :disabled="busy">{{ t('room.savePreferences') }}</button>
       </form>
       <div class="settings-danger">
@@ -304,7 +316,7 @@ defineExpose({ commands });
       :title="t('room.closeTitle')"
       @close="closeConfirmation = false"
       ><p>{{ t('room.closeWarning') }}</p>
-      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
+      <FormFeedback reserve :text="error || ''" tone="error" />
       <div class="actions">
         <button class="quiet" autofocus @click="closeConfirmation = false">
           {{ t('common.cancel') }}</button

@@ -13,11 +13,11 @@ import {
 } from './flows';
 import { generatedVideo } from './media';
 
-test('waiting timeout, buffering, ready late joining, and host absence preserve controller permissions', async ({
+test('waiting, buffering, ready late joining, and host absence preserve controller permissions', async ({
   page,
   browser,
-}, testInfo) => {
-  test.setTimeout(110000);
+}) => {
+  test.setTimeout(60000);
   const fixture = await generatedVideo(browser, 60),
     guest = await appContext(browser);
   const file = {
@@ -54,26 +54,33 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'data-state',
       'waiting',
     );
-    await seekTo(page, Number('5'));
+    await seekTo(page, 5);
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused',
+    );
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await clickPlayerControl(page, 'Play together');
     await expect(
       page
         .getByRole('status')
         .filter({ hasText: /Waiting at 5\.0 seconds for .*Guest [0-9a-f]+\./ }),
     ).toBeVisible();
-    await expect(
-      page.getByText('Waiting timed out.', { exact: false }),
-    ).toBeVisible({
-      timeout: 33000,
-    });
-    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
-      'data-state',
-      'paused',
-    );
-    // A participant with control permission can explicitly retry after timeout.
+    // The server policy test advances the barrier deadline with an injected clock.
+    // This journey checks that readiness resumes real players and a guest can control them.
     await other.locator('#local-video').setInputFiles(file);
     await expect(other.getByTestId('media-status')).toHaveAttribute(
       'data-state',
       'ready',
+    );
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'playing',
+    );
+    await clickPlayerControl(other, 'Pause together');
+    await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused',
     );
     await clickPlayerControl(other, 'Play together');
     await expect(page.getByTestId('playback-phase')).toHaveAttribute(
@@ -146,10 +153,7 @@ test('waiting timeout, buffering, ready late joining, and host absence preserve 
       'data-state',
       'playing',
     );
-    await returned.screenshot({
-      path: testInfo.outputPath('policies.png'),
-      fullPage: true,
-    });
+
     // Explicit host departure changes server permission while preserving actual playback.
     await settings(returned, 'host');
     await returned.getByRole('button', { name: 'Leave', exact: true }).click();

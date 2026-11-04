@@ -122,6 +122,23 @@ test('aborts pending requests and releases readiness listeners when disposed', a
   expect(signals).toHaveLength(2);
 });
 test('loaded episode metadata reaches the room sidebar through the player slot', async () => {
+  // jsdom omits dialog methods; native modality and focus are covered in browsers.
+  const dialog = HTMLDialogElement.prototype;
+  const methods = Object.getOwnPropertyDescriptors(dialog);
+  Object.defineProperties(dialog, {
+    showModal: {
+      configurable: true,
+      value(this: HTMLDialogElement) {
+        this.open = true;
+      },
+    },
+    close: {
+      configurable: true,
+      value(this: HTMLDialogElement) {
+        this.open = false;
+      },
+    },
+  });
   const room = decodeSnapshot({
     ...snapshot,
     media,
@@ -133,6 +150,11 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     episodes: [
       { bvid: media.bvid, part: 1, title: 'Opening' },
       { bvid: media.bvid, part: 2, title: 'Finale' },
+      ...Array.from({ length: 10 }, (_, index) => ({
+        bvid: media.bvid,
+        part: index + 3,
+        title: index === 9 ? '深海 FINALE 番外' : `Bonus ${index + 3}`,
+      })),
     ],
   };
   vi.stubGlobal('WebSocket', FakeSocket);
@@ -174,9 +196,94 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     await wrapper.get('#episodes-tab').trigger('click');
     expect(wrapper.get('#episodes-pane').isVisible()).toBe(true);
     expect(wrapper.get('[aria-current="true"]').text()).toContain('Opening');
-    expect(wrapper.findAll('.episode-button')).toHaveLength(2);
+    expect(wrapper.findAll('.episode-button')).toHaveLength(12);
+    await wrapper.get('.command-trigger').trigger('click');
+    const input = wrapper.get('[role="combobox"]');
+    await input.setValue('换集');
+    expect(wrapper.get('[role="option"]').text()).toContain('Switch episode');
+    await input.trigger('keydown', { key: 'Enter' });
+    expect(input.element).toBe(document.activeElement);
+    expect((input.element as HTMLInputElement).value).toBe('@');
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(12);
+    expect(
+      wrapper.get('[role="option"][aria-current="true"]').text(),
+    ).toContain('Opening');
+    await input.trigger('keydown', { key: 'Enter' });
+    for (const query of ['@12', '@00012', '@ 12']) {
+      await input.setValue(query);
+      expect(wrapper.findAll('[role="option"]')).toHaveLength(1);
+      expect(wrapper.get('.command-episode-number').text()).toBe('12');
+    }
+    await input.setValue('@fiNALE');
+    expect(
+      wrapper.findAll('.command-episode-number').map((entry) => entry.text()),
+    ).toEqual(['2', '12']);
+    await input.setValue('@深海 番外');
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(1);
+    await input.trigger('keydown', { key: 'Enter', isComposing: true });
+    await input.setValue('@13');
+    expect(wrapper.find('[role="option"]').exists()).toBe(false);
+    expect(wrapper.get('.command-empty').text()).toContain('No item 13');
+    await input.trigger('keydown', { key: 'Enter' });
+    await input.setValue('@unmatched');
+    expect(wrapper.get('.command-empty').text()).toContain(
+      'No matching episodes',
+    );
+    await input.setValue('');
+    expect(wrapper.find('.command-episodes-heading').exists()).toBe(false);
+    // Read-only members can still search, even when everyone can control playback.
+    socket.frame('room.snapshot', {
+      ...room,
+      selfMemberId: 'f'.repeat(32),
+      settings: { ...room.settings, controllers: 'everyone' },
+      members: [
+        ...room.members,
+        {
+          memberId: 'f'.repeat(32),
+          displayName: 'Viewer',
+          role: 'participant',
+          presence: 'connected',
+          readiness: null,
+        },
+      ],
+    });
+    await flushPromises();
+    await input.setValue('@2');
+    expect(wrapper.get('[role="option"]').attributes('aria-disabled')).toBe(
+      'true',
+    );
+    expect(wrapper.get('.command-episodes-heading').text()).toContain(
+      'The host chooses',
+    );
+    await input.trigger('keydown', { key: 'Enter' });
+    await wrapper.get('[role="option"]').trigger('click');
+    expect(
+      socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((frame) => frame.type === 'media.select'),
+    ).toHaveLength(0);
+    socket.frame('room.snapshot', {
+      ...room,
+      mediaGeneration: 2,
+      media: {
+        kind: 'local',
+        fingerprintVersion: 1,
+        digest: 'a'.repeat(64),
+        sizeBytes: 9,
+        durationMs: 10000,
+      },
+    });
+    await flushPromises();
+    expect((input.element as HTMLInputElement).value).toBe('');
+    await input.setValue('@');
+    expect(wrapper.get('.command-empty').text()).toContain('Bilibili');
   } finally {
     wrapper.unmount();
+    for (const name of ['showModal', 'close']) {
+      const original = methods[name];
+      if (original) Object.defineProperty(dialog, name, original);
+      else Reflect.deleteProperty(dialog, name);
+    }
   }
 });
 test.each([true, false])(

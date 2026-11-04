@@ -49,7 +49,12 @@ Repository automation has an independent Go module under [scripts](scripts/READM
 Root Make targets check and test both Go modules. Automation tests do not require frontend assets.
 
 `versions.toml` is the sole release-version source for sync, web, and helper. Private package manifests omit release versions.
-Builds capture Git commit, dirty state, and an exact tag for About. For direct Docker builds, supply `--build-arg OVS_BUILD_INFO="$(node scripts/versions.mjs build-info)"`.
+Builds capture the full image reference, release status, Git commit, dirty state, and exact Git tag. About displays image identity above component versions, with commit details only for development builds. `make image` and `make deploy` capture this metadata automatically, including explicit `IMAGE` overrides. For direct Docker builds, use the same image name for the snapshot and Docker tag:
+
+```bash
+docker build -f deploy/Dockerfile -t my-ovs:testing \
+  --build-arg OVS_BUILD_INFO="$(IMAGE=my-ovs:testing node scripts/versions.mjs build-info)" .
+```
 
 `modules/sync/sql/schema.sql` always defines the complete, current database schema. Update it whenever the schema changes.
 Go embedding stays in `modules/sync/sql/embed.go`. Startup initializes an empty database transactionally from that definition and records the supported schema version with SQLite `user_version`.
@@ -73,6 +78,11 @@ make build
 ```
 
 For browser behavior, install Playwright browsers with `make browser-install`, then run `make test-e2e`.
+Browser journeys use up to four workers locally and two in CI, bounded by available CPUs, with a fresh application instance and database for each test. CI retains browser failure screenshots and traces for seven days.
+Set `OVS_E2E_PORT` to choose the first worker port when running another suite at the same time; the default is 18080.
+Use observable state or explicit response gates instead of sleeps. Keep timer boundaries in fake-clock tests.
+The routine suite captures screenshots on failure and retains failure traces.
+Run optional decoded-frame and control-latency trials separately with `make test-e2e-measure`.
 Container checks use `make image image-smoke`; reverse-proxy checks use `make proxy-smoke`.
 See [deployment validation](deploy/README.md#remote-deployment-validation) and [network checks](tests/network/README.md) for specialized checks.
 Routine tests remain offline. Live Bilibili and actual-network checks require separate validation.
@@ -81,6 +91,6 @@ Retain implementation evidence under ignored `.misc/`. Local results do not esta
 ## Release preparation
 
 Use the repository's [release-pr](.agents/skills/release-pr/SKILL.md) instructions.
-Version bump targets change `versions.toml` without staging, committing, or pushing. Git writes require an explicit request.
+Version bump targets change `versions.toml` without staging, committing, or pushing.
 Keep module versions independent. Publish changelog entries under date-only headings, `## [YYYY-MM-DD]`, with the newest release first.
 `make release-tag` uses that newest entry's date as the annotated tag, `vYYYY-MM-DD`, and includes only that entry's notes. Tagging requires a separate request and confirmation on clean, current `main`.

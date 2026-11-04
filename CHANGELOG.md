@@ -6,6 +6,35 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-03]
+
+### Added
+
+- Open a player context menu with video statistics and keyboard help, plus Bilibili original-page access and local danmaku controls. Keep Reload danmaku in this menu. View available resolution, frame rate, track bitrates, segments, forward buffer, and real-time media download activity in a persistent overlay, and copy or download a browser-local statistics snapshot. Statistics and shortcut help are also available in Quick actions. Bilibili statistics require the updated playback helper.
+- Import the current Bilibili video, part, or bangumi episode through a small OVS action in Bilibili's video toolbar, with a shared multi-site menu that follows the page's colors. Preview it in OVS, then create a room or confirm replacing a room you host. Keep preview and destination actions stable while loading, and expand long titles on demand. Keep the existing room tab active, recover unconfirmed requests without duplicate replacement, and offer explicit opening when no room tab responds. Replacements start paused at zero. Requires the updated helper.
+- Browse and switch episodes in Quick actions with `@`, filter titles with `@keywords`, or find an exact original list number with `@12`. Keep current-episode markers and member browsing, restrict switching to the host, and retain the search with an error when switching fails.
+- Support Bilibili bangumi SS/EP identifiers and links. Start season links at the first main episode, let the host switch episodes, and preserve the exact episode for joining and reloading members. Use a single identifier label in video inputs, Quick actions, and validation prompts. Each participant uses their own platform access; restricted or trial-only playback stays unready. Requires the updated playback helper.
+- Show a subtle, translucent play icon while paused and a rotating ring during loading and buffering. Respect reduced motion and keep playback controls and clicks available.
+- Show target-frame thumbnails and time above the progress bar on hover, using Bilibili's platform thumbnails, including high-resolution previews, or browser-local extraction for local files. Follow the platform's returned image sizes, layouts, and CDN addresses. Progressively cache every compressed sheet in the background, refresh stationary previews as images arrive, reuse cached images across hover targets, and recover from temporary thumbnail failures. Schedule downloads independently by CDN so playback, seeking, and another source's delay do not repeatedly interrupt thumbnail loading. Video preparation, switching, and buffering never wait for thumbnails. Keep playback unchanged and retain the time when thumbnails are unavailable. Bilibili previews require the updated playback helper.
+
+### Changed
+
+- Start playback automatically from the beginning when the host switches episodes in the room's episode list. Respect waiting for everyone and browser autoplay permission.
+- Pause everyone at the target after seeking during playback, pause, or waiting. Cancel pending automatic resume until a controller selects Play.
+- Use the exact valid `vYYYY-MM-DD` release tag for application images built on `main`; use `dev` otherwise. Keep local builds and SSH deployment consistent and retain explicit `IMAGE` overrides.
+- Show the full image reference under a shared build-information heading in the About header, above component versions. Hide the separate Git tag and show the Git commit only for development builds.
+- Use `caddy:alpine` for managed HTTPS deployments, proxy validation, and manual container deployment examples. Pull the latest Alpine-based Caddy image on each managed HTTPS deployment without a version pin.
+
+### Fixed
+
+- Keep the main interface and primary actions within one viewport without page scrolling. Use compact form rows, preserve button space while pending labels change, and combine media parts with preview feedback. Show long names and messages in detail popovers without moving the form. Keep long lists and dialog content independently scrollable. Balance room width across screen shapes and fill the available player height without assuming a video aspect ratio; show each video fully with black bars where needed.
+- Keep hidden player controls hidden when switching back to the browser, including with Alt+Tab, until pointer activity or deliberate focus navigation.
+- Load Bilibili videos whose large collections make video metadata exceed 1 MiB, while keeping oversized episode lists hidden. If metadata exceeds the 4 MiB response limit, fall back to loading only the selected video without the collection list.
+- Disable browser autofill and input-history suggestions for video links, display names, room names, and invitations.
+- Remember all local danmaku settings across reloads and rooms, including visibility, density, text size, scrolling speed, and display area.
+- Keep the seek preview time above the pointer, within the progress bar's edges.
+- Improve Bilibili playback on high-latency connections with bounded read-ahead, overlapping downloads and player writes, automatic use of validated CDN alternatives, and buffering that adapts to delivery delays. Recover from brief network failures without restarting playback, reuse recovered CDN sources, and reduce read-ahead after timeouts so high-bitrate downloads can complete within request deadlines. Preserve decoding keyframes during buffer reclamation so seeking during playback can recover without a manual pause. Cancel obsolete media downloads immediately when seeking while preserving current-segment danmaku requests. Allow sequential platform requests for previewing and opening a video to complete before the page times out.
+
 ## [2026-11-02]
 
 ### Added

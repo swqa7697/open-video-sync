@@ -6,6 +6,8 @@ import type { Episode, MediaInfo, Playlist } from '../../player/bilibili/media';
 import { FakeSocket, roomFixture } from '../../test-support/room';
 import { decodeSnapshot } from '../../transport/api';
 import { decodeReadiness } from '../../transport/protocol-values';
+import type { EpisodeActions } from '../commands/search';
+import type { ImportRequest, ImportResult } from '../import-handoff/handoff';
 import PlayerPanel from './PlayerPanel.vue';
 
 vi.mock('../../player/fingerprint', () => ({
@@ -163,13 +165,21 @@ beforeEach(() => {
 
 // A component scenario owns player menus and the browser preference lifecycle. The
 // helper regressions separately verify highest/fallback selection from synthetic metadata.
-test('quality and danmaku area choices survive player recreation', async () => {
+test('quality and all danmaku choices survive player recreation', async () => {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('hover: hover'),
   }));
   localStorage.setItem(
     'ovs.player',
-    JSON.stringify({ volume: 0.4, muted: false, danmakuArea: 0.75 }),
+    JSON.stringify({
+      volume: 0.4,
+      muted: false,
+      danmakuVisible: 'false',
+      danmakuDensity: 99,
+      danmakuSize: 12,
+      danmakuSpeed: -1,
+      danmakuArea: 0.75,
+    }),
   );
   const media = {
     kind: 'bilibili' as const,
@@ -230,8 +240,61 @@ test('quality and danmaku area choices survive player recreation', async () => {
     await flushPromises();
     return wrapper;
   }
+  const reloadComments = vi
+    .spyOn(BilibiliAdapter.prototype, 'reloadDanmaku')
+    .mockImplementation(() => {});
   let wrapper = await open();
   try {
+    const sent = FakeSocket.instances.at(-1)!.sent.length;
+    const nativeMenu = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    });
+    wrapper.get('.quality-trigger').element.dispatchEvent(nativeMenu);
+    expect(nativeMenu.defaultPrevented).toBe(false);
+    await wrapper
+      .get('video')
+      .trigger('contextmenu', { clientX: 600, clientY: 300 });
+    await flushPromises();
+    const playerMenu = wrapper.get('.player-context-menu');
+    expect(playerMenu.get('a').attributes('href')).toBe(
+      'https://www.bilibili.com/video/BV1hf4y1N75G?p=1',
+    );
+    expect(playerMenu.get('a').attributes('rel')).toBe('noopener noreferrer');
+    await playerMenu
+      .findAll('button')
+      .find((item) => item.text() === 'Reload danmaku')!
+      .trigger('click');
+    expect(reloadComments).toHaveBeenCalledOnce();
+    expect(wrapper.find('.player-context-menu').exists()).toBe(false);
+    await wrapper
+      .get('.video-stage')
+      .trigger('keydown', { key: 'F10', shiftKey: true });
+    await flushPromises();
+    await wrapper
+      .get('.player-context-menu')
+      .trigger('keydown', { key: 'End' });
+    expect(document.activeElement?.textContent).toContain('Video statistics');
+    await wrapper
+      .get('.player-context-menu')
+      .trigger('keydown', { key: 'ArrowUp' });
+    expect(document.activeElement?.textContent).toContain('Keyboard shortcuts');
+    await wrapper
+      .findAll('.player-context-menu button')
+      .find((item) => item.text() === 'Keyboard shortcuts')!
+      .trigger('click');
+    expect(wrapper.get('.player-shortcuts').text()).toContain(
+      'Seek 5 seconds together',
+    );
+    await wrapper
+      .get('.player-shortcuts button')
+      .trigger('keydown', { key: 'k' });
+    expect(FakeSocket.instances.at(-1)!.sent.length).toBe(sent);
+    await wrapper
+      .get('.player-shortcuts')
+      .trigger('keydown', { key: 'Escape' });
+    expect(wrapper.find('.player-shortcuts').exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get('.video-stage').element);
     expect(wrapper.get('.quality-trigger').text()).toBe('4K');
     expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AV1');
     await wrapper.get('.quality-trigger').trigger('click');
@@ -285,6 +348,16 @@ test('quality and danmaku area choices survive player recreation', async () => {
       .trigger('pointerenter', { pointerType: 'mouse' });
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
+    expect(wrapper.get('.danmaku-menu').text()).not.toContain('Reload danmaku');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('20');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
+    ).toBe('20');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
+    ).toBe('1');
     await wrapper
       .get('.video-stage')
       .trigger('pointerleave', { pointerType: 'mouse' });
@@ -337,6 +410,9 @@ test('quality and danmaku area choices survive player recreation', async () => {
     wrapper.unmount();
     wrapper = await open();
     expect(wrapper.get('.quality-trigger').text()).toBe('1080p');
+    expect(wrapper.get('.danmaku-toggle').attributes('aria-pressed')).toBe(
+      'false',
+    );
     expect(wrapper.get<HTMLInputElement>('.volume-slider').element.value).toBe(
       '0.4',
     );
@@ -346,11 +422,24 @@ test('quality and danmaku area choices survive player recreation', async () => {
     await flushPromises();
     const restored = wrapper.get<HTMLSelectElement>('select[id$="-area"]');
     expect(restored.element.value).toBe('0.25');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('12');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
+    ).toBe('24');
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
+    ).toBe('0.7');
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage blocked', 'SecurityError');
     });
     await restored.setValue('1');
     expect(restored.element.value).toBe('1');
+    await wrapper.get('input[id$="-density"]').setValue(8);
+    expect(
+      wrapper.get<HTMLInputElement>('input[id$="-density"]').element.value,
+    ).toBe('8');
   } finally {
     wrapper.unmount();
   }
@@ -393,6 +482,27 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await advance(1);
     expect(hidden()).toBe(true);
     expect(document.activeElement).toBe(stage.element);
+    // Window activation restores the same DOM focus without pointer activity.
+    for (const outside of [false, true]) {
+      if (outside) await stage.trigger('pointerleave', pointer);
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('focus'));
+      await stage.trigger('focusin', { relatedTarget: null });
+      expect(hidden()).toBe(true);
+      expect(document.activeElement).toBe(stage.element);
+    }
+    // Switching applications must not count as native Tab navigation.
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey']) {
+      await stage.trigger('keydown', { key: 'Tab', [modifier]: true });
+      expect(hidden()).toBe(true);
+    }
+    (seek.element as HTMLInputElement).focus();
+    await flushPromises();
+    expect(hidden()).toBe(false);
+    stage.element.focus();
+    await stage.trigger('pointerenter', pointer);
+    await advance(3000);
+    expect(hidden()).toBe(true);
     for (const key of ['ArrowUp', 'ArrowDown', 'm', 'm', 'z']) {
       await stage.trigger('keydown', { key });
       expect(hidden()).toBe(true);
@@ -548,6 +658,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     playlist: Playlist | undefined;
     canReplace: boolean;
     selectEpisode: (episode: Episode) => Promise<void>;
+    episodeActions: EpisodeActions;
   };
   try {
     fakeMedia(wrapper.get('video').element);
@@ -567,6 +678,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     await flushPromises();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
     expect(panel.canReplace).toBe(false);
+    expect(panel.episodeActions.selection?.phase).toBe('loading');
     expect(panel.playlist).toEqual(playlist);
     finish?.();
     await selecting;
@@ -574,6 +686,7 @@ test('host episode selection publishes resolved metadata and retains the list du
       .map((raw) => JSON.parse(raw))
       .filter((q) => q.type === 'media.select');
     expect(commands).toHaveLength(1);
+    expect(commands[0].payload.autoPlay).toBe(true);
     expect(commands[0].payload.media).toEqual({
       kind: 'bilibili',
       bvid: second.bvid,
@@ -582,6 +695,42 @@ test('host episode selection publishes resolved metadata and retains the list du
       durationMs: 10000,
     });
     expect(JSON.stringify(commands)).not.toContain('playlist');
+    expect(panel.episodeActions.selection?.phase).toBe('pending');
+    socket.frame('command.result', {
+      commandId: 'f'.repeat(32),
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('pending');
+    socket.frame('command.result', {
+      commandId: commands[0].commandId,
+      accepted: false,
+      revision: null,
+      error: {
+        code: 'storage_unavailable',
+        message: 'Synthetic storage failure',
+        requestId: 'f'.repeat(32),
+        retryable: true,
+      },
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('failed');
+    expect(panel.episodeActions.selection?.error).toContain('save');
+    const retry = panel.selectEpisode(second);
+    await flushPromises();
+    finish?.();
+    await retry;
+    const retried = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'media.select')
+      .at(-1);
+    socket.frame('command.result', {
+      commandId: retried.commandId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(panel.episodeActions.selection?.phase).toBe('accepted');
     socket.frame('room.snapshot', {
       ...snapshot,
       revision: 2,
@@ -599,6 +748,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toBeUndefined();
+    expect(panel.episodeActions.selection).toBeUndefined();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
   } finally {
     wrapper.unmount();
@@ -727,10 +877,16 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     expect(
       wrapper.get('[data-testid="media-status"]').attributes('data-state'),
     ).toBe('loading');
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Loading video…',
+    );
     expect(commands()).toHaveLength(0);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     video.dispatchEvent(new Event('loadeddata'));
     await flushPromises();
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Paused',
+    );
     socket.frame('room.snapshot', snapshot);
     const play = wrapper.get('.control-start > button');
     expect(play.attributes('aria-disabled'), wrapper.text()).toBe('false');
@@ -827,10 +983,13 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
   expect(
     wrapper.get('[data-testid="media-status"]').attributes('data-state'),
   ).toBe('buffering');
+  expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+    'Buffering…',
+  );
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
 });
-test('a playing seek reports buffering until the room can wait and resume without a manual pause', async () => {
+test('a playing seek waits for data at the paused target and stays paused when data arrives', async () => {
   vi.useFakeTimers();
   const { wrapper, socket, video, media } = await join('playing');
   try {
@@ -865,6 +1024,7 @@ test('a playing seek reports buffering until the room can wait and resume withou
     socket.frame('room.snapshot', playing);
     await flushPromises();
     expect(video.paused).toBe(false);
+    expect(wrapper.find('.playback-indicator').exists()).toBe(false);
     media.holdSeek = true;
     await wrapper.get('#seek-seconds').setValue(5);
     const command = socket.sent
@@ -879,48 +1039,33 @@ test('a playing seek reports buffering until the room can wait and resume withou
     socket.frame('room.snapshot', {
       ...playing,
       revision: 3,
-      playback: { ...playing.playback, positionMs: 5000 },
+      playback: {
+        ...playing.playback,
+        phase: 'paused',
+        desiredPlaying: false,
+        positionMs: 5000,
+      },
     });
     await vi.advanceTimersByTimeAsync(750);
     expect(video.seeking).toBe(true);
-    expect(reported(socket).at(-1)).toBe('buffering');
-    const waiting = {
-      ...playing,
-      revision: 4,
-      barrier: {
-        ...room('waiting', 4).barrier!,
-        reason: 'buffering',
-        targetPositionMs: 5750,
-      },
-      playback: {
-        ...playing.playback,
-        phase: 'waiting',
-        positionMs: 5750,
-        anchorServerMs: 750,
-      },
-    };
-    socket.frame('room.snapshot', waiting);
-    await vi.advanceTimersByTimeAsync(1500);
     expect(video.paused).toBe(true);
-    expect(video.currentTime).toBe(5.75);
+    expect(video.currentTime).toBe(5);
+    expect(reported(socket).at(-1)).toBe('buffering');
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Buffering…',
+    );
     media.seeking = false;
     media.readyState = 4;
     video.dispatchEvent(new Event('seeked'));
     video.dispatchEvent(new Event('canplay'));
     await flushPromises();
     expect(reported(socket).at(-1)).toBe('ready');
-    await vi.advanceTimersByTimeAsync(1000);
-    socket.frame('room.snapshot', {
-      ...playing,
-      revision: 5,
-      playback: {
-        ...playing.playback,
-        positionMs: 5750,
-        anchorServerMs: performance.now(),
-      },
-    });
-    await flushPromises();
-    expect(video.paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(video.paused).toBe(true);
+    expect(video.currentTime).toBe(5);
+    expect(wrapper.get('.playback-indicator').attributes('aria-label')).toBe(
+      'Paused',
+    );
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     const commands = socket.sent
       .map((raw) => JSON.parse(raw))
@@ -960,4 +1105,97 @@ test('an interrupted Enable playback shows no failure and keeps focus in the pla
   expect(document.activeElement?.id).toBe('player-title');
   expect(reported(socket)).not.toContain('error');
   wrapper.unmount();
+});
+
+test('imported media retains its guarded command until the matching server acknowledgement', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockRejectedValue(
+    new Error('Synthetic playback unavailable'),
+  );
+  const snapshot = decodeSnapshot(roomFixture);
+  const wrapper = mount(PlayerPanel, {
+    props: { room: snapshot },
+    attachTo: document.body,
+  });
+  const panel = wrapper.vm as unknown as {
+    importMedia(request: ImportRequest): Promise<ImportResult>;
+  };
+  const request: ImportRequest = {
+    requestId: 'a'.repeat(32),
+    target: {
+      tabId: 'f'.repeat(32),
+      roomId: snapshot.roomId,
+      epoch: snapshot.epoch,
+      mediaGeneration: snapshot.mediaGeneration,
+      expectedRevision: snapshot.revision,
+    },
+    media: {
+      kind: 'bilibili',
+      bvid: 'BV1hf4y1N75G',
+      cid: '1',
+      part: 1,
+      durationMs: 10000,
+    },
+  };
+  try {
+    fakeMedia(wrapper.get('video').element);
+    const socket = FakeSocket.instances.at(-1)!;
+    socket.welcome();
+    await flushPromises();
+    expect(
+      await panel.importMedia({
+        ...request,
+        target: { ...request.target, mediaGeneration: 1 },
+      }),
+    ).toEqual({ status: 'stale' });
+    const commands = () =>
+      socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((frame) => frame.type === 'media.select');
+    expect(commands()).toHaveLength(0);
+    let finished = false;
+    const importing = panel.importMedia(request).then((result) => {
+      finished = true;
+      return result;
+    });
+    const command = commands()[0];
+    expect(command).toMatchObject({
+      commandId: request.requestId,
+      epoch: request.target.epoch,
+      mediaGeneration: request.target.mediaGeneration,
+      expectedRevision: request.target.expectedRevision,
+      payload: { media: request.media },
+    });
+    expect(command.payload.autoPlay).toBeUndefined();
+    socket.frame('room.snapshot', {
+      ...snapshot,
+      media: request.media,
+      revision: 2,
+      mediaGeneration: 1,
+      playback: { ...snapshot.playback, phase: 'paused' },
+    });
+    await flushPromises();
+    expect(finished).toBe(false);
+    socket.frame('command.result', {
+      commandId: 'e'.repeat(32),
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    await flushPromises();
+    expect(finished).toBe(false);
+    socket.frame('command.result', {
+      commandId: request.requestId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    expect(await importing).toEqual({ status: 'accepted' });
+    expect(await panel.importMedia(request)).toEqual({ status: 'accepted' });
+    expect(commands()).toHaveLength(1);
+  } finally {
+    wrapper.unmount();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 });

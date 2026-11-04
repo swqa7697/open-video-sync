@@ -2,8 +2,10 @@
 // @name OVS Bilibili {{ORIGIN}}
 // @namespace ovs-bilibili-{{ORIGIN}}
 // @version {{HELPER_VERSION}}
-// @description Browser-local Bilibili playback for one OVS instance
+// @description Browser-local Bilibili playback and video import for one OVS instance
 // @match {{MATCH}}
+// @match https://www.bilibili.com/video/*
+// @match https://www.bilibili.com/bangumi/play/*
 // @noframes
 // @run-at document-start
 // @sandbox JavaScript
@@ -12,26 +14,39 @@
 // @connect api.bilibili.com
 // @connect bilivideo.com
 // @connect upos-hz-mirrorakam.akamaized.net
+// @connect hdslb.com
 // @updateURL none
 // @downloadURL none
 // ==/UserScript==
 
 (() => {
   'use strict';
-  /* OVS_BRIDGE_JSON */
-  /* OVS_MEDIA_CODECS */
   const ORIGIN = '{{ORIGIN}}';
   const pageWindow = unsafeWindow;
-  if (location.origin !== ORIGIN || pageWindow.top !== pageWindow.self) return;
+  if (pageWindow.top !== pageWindow.self) return;
+  if (location.origin === 'https://www.bilibili.com') {
+    /* OVS_BILIBILI_LAUNCHER */
+    mountBilibiliLauncher(ORIGIN);
+    return;
+  }
+  if (location.origin !== ORIGIN) return;
+  /* OVS_BRIDGE_JSON */
+  /* OVS_MEDIA_CODECS */
+  /* OVS_MEDIA_DELIVERY */
   const MAX = 256 * 1024,
-    DEADLINE = 12000;
+    DEADLINE = 12000,
+    RESOLUTION_DEADLINE = 24000;
   const handles = new Map(),
-    pending = new Set();
+    pending = new Set(),
+    activeOrigins = new Map(),
+    thumbnails = new WeakMap(),
+    streams = new WeakMap();
   let client,
     generation = 0,
     active = 0,
     serial = 0,
     calls = 0,
+    byteCalls = 0,
     windowStart = performance.now();
   const metrics = {
     requests: 0,
@@ -48,11 +63,14 @@
     )
       ? error.message
       : 'platform-response-invalid';
-  function safeURL(raw, media = false) {
+  function safeURL(raw, media = false, thumbnail = false) {
     const u = new URL(raw);
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hash)
       throw Error('destination-denied');
-    if (media) {
+    if (thumbnail) {
+      if (u.hostname !== 'hdslb.com' && !u.hostname.endsWith('.hdslb.com'))
+        throw Error('destination-denied');
+    } else if (media) {
       if (
         (!/(^|\.)bilivideo\.com$/.test(u.hostname) &&
           u.hostname !== 'upos-hz-mirrorakam.akamaized.net') ||
@@ -63,35 +81,63 @@
       u.hostname !== 'api.bilibili.com' ||
       ![
         '/x/web-interface/view',
+        '/x/player/pagelist',
         '/x/player/playurl',
+        '/pgc/view/web/season',
+        '/pgc/player/web/playurl',
         '/x/web-interface/nav',
         '/x/v2/dm/web/seg.so',
+        '/x/player/videoshot',
       ].includes(u.pathname)
     )
       throw Error('destination-denied');
     return u.href;
   }
-  function mediaURL(track) {
+  function mediaURLs(track) {
     const backups = track.backupUrl || track.backup_url;
+    const locations = [];
     for (const raw of [
       track.baseUrl || track.base_url,
       ...(Array.isArray(backups) ? backups : []),
     ]) {
       if (typeof raw !== 'string') continue;
       try {
-        return safeURL(raw, true);
+        const url = safeURL(raw, true);
+        if (!locations.includes(url)) locations.push(url);
+        if (locations.length === 3) break;
       } catch {
         // Provider locations must pass the same checks before any request.
       }
     }
-    throw Error('destination-denied');
+    if (!locations.length) throw Error('destination-denied');
+    return locations;
   }
   function request(
     url,
-    { range, binary = false, limit = 1024 * 1024, media = false } = {},
+    {
+      range,
+      binary = false,
+      limit = 1024 * 1024,
+      media = false,
+      cancellations,
+      deadline = Infinity,
+      timeout = DEADLINE,
+      thumbnail = false,
+      network,
+    } = {},
   ) {
-    safeURL(url, media);
-    if (active >= 2) throw Error('busy');
+    safeURL(url, media, thumbnail);
+    if (cancellations?.cancelled) throw Error('cancelled');
+    const requestTimeout = Math.min(
+      DEADLINE,
+      timeout,
+      deadline - performance.now(),
+    );
+    if (requestTimeout <= 0) throw Error('request-timeout');
+    // Capacity belongs to each source; unrelated CDNs never cancel one another.
+    const origin = new URL(url).origin;
+    if ((activeOrigins.get(origin) || 0) >= 2) throw Error('busy');
+    activeOrigins.set(origin, (activeOrigins.get(origin) || 0) + 1);
     const mine = generation;
     active++;
     metrics.requests++;
@@ -99,13 +145,33 @@
     return new Promise((resolve, reject) => {
       let settled = false,
         timer,
-        controller;
+        controller,
+        received = 0;
+      const account = (loaded) => {
+        if (
+          !network ||
+          settled ||
+          !Number.isSafeInteger(loaded) ||
+          loaded < received ||
+          loaded > limit
+        )
+          return;
+        network.bytes = Math.min(
+          Number.MAX_SAFE_INTEGER,
+          network.bytes + loaded - received,
+        );
+        received = loaded;
+      };
       const finish = (error, value) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         pending.delete(cancel);
+        cancellations?.delete(cancel);
         active--;
+        const remaining = activeOrigins.get(origin) - 1;
+        if (remaining) activeOrigins.set(origin, remaining);
+        else activeOrigins.delete(origin);
         if (error) reject(Error(error));
         else if (mine !== generation) reject(Error('stale-generation'));
         else resolve(value);
@@ -115,11 +181,14 @@
         controller?.abort();
       };
       pending.add(cancel);
+      cancellations?.add(cancel);
       timer = setTimeout(() => {
         finish('request-timeout');
         controller?.abort();
-      }, DEADLINE);
+      }, requestTimeout);
       function bounds(event) {
+        if (settled) return;
+        account(event.loaded);
         if (
           event.loaded > limit ||
           (event.lengthComputable && event.total > limit)
@@ -140,7 +209,7 @@
             Referer: 'https://www.bilibili.com/',
             ...(range ? { Range: `bytes=${range[0]}-${range[1]}` } : {}),
           },
-          timeout: DEADLINE,
+          timeout: requestTimeout,
           onprogress: bounds,
           onreadystatechange: (r) => {
             if (r.readyState === 2) {
@@ -160,8 +229,9 @@
           ontimeout: () => finish('request-timeout'),
           onabort: () => finish('cancelled'),
           onload: (r) => {
+            if (settled) return;
             try {
-              safeURL(r.finalUrl || url, media);
+              safeURL(r.finalUrl || url, media, thumbnail);
               if (
                 r.finalUrl &&
                 new URL(r.finalUrl).origin !== new URL(url).origin
@@ -187,7 +257,21 @@
               }
               if (range && size !== range[1] - range[0] + 1)
                 throw Error('invalid-range-response');
+              if (range) {
+                const contentRange = r.responseHeaders?.match(
+                  /(?:^|\n)content-range:\s*bytes (\d+)-(\d+)\/(\d+)\s*(?:\r?\n|$)/i,
+                );
+                if (
+                  !contentRange ||
+                  Number(contentRange[1]) !== range[0] ||
+                  Number(contentRange[2]) !== range[1] ||
+                  !Number.isSafeInteger(Number(contentRange[3])) ||
+                  Number(contentRange[3]) <= range[1]
+                )
+                  throw Error('invalid-range-response');
+              }
               metrics.bytes += size;
+              account(size);
               finish(undefined, data);
             } catch (e) {
               finish(e.message);
@@ -199,10 +283,18 @@
       }
     });
   }
-  async function api(path, params) {
+  async function api(path, params, cancellations, deadline) {
     const x = JSON.parse(
       await request(
         `https://api.bilibili.com${path}?${new URLSearchParams(params)}`,
+        {
+          cancellations,
+          deadline,
+          // View responses include full collections even when the optional
+          // episode list exceeds the bridge limit and will be omitted.
+          limit:
+            path === '/x/web-interface/view' ? 4 * 1024 * 1024 : 1024 * 1024,
+        },
       ),
     );
     if (x.code !== 0)
@@ -213,23 +305,24 @@
             ? 'login-required'
             : 'platform-access-denied',
       );
-    return x.data;
+    return path.startsWith('/pgc/') ? x.result : x.data;
+  }
+  function displayText(value) {
+    if (typeof value !== 'string') return '';
+    let result = '';
+    for (const c of value) {
+      const code = c.codePointAt(0);
+      if (code < 32 || (code >= 127 && code <= 159)) continue;
+      if (result.length + c.length > 160) break;
+      result += c;
+    }
+    return result;
   }
   // Return display/selection metadata only. Provider objects stay in the helper.
   function episodeList(view, bvid, part) {
     const episodes = [],
       seen = new Set();
-    const text = (value) => {
-      if (typeof value !== 'string') return '';
-      let result = '';
-      for (const c of value) {
-        const code = c.codePointAt(0);
-        if (code < 32 || (code >= 127 && code <= 159)) continue;
-        if (result.length + c.length > 160) break;
-        result += c;
-      }
-      return result;
-    };
+    const text = displayText;
     const add = (id, page, title) => {
       if (
         !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(id) ||
@@ -295,7 +388,7 @@
       return false;
     }
   }
-  async function resolve(bvid, part, selectedQuality = 0, currentTracks) {
+  async function videoMetadata({ bvid, part }, cancellations, deadline) {
     if (
       !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid) ||
       !Number.isInteger(part) ||
@@ -303,7 +396,29 @@
       part > 10000
     )
       throw Error('invalid-media');
-    const view = await api('/x/web-interface/view', { bvid });
+    let view,
+      singleVideo = false;
+    try {
+      view = await api(
+        '/x/web-interface/view',
+        { bvid },
+        cancellations,
+        deadline,
+      );
+    } catch (error) {
+      if (error.message !== 'response-too-large') throw error;
+      // The compact part list excludes collection metadata. Keep the selected
+      // video usable without retrying the oversized response or raising its cap.
+      singleVideo = true;
+      view = {
+        pages: await api(
+          '/x/player/pagelist',
+          { bvid },
+          cancellations,
+          deadline,
+        ),
+      };
+    }
     if (!Array.isArray(view?.pages) || view.pages.length > 10000)
       throw Error('invalid-media');
     const page = view.pages.find((p) => p.page === part);
@@ -315,14 +430,137 @@
       view.pages.length > 10000
     )
       throw Error('invalid-media');
-    const play = await api('/x/player/playurl', {
+    const playlist = singleVideo ? undefined : episodeList(view, bvid, part);
+    return {
       bvid,
       cid: String(page.cid),
-      qn: String(selectedQuality || 127),
-      // DASH plus AV1. DASH responses also include HEVC and AVC representations.
-      fnval: String(16 | 2048),
-      fourk: '1',
-    });
+      part,
+      title: displayText(singleVideo ? page.part || bvid : view.title),
+      parts: view.pages.length,
+      ...(playlist ? { playlist } : {}),
+    };
+  }
+  async function bangumiMetadata(selection, cancellations, deadline) {
+    const { episodeId, seasonId, bvid, part } = selection;
+    const validID = (id) =>
+      typeof id === 'string' && /^[1-9][0-9]{0,14}$/.test(id);
+    if (
+      part !== 1 ||
+      (seasonId !== undefined
+        ? !validID(seasonId) || episodeId !== undefined || bvid !== undefined
+        : !validID(episodeId)) ||
+      (bvid !== undefined && !/^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(bvid))
+    )
+      throw Error('invalid-media');
+    const season = await api(
+      '/pgc/view/web/season',
+      seasonId ? { season_id: seasonId } : { ep_id: episodeId },
+      cancellations,
+      deadline,
+    );
+    if (
+      !Array.isArray(season?.episodes) ||
+      !season.episodes.length ||
+      season.episodes.length > 10000
+    )
+      throw Error('invalid-media');
+    if (seasonId && String(season.season_id) !== seasonId)
+      throw Error('invalid-media');
+    const entries = [...season.episodes];
+    if (season.section !== undefined) {
+      if (!Array.isArray(season.section) || season.section.length > 100)
+        throw Error('invalid-media');
+      for (const section of season.section) {
+        if (
+          !Array.isArray(section?.episodes) ||
+          entries.length + section.episodes.length > 10000
+        )
+          throw Error('invalid-media');
+        entries.push(...section.episodes);
+      }
+    }
+    // A season always starts at its first main episode, independent of account history.
+    const episode = seasonId
+      ? season.episodes[0]
+      : entries.find((e) => String(e?.id) === episodeId);
+    if (!episode) throw Error('unavailable');
+    const validEpisode = (e) =>
+      e &&
+      Number.isSafeInteger(e.id) &&
+      validID(String(e.id)) &&
+      typeof e.bvid === 'string' &&
+      /^BV[1-9A-HJ-NP-Za-km-z]{10}$/.test(e.bvid) &&
+      Number.isSafeInteger(e.cid) &&
+      e.cid > 0;
+    if (!validEpisode(episode) || (bvid !== undefined && episode.bvid !== bvid))
+      throw Error('invalid-media');
+    const title = (e) =>
+      displayText(
+        [displayText(e.title), displayText(e.long_title)]
+          .filter(Boolean)
+          .join(' · '),
+      );
+    const episodes = [],
+      seen = new Set();
+    for (const e of entries) {
+      if (!validEpisode(e) || seen.has(e.bvid)) continue;
+      seen.add(e.bvid);
+      episodes.push({
+        bvid: e.bvid,
+        part: 1,
+        episodeId: String(e.id),
+        title: title(e) || `EP${e.id}`,
+      });
+      if (episodes.length > 500) break;
+    }
+    const playlist =
+      episodes.length > 1 && episodes.length <= 500 && seen.has(episode.bvid)
+        ? { title: displayText(season.title), episodes }
+        : undefined;
+    return {
+      bvid: episode.bvid,
+      cid: String(episode.cid),
+      part: 1,
+      episodeId: String(episode.id),
+      parts: 1,
+      title: displayText(
+        [displayText(season.title), title(episode)].filter(Boolean).join(' · '),
+      ),
+      ...(playlist ? { playlist } : {}),
+    };
+  }
+  async function resolve(
+    selection,
+    selectedQuality = 0,
+    currentTracks,
+    cancellations,
+    deadline = performance.now() + RESOLUTION_DEADLINE,
+  ) {
+    const metadata =
+      selection.episodeId !== undefined || selection.seasonId !== undefined
+        ? await bangumiMetadata(selection, cancellations, deadline)
+        : await videoMetadata(selection, cancellations, deadline);
+    const play = await api(
+      metadata.episodeId ? '/pgc/player/web/playurl' : '/x/player/playurl',
+      {
+        ...(metadata.episodeId
+          ? { ep_id: metadata.episodeId }
+          : { bvid: metadata.bvid }),
+        cid: metadata.cid,
+        qn: String(selectedQuality || 127),
+        // DASH plus AV1. DASH responses also include HEVC and AVC representations.
+        fnval: String(16 | 2048),
+        fourk: '1',
+      },
+      cancellations,
+      deadline,
+    );
+    // PGC may return a short trial for an account without full playback access.
+    if (
+      metadata.episodeId &&
+      (play?.is_preview === 1 || play?.is_preview === true)
+    )
+      throw Error('platform-access-denied');
     if (
       !Array.isArray(play.dash?.video) ||
       !play.dash.video.length ||
@@ -366,22 +604,44 @@
       play.timelength > 604800000
     )
       throw Error('invalid-media');
-    const tracks = [video, audio].map((t) => ({
-      url: mediaURL(t),
-      id: t.id,
-      codec: t.codecs,
-      mime: t.mimeType || t.mime_type,
-      init: (
-        t.SegmentBase?.Initialization ||
-        t.segment_base?.initialization ||
-        ''
+    const frameRate = (raw) => {
+      if (typeof raw === 'number') return raw;
+      if (
+        typeof raw !== 'string' ||
+        raw.length > 32 ||
+        !/^\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)?$/.test(raw)
       )
-        .split('-')
-        .map(Number),
-      index: (t.SegmentBase?.indexRange || t.segment_base?.index_range || '')
-        .split('-')
-        .map(Number),
-    }));
+        return NaN;
+      const [numerator, denominator = 1] = raw.split('/').map(Number);
+      return numerator / denominator;
+    };
+    const tracks = [video, audio].map((t) => {
+      const rate = frameRate(t.frameRate || t.frame_rate);
+      return {
+        urls: mediaURLs(t),
+        id: t.id,
+        codec: t.codecs,
+        mime: t.mimeType || t.mime_type,
+        ...(Number.isSafeInteger(t.bandwidth) &&
+        t.bandwidth > 0 &&
+        t.bandwidth <= 1073741824
+          ? { bitrate: t.bandwidth }
+          : {}),
+        ...(t === video && Number.isFinite(rate) && rate > 0 && rate <= 1000
+          ? { frameRate: rate }
+          : {}),
+        init: (
+          t.SegmentBase?.Initialization ||
+          t.segment_base?.initialization ||
+          ''
+        )
+          .split('-')
+          .map(Number),
+        index: (t.SegmentBase?.indexRange || t.segment_base?.index_range || '')
+          .split('-')
+          .map(Number),
+      };
+    });
     if (
       tracks.some(
         (t) =>
@@ -398,15 +658,9 @@
       )
     )
       throw Error('invalid-media');
-    const playlist = episodeList(view, bvid, part);
     return {
-      bvid,
-      cid: String(page.cid),
-      part,
+      ...metadata,
       duration: play.timelength / 1000,
-      title: String(view.title).slice(0, 160),
-      parts: view.pages.length,
-      ...(playlist ? { playlist } : {}),
       quality: video.id,
       qualities: [...new Set(playable.map((t) => t.id))].sort((a, b) => b - a),
       tracks,
@@ -421,8 +675,85 @@
         mime: t.mime,
         init: t.init,
         index: t.index,
+        ...(t.bitrate !== undefined ? { bitrate: t.bitrate } : {}),
+        ...(t.frameRate !== undefined ? { frameRate: t.frameRate } : {}),
       })),
     };
+  }
+  async function thumbnailInfo(media) {
+    let state = thumbnails.get(media);
+    if (!state) {
+      state = {};
+      thumbnails.set(media, state);
+      state.info = (async () => {
+        const data = await api('/x/player/videoshot', {
+          bvid: media.bvid,
+          cid: media.cid,
+          index: '1',
+        });
+        const positive = (value) => Number.isSafeInteger(value) && value > 0;
+        if (
+          !data ||
+          !positive(data.img_x_len) ||
+          !positive(data.img_y_len) ||
+          !positive(data.img_x_size) ||
+          !positive(data.img_y_size) ||
+          !positive(data.img_x_len * data.img_y_len) ||
+          !positive(data.img_x_len * data.img_x_size) ||
+          !positive(data.img_y_len * data.img_y_size) ||
+          !Array.isArray(data.image) ||
+          data.image.length < 1 ||
+          !Array.isArray(data.index) ||
+          data.index.length < 1 ||
+          data.index.some(
+            (time, i) =>
+              !Number.isFinite(time) ||
+              time < 0 ||
+              time > 604800 ||
+              (i > 0 && time < data.index[i - 1]),
+          )
+        )
+          throw Error('invalid-media');
+        // Some responses include a leading zero sentinel before the first frame.
+        const times =
+          data.index[0] === 0 && data.index[1] === 0
+            ? data.index.slice(1)
+            : data.index;
+        if (
+          !positive(data.image.length * data.img_x_len * data.img_y_len) ||
+          times.length > data.image.length * data.img_x_len * data.img_y_len
+        )
+          throw Error('invalid-media');
+        state.urls = data.image.map((url) => {
+          if (typeof url !== 'string') throw Error('invalid-media');
+          return safeURL(
+            url.startsWith('//') ? `https:${url}` : url,
+            false,
+            true,
+          );
+        });
+        const origins = new Map();
+        const sources = state.urls.map((url) => {
+          const origin = new URL(url).origin;
+          if (!origins.has(origin)) origins.set(origin, origins.size);
+          return origins.get(origin);
+        });
+        return {
+          columns: data.img_x_len,
+          rows: data.img_y_len,
+          width: data.img_x_size,
+          height: data.img_y_size,
+          times,
+          sheets: state.urls.length,
+          sources,
+        };
+      })().catch((error) => {
+        thumbnails.delete(media);
+        throw error;
+      });
+    }
+    await state.info;
+    return state;
   }
   function protobuf(bytes, maxFields = 30000) {
     let at = 0;
@@ -465,19 +796,33 @@
     const allowed = {
       hello: ['version'],
       probe: ['version'],
-      preview: ['bvid', 'part'],
+      preview: [
+        'part',
+        ...['bvid', 'episodeId', 'seasonId'].filter((key) =>
+          Object.hasOwn(q, key),
+        ),
+      ],
       session: [],
       open: [
         'bvid',
         'part',
         'generation',
+        ...(Object.hasOwn(q, 'episodeId') ? ['episodeId'] : []),
         ...(Object.hasOwn(q, 'quality') ? ['quality'] : []),
       ],
       bytes: ['handle', 'track', 'offset', 'length', 'generation'],
+      seek: ['handle', 'seek', 'generation'],
       danmaku: ['handle', 'segment', 'generation'],
+      thumbnails: ['handle', 'generation'],
+      thumbnail: ['handle', 'sheet', 'offset', 'generation'],
+      statistics: ['handle', 'generation'],
       dispose: ['generation'],
       metrics: [],
     };
+    if (q.op === 'bytes')
+      allowed.bytes.push(
+        ...['end', 'rate', 'seek'].filter((key) => Object.hasOwn(q, key)),
+      );
     if (
       !Object.hasOwn(allowed, q.op) ||
       Object.keys(q).length !== allowed[q.op].length + 4 ||
@@ -502,7 +847,7 @@
       };
     }
     // Inspect a candidate without taking ownership, cancelling playback, or creating a handle.
-    if (q.op === 'preview') return describe(await resolve(q.bvid, q.part));
+    if (q.op === 'preview') return describe(await resolve(q));
     if (q.client !== client) throw Error('stale-generation');
     if (q.op === 'metrics') return metrics;
     if (q.op === 'session') {
@@ -527,10 +872,24 @@
       )
         throw Error('invalid-request');
       const mine = generation,
-        media = await resolve(q.bvid, q.part, q.quality);
+        media = await resolve(q, q.quality);
       if (mine !== generation) throw Error('stale-generation');
       const handle = `h${++serial}-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
       handles.set(handle, media);
+      const network = { bytes: 0 };
+      streams.set(media, {
+        network,
+        seek: 0,
+        operations: new Map(),
+        readers: media.tracks.map((track) =>
+          createMediaReader(
+            track.urls,
+            [track.init, track.index],
+            (url, options) => request(url, { ...options, network }),
+            () => performance.now(),
+          ),
+        ),
+      });
       return {
         ...describe(media),
         handle,
@@ -539,6 +898,69 @@
     if (q.generation !== generation) throw Error('stale-generation');
     const media = handles.get(q.handle);
     if (!media) throw Error('unknown-handle');
+    if (q.op === 'statistics')
+      return {
+        downloadedBytes: streams.get(media).network.bytes,
+        sampledAtMs: performance.now(),
+      };
+    if (q.op === 'thumbnails' || q.op === 'thumbnail') {
+      if (
+        q.op === 'thumbnail' &&
+        (!Number.isSafeInteger(q.sheet) ||
+          q.sheet < 0 ||
+          !Number.isSafeInteger(q.offset) ||
+          q.offset < 0 ||
+          q.offset >= 4 * 1024 * 1024 ||
+          q.offset % MAX !== 0)
+      )
+        throw Error('invalid-request');
+      const state = await thumbnailInfo(media);
+      const info = await state.info;
+      if (
+        q.generation !== generation ||
+        q.client !== client ||
+        handles.get(q.handle) !== media
+      )
+        throw Error('stale-generation');
+      if (q.op === 'thumbnails') return info;
+      if (q.sheet >= info.sheets) throw Error('invalid-request');
+      state.transfers ||= new Map();
+      let transfer = state.transfers.get(q.sheet);
+      if (!transfer) {
+        transfer = request(state.urls[q.sheet], {
+          binary: true,
+          limit: 4 * 1024 * 1024,
+          thumbnail: true,
+        })
+          .then((data) => new Uint8Array(data))
+          .catch((error) => {
+            state.transfers.delete(q.sheet);
+            throw error;
+          });
+        state.transfers.set(q.sheet, transfer);
+      }
+      const bytes = await transfer;
+      if (q.offset >= bytes.length) throw Error('invalid-range');
+      let text = '';
+      for (const byte of bytes.subarray(q.offset, q.offset + MAX))
+        text += String.fromCharCode(byte);
+      if (q.offset + MAX >= bytes.length) state.transfers.delete(q.sheet);
+      return { base64: btoa(text), total: bytes.length };
+    }
+    const stream = streams.get(media);
+    const advanceSeek = (seek) => {
+      if (!Number.isSafeInteger(seek) || seek < 0)
+        throw Error('invalid-request');
+      if (seek < stream.seek) throw Error('cancelled');
+      if (seek > stream.seek) {
+        stream.seek = seek;
+        for (const reader of stream.readers) reader.seek(seek);
+      }
+    };
+    if (q.op === 'seek') {
+      advanceSeek(q.seek);
+      return { cancelled: true };
+    }
     if (q.op === 'bytes') {
       if (
         !Number.isInteger(q.track) ||
@@ -549,53 +971,79 @@
         !Number.isInteger(q.length) ||
         q.length < 1 ||
         q.length > MAX ||
-        !Number.isSafeInteger(q.offset + q.length - 1)
+        !Number.isSafeInteger(q.offset + q.length - 1) ||
+        (q.end !== undefined &&
+          (!Number.isSafeInteger(q.end) || q.end < q.offset + q.length - 1)) ||
+        (q.rate !== undefined &&
+          (!Number.isFinite(q.rate) ||
+            q.rate < 1 ||
+            q.rate > 128 * 1024 * 1024))
       )
         throw Error('invalid-range');
-      const track = media.tracks[q.track];
-      let data;
+      advanceSeek(Object.hasOwn(q, 'seek') ? q.seek : 0);
+      const reader = stream.readers[q.track],
+        seek = q.seek ?? 0,
+        deadline = performance.now() + DEADLINE,
+        read = () =>
+          reader.read(
+            q.offset,
+            q.length,
+            q.end ?? q.offset + q.length - 1,
+            q.rate,
+            seek,
+            deadline,
+          );
+      if (stream.operations.get(q.track)?.seek === seek) throw Error('busy');
+      const operation = { seek };
+      stream.operations.set(q.track, operation);
       try {
-        data = await request(track.url, {
-          range: [q.offset, q.offset + q.length - 1],
-          binary: true,
-          limit: MAX,
-          media: true,
-        });
-      } catch (e) {
-        if (e.message !== 'access-expired') throw e;
-        const fresh = await resolve(
-          media.bvid,
-          media.part,
-          media.quality,
-          media.tracks,
-        );
-        if (
-          q.generation !== generation ||
-          q.client !== client ||
-          handles.get(q.handle) !== media
-        )
-          throw Error('stale-generation');
-        if (
-          fresh.cid !== media.cid ||
-          fresh.duration !== media.duration ||
-          fresh.tracks.some(
-            (t, i) =>
-              t.codec !== media.tracks[i].codec || t.id !== media.tracks[i].id,
+        let data;
+        try {
+          data = await read();
+        } catch (e) {
+          if (e.message !== 'access-expired') throw e;
+          const fresh = await resolve(
+            media,
+            media.quality,
+            media.tracks,
+            reader.cancellations,
+            deadline,
+          );
+          if (
+            q.generation !== generation ||
+            q.client !== client ||
+            handles.get(q.handle) !== media ||
+            stream.seek !== seek
           )
-        )
-          throw Error('media-changed');
-        media.tracks = fresh.tracks;
-        metrics.refreshes++;
-        data = await request(media.tracks[q.track].url, {
-          range: [q.offset, q.offset + q.length - 1],
-          binary: true,
-          limit: MAX,
-          media: true,
-        });
+            throw Error('stale-generation');
+          if (
+            fresh.cid !== media.cid ||
+            fresh.duration !== media.duration ||
+            fresh.tracks.some(
+              (t, i) =>
+                t.codec !== media.tracks[i].codec ||
+                t.id !== media.tracks[i].id ||
+                t.init.some(
+                  (value, at) => value !== media.tracks[i].init[at],
+                ) ||
+                t.index.some(
+                  (value, at) => value !== media.tracks[i].index[at],
+                ),
+            )
+          )
+            throw Error('media-changed');
+          media.tracks[q.track] = fresh.tracks[q.track];
+          reader.replace(fresh.tracks[q.track].urls);
+          metrics.refreshes++;
+          data = await read();
+        }
+        let text = '';
+        for (const b of data) text += String.fromCharCode(b);
+        return { base64: btoa(text) };
+      } finally {
+        if (stream.operations.get(q.track) === operation)
+          stream.operations.delete(q.track);
       }
-      let text = '';
-      for (const b of new Uint8Array(data)) text += String.fromCharCode(b);
-      return { base64: btoa(text) };
     }
     if (q.op === 'danmaku') {
       if (
@@ -672,16 +1120,22 @@
     if (performance.now() - windowStart > 1000) {
       windowStart = performance.now();
       calls = 0;
+      byteCalls = 0;
     }
     let answer;
     try {
+      // Reserve non-byte call budget for playback setup, danmaku, and disposal.
+      if ((q.op === 'thumbnails' || q.op === 'thumbnail') && calls >= 24)
+        throw Error('rate-limited');
       if (
-        ++calls > 32 &&
+        (q.op === 'bytes' ? ++byteCalls > 128 : ++calls > 32) &&
         !(
-          q.op === 'dispose' &&
+          (q.op === 'dispose' || q.op === 'seek') &&
           q.client === client &&
           Number.isSafeInteger(q.generation) &&
-          q.generation > generation
+          (q.op === 'dispose'
+            ? q.generation > generation
+            : q.generation === generation)
         )
       )
         throw Error('rate-limited');

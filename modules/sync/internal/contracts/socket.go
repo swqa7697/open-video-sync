@@ -31,7 +31,7 @@ type ClientFrame struct {
 	MediaGeneration, ExpectedRevision, PositionMs, ClientSendMs int64
 	Media                                                       MediaDescriptor
 	Report                                                      Readiness
-	Reply                                                       bool
+	Reply, AutoPlay                                             bool
 }
 
 // DecodeClientFrame rejects unknown, duplicate and missing fields before effects.
@@ -86,7 +86,14 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 		case "media.select":
 			b, _ := json.Marshal(p["media"])
 			f.Media, err = DecodeMedia(b)
-			valid = valid && shape(p, "media") && err == nil
+			fields := []string{"media"}
+			if value, present := p["autoPlay"]; present {
+				var ok bool
+				f.AutoPlay, ok = value.(bool)
+				valid = valid && ok
+				fields = append(fields, "autoPlay")
+			}
+			valid = valid && shape(p, fields...) && err == nil
 
 		}
 	}
@@ -167,8 +174,11 @@ func CommandDigest(f ClientFrame) string {
 			d = []any{m.Kind, m.FingerprintVersion, m.Digest, m.SizeBytes, m.DurationMs, m.Label}
 		} else {
 			d = []any{m.Kind, m.BVID, m.CID, m.Part, m.DurationMs}
+			if m.EpisodeID != "" {
+				d = append(d, m.EpisodeID)
+			}
 		}
-		a = append(a, d)
+		a = append(a, d, f.AutoPlay)
 
 	}
 	return CanonicalDigest(a)

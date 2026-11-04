@@ -227,8 +227,17 @@ test('three independent nearby trials observe decoded frames separately from con
       await expect
         .poll(async () => (await capture(guest)).samples.at(-1)!.frame)
         .toBeGreaterThan(315);
-      // Retain every visible frame sample, including correction and degraded intervals.
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+      // Collect four seconds of decoded source progression, including corrections.
+      const firstFrame = (await capture(guest)).samples.at(-1)!.frame;
+      await expect
+        .poll(async () => (await capture(guest)).samples.at(-1)!.frame, {
+          timeout: 10000,
+        })
+        .toBeGreaterThanOrEqual(firstFrame + 120);
+      // Measure the explicit pause before seeking, since a seek now also pauses.
+      await clickPlayerControl(host, 'Pause together');
+      for (const player of [host, guest])
+        await expect(player.locator('video')).toHaveJSProperty('paused', true);
       await seekTo(host, 20);
       for (const player of [host, guest])
         await expect
@@ -239,19 +248,9 @@ test('three independent nearby trials observe decoded frames separately from con
           .poll(() =>
             player
               .locator('video')
-              .evaluate((v) => !(v as HTMLVideoElement).paused),
-          )
-          .toBe(true);
-      await clickPlayerControl(host, 'Pause together');
-      for (const player of [host, guest])
-        await expect
-          .poll(() =>
-            player
-              .locator('video')
               .evaluate((v) => (v as HTMLVideoElement).paused),
           )
           .toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 300));
       const ended = performance.now(),
         h = await capture(host),
         g = await capture(guest);

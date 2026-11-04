@@ -26,11 +26,29 @@ export async function openAppPanel(page: Page, name: string): Promise<void> {
   await page.getByRole('menuitem', { name, exact: true }).click();
 }
 export async function dismissHelper(page: Page): Promise<void> {
-  await expect(
-    page.getByRole('complementary', { name: 'Playback helper' }),
-  ).not.toContainText('Checking', { timeout: 8000 });
+  // A reload can commit before Vue mounts the helper check and its setup dialog.
+  await expect(page.locator('.shell')).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (
+          await page
+            .getByRole('complementary', { name: 'Playback helper' })
+            .allTextContents()
+        ).join(''),
+      { timeout: 8000 },
+    )
+    .not.toContain('Checking');
   const later = page.getByRole('button', { name: 'Later', exact: true });
-  if (await later.isVisible()) await later.click();
+  if (await later.count()) {
+    await later.click();
+    await expect(
+      page.getByRole('dialog', {
+        name: 'Set up Bilibili playback',
+        exact: true,
+      }),
+    ).toHaveCount(0);
+  }
 }
 // Pointer actions reveal the bar first, as users do when controls are hidden.
 export async function clickPlayerControl(
@@ -40,18 +58,34 @@ export async function clickPlayerControl(
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page.getByRole('button', { name, exact: true }).click();
 }
+export async function openPlayerMenu(
+  page: Page,
+  input: 'pointer' | 'keyboard' = 'pointer',
+): Promise<void> {
+  await page.bringToFront();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
+  const stage = page.locator('.video-stage');
+  if (input === 'keyboard') {
+    await stage.focus();
+    await page.keyboard.press('Shift+F10');
+  } else await stage.click({ button: 'right', position: { x: 80, y: 60 } });
+  await expect(page.getByRole('menu', { name: 'Player menu' })).toBeVisible();
+}
 export async function openQuickActions(page: Page, query = ''): Promise<void> {
   // Native actions require the foreground page, as with real keyboard input.
   await page.bringToFront();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.keyboard.press('Control+k');
-  const input = page.getByRole('combobox');
+  const input = page.locator('.command-palette').getByRole('combobox');
   await expect(input).toBeFocused();
   if (query) await input.fill(query);
 }
 export async function runQuickAction(page: Page, query: string): Promise<void> {
   await openQuickActions(page, query);
-  await page.getByRole('combobox').press('Enter');
+  await page.locator('.command-palette').getByRole('combobox').press('Enter');
   await expect(page.locator('.command-palette')).toHaveCount(0);
 }
 export async function createLocalRoom(
@@ -81,6 +115,7 @@ export async function invitationLink(page: Page): Promise<string> {
     .getByLabel('Invitation link', { exact: true })
     .inputValue();
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   return value;
 }
 export async function settings(

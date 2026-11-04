@@ -126,6 +126,8 @@ export function boundedText(value: unknown, max: number): string {
   return value;
 }
 interface Pending {
+  optional: boolean;
+  source: number;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -243,11 +245,21 @@ export class HelperBridge {
   call(
     op: string,
     args: Record<string, unknown> = {},
-    deadline = 15000,
+    // Resolving metadata needs two sequential requests within the helper budget.
+    deadline = ['preview', 'open'].includes(op) ? 30000 : 15000,
+    source = 0,
   ): Promise<unknown> {
     if (this.closed)
       return Promise.reject(new DOMException('Cancelled', 'AbortError'));
-    if (this.pending.size >= 4) return Promise.reject(new HelperError('busy'));
+    const optional = op === 'thumbnails' || op === 'thumbnail';
+    // Background replies are grouped by opaque CDN identity, independently of controls.
+    const occupied = [...this.pending.values()].filter(
+      (pending) =>
+        pending.optional === optional &&
+        (!optional || pending.source === source),
+    ).length;
+    if (occupied >= (optional ? 2 : 4))
+      return Promise.reject(new HelperError('busy'));
     const id = ++this.sequence;
     const request = JSON.stringify({
       channel: 'ovs-bilibili-request',
@@ -269,13 +281,29 @@ export class HelperBridge {
           ),
         );
       }, deadline);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { optional, source, resolve, reject, timer });
       window.postMessage(request, location.origin);
     });
   }
+  seek(handle: string, generation: number, seek: number): void {
+    if (this.closed) return;
+    // Cancellation must bypass occupied byte-request slots.
+    window.postMessage(
+      JSON.stringify({
+        channel: 'ovs-bilibili-request',
+        client: this.client,
+        id: ++this.sequence,
+        op: 'seek',
+        handle,
+        generation,
+        seek,
+      }),
+      location.origin,
+    );
+  }
   close(generation: number, releaseOwner = true): void {
     if (this.closed) return;
-    // Cancellation must remain available when all four request slots are occupied.
+    // Cancellation bypasses both foreground and background reply capacity.
     if (releaseOwner)
       window.postMessage(
         JSON.stringify({

@@ -77,7 +77,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000}}
+	command := contracts.ClientFrame{Type: "media.select", CommandID: key(t), Epoch: created.Snapshot.Epoch, ExpectedRevision: created.Snapshot.Revision, AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1hf4y1N75G", CID: "400306737", Part: 1, DurationMs: 60000, EpisodeID: "103591"}}
 	repository.reject.Store(true)
 	err = service.Handle(ctx, bound, command)
 	expectCode(t, err, "busy")
@@ -86,7 +86,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Media != nil || snap.Revision != 1 {
+	if snap.Media != nil || snap.Revision != 1 || snap.Playback.DesiredPlaying {
 		t.Fatal("uncommitted media published")
 	}
 	// The receipt rolled back with the media; retry must now perform the transition.
@@ -94,8 +94,23 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 		t.Fatal(err)
 	}
 	snap, err = service.Snapshot(ctx, host, snap.RoomID)
-	if err != nil || snap.MediaGeneration != 1 || snap.Revision != 2 {
+	if err != nil || snap.MediaGeneration != 1 || snap.Revision != 2 || snap.Playback.Phase != "playing" || !snap.Playback.DesiredPlaying || snap.Playback.PositionMs != 0 {
 		t.Fatal("retry lost atomic outcome", err)
+	}
+	if err := service.Handle(ctx, bound, command); err != nil {
+		t.Fatal("identical media retry was rejected", err)
+	}
+	retried, err := service.Snapshot(ctx, host, snap.RoomID)
+	if err != nil || retried.Revision != snap.Revision || retried.MediaGeneration != snap.MediaGeneration {
+		t.Fatal("media retry repeated the transition", err)
+	}
+	changedIntent := command
+	changedIntent.AutoPlay = false
+	expectCode(t, service.Handle(ctx, bound, changedIntent), "invalid_command")
+	changedEpisode := command
+	changedEpisode.Media.EpisodeID = "250984"
+	if err := service.Handle(ctx, bound, changedEpisode); err == nil {
+		t.Fatal("changed episode reused the original command receipt")
 	}
 	play := contracts.ClientFrame{Type: "playback.command", CommandID: key(t), Epoch: snap.Epoch, ExpectedRevision: snap.Revision, MediaGeneration: snap.MediaGeneration, Action: "play"}
 	if err := service.Handle(ctx, bound, play); err != nil {
@@ -176,10 +191,7 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 		}
 		return err
 	}
-	if err := send(h, contracts.ClientFrame{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != nil {
+	if err := send(h, contracts.ClientFrame{Type: "media.select", AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
 		t.Fatal(err)
 	}
 	if snap.Barrier == nil || len(snap.Barrier.RequiredMemberIDs) != 2 {
@@ -189,13 +201,19 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 10000}); err != nil {
 		t.Fatal(err)
 	}
-	if snap.Playback.Phase != "waiting" || !snap.Playback.DesiredPlaying || snap.Barrier.BarrierID == oldBarrier || snap.Barrier.TargetPositionMs != 10000 {
-		t.Fatal("waiting seek lost play intent")
+	if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != 10000 {
+		t.Fatal("waiting seek did not cancel play intent")
 	}
 	position, duration := int64(10000), int64(60000)
 	report := contracts.Readiness{Status: "ready", MediaGeneration: snap.MediaGeneration, BarrierID: &oldBarrier, PositionMs: &position, DurationMs: &duration, Capabilities: contracts.Capabilities{CanPlay: true, CanPause: true, CanSeek: true, CanReadPosition: true, CanDetectBuffering: true}}
 	err = service.Handle(ctx, g, contracts.ClientFrame{Type: "member.readiness", Epoch: snap.Epoch, Report: report})
 	expectCode(t, err, "stale_state")
+	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != nil {
+		t.Fatal(err)
+	}
+	if snap.Barrier == nil || snap.Barrier.TargetPositionMs != 10000 || snap.Barrier.BarrierID == oldBarrier {
+		t.Fatal("explicit play did not start a new wait at the seek target")
+	}
 	id := snap.Barrier.BarrierID
 	report.BarrierID = &id
 	if err := service.Handle(ctx, h, contracts.ClientFrame{Type: "member.readiness", Epoch: snap.Epoch, Report: report}); err != nil {
@@ -241,6 +259,17 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	snap = updated.Snapshot
 	if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil {
 		t.Fatal("waiting settings retained auto resume")
+	}
+	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "play"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, position := range []int64{20000, 30000} {
+		if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: position}); err != nil {
+			t.Fatal(err)
+		}
+		if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != position {
+			t.Fatal("playing or paused seek did not stop at the requested position", snap.Playback)
+		}
 	}
 	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader, OnRevoked: service.RevokeSession}
 	if err := identities.Forget(ctx, guest); err != nil {

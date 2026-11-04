@@ -1,4 +1,44 @@
-import { parseSelection } from '../../player/bilibili/media';
+import {
+  parseSelection,
+  type Episode,
+  type Playlist,
+} from '../../player/bilibili/media';
+
+export interface EpisodeActions {
+  playlist: Playlist | undefined;
+  current: Episode | undefined;
+  canSelect: boolean;
+  note: string;
+  unavailable: string;
+  selection:
+    | {
+        episode: Episode;
+        phase: 'loading' | 'pending' | 'accepted' | 'failed';
+        error: string;
+      }
+    | undefined;
+  select(episode: Episode): void;
+}
+export interface EpisodeMatch {
+  episode: Episode;
+  number: number;
+}
+export function searchEpisodes(
+  playlist: Playlist,
+  query: string,
+): EpisodeMatch[] {
+  const raw = query.trim().slice(1).trim().toLocaleLowerCase();
+  const entries = playlist.episodes.map((episode, index) => ({
+    episode,
+    number: index + 1,
+  }));
+  if (/^[0-9]+$/.test(raw))
+    return entries.filter((entry) => entry.number === Number(raw));
+  const words = raw.split(/\s+/);
+  return entries.filter(({ episode }) =>
+    words.every((word) => episode.title.toLocaleLowerCase().includes(word)),
+  );
+}
 
 export type VideoSelection = ReturnType<typeof parseSelection>;
 export interface QuickCommand {
@@ -23,7 +63,7 @@ export function searchCommands(
   query: string,
 ): CommandMatch[] {
   const raw = query.trim();
-  if (raw.startsWith('$') || /^(?:https?:\/\/|BV)/i.test(raw)) {
+  if (raw.startsWith('$') || /^(?:https?:\/\/|BV|ss[0-9]|ep[0-9])/i.test(raw)) {
     const input = raw.startsWith('$') ? raw.slice(1).trim() : raw;
     const command = commands.find((item) => item.id === 'video');
     if (!command) return [];

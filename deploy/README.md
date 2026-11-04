@@ -34,13 +34,16 @@ published ports. The tool does not install Docker or change host firewall rules.
 
 The command detects the remote CPU architecture, builds the application locally,
 and streams the image through SSH to `docker image load`. Managed HTTPS also
-transfers the pinned Caddy image. The remote machine does not need a registry
+transfers the Caddy image. The remote machine does not need a registry
 account, Git, Go, Node, curl, or access to GitHub or Docker Hub. The local machine
 needs access to build dependencies, images, and Compose release downloads.
 
-Deployment uses the same `IMAGE` as `make image`: `ovs:s<sync>-w<web>-h<helper>`,
-with versions from `versions.toml`. Set `IMAGE=my-ovs:testing` to build, transfer,
-and run a custom tag.
+Deployment uses the same default `IMAGE` as `make image`. On the checked-out `main`
+branch, a valid `vYYYY-MM-DD` release tag pointing directly at `HEAD` selects
+`ovs:vYYYY-MM-DD`. Otherwise, the image is `ovs:dev`, including detached HEAD and
+checkouts without Git metadata. Dates must be valid calendar dates. If several
+release tags point at `HEAD`, the newest date wins.
+Set `IMAGE=my-ovs:testing` to build, transfer, and run a custom tag.
 
 Deployment shows numbered steps, completion or failure, elapsed time, and remote
 substeps through configuration validation, container replacement, and health checks.
@@ -60,23 +63,24 @@ are reused. If Compose is missing, the tool downloads version 5.6.1 locally,
 checks its official SHA-256 checksum, and installs the remote user CLI plugin.
 An existing incompatible plugin is preserved; a deployment-local executable is
 used instead. Automatically installed versions are fixed and do not self-update.
-Caddy uses `caddy:2.11.7-alpine`. Update these pins with deployment validation.
+Caddy uses `caddy:alpine` to select the latest Alpine variant without a version pin.
+The image is pulled locally on each managed HTTPS deployment.
 
 ### Configuration
 
-| Make variable     | Default                                | Meaning                                                                        |
-| ----------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
-| `HOST`            | Required                               | SSH destination                                                                |
-| `URL`             | Saved value                            | Public origin; required for the first deployment                               |
-| `IMAGE`           | `ovs:s<sync>-w<web>-h<helper>`         | Application image tag built locally and used remotely                          |
-| `DEPLOY_DIR`      | Remote `~/.local/share/ovs`            | Absolute remote configuration directory                                        |
-| `PROXY`           | Saved value, initially `auto`          | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
-| `PROXY_NETWORK`   | Saved value                            | Existing Docker network for an external container proxy                        |
-| `TRUSTED_PROXIES` | Saved value                            | Trusted proxy CIDRs; required for an external container proxy                  |
-| `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24` | Dedicated private IPv4 /24; select another range if it overlaps                |
+| Make variable     | Default                                                 | Meaning                                                                        |
+| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `HOST`            | Required                                                | SSH destination                                                                |
+| `URL`             | Saved value                                             | Public origin; required for the first deployment                               |
+| `IMAGE`           | `ovs:vYYYY-MM-DD` on tagged `main`; otherwise `ovs:dev` | Application image tag built locally and used remotely                          |
+| `DEPLOY_DIR`      | Remote `~/.local/share/ovs`                             | Absolute remote configuration directory                                        |
+| `PROXY`           | Saved value, initially `auto`                           | `auto` selects direct HTTP or managed HTTPS; `external` uses an existing proxy |
+| `PROXY_NETWORK`   | Saved value                                             | Existing Docker network for an external container proxy                        |
+| `TRUSTED_PROXIES` | Saved value                                             | Trusted proxy CIDRs; required for an external container proxy                  |
+| `PROXY_SUBNET`    | Saved value, initially `172.30.0.0/24`                  | Dedicated private IPv4 /24; select another range if it overlaps                |
 
 Saved connection and proxy settings are reused when a variable is omitted. `IMAGE`
-uses the current local versions or an explicit override on each deployment.
+uses the current local branch and exact release tag or an explicit override on each deployment.
 Explicitly passing a new `URL` changes the public origin. Choose the final origin before inviting people:
 an origin change affects browser identities, invitation links, and the helper's
 installation scope. Returning to `PROXY=auto` clears external network/trust settings.
@@ -170,7 +174,7 @@ silence an ownership conflict. The original manual recipes below remain supporte
 
 `make deploy-smoke` uses a disposable SSH server and a privileged, isolated Docker
 daemon. It never mounts the host Docker socket into the fixture. Prepare the OVS
-image with `make image` and pull `caddy:2.11.7-alpine` first. The test requires SSH
+image with `make image` and pull `caddy:alpine` first. The test requires SSH
 client tools and network access for fixture and Compose downloads. It checks
 Compose bootstrap, image transfer, updates, data preservation, failed preparation,
 stop/restart, and IP HTTPS/WebSocket with a test CA. Test CA injection exists only
@@ -191,8 +195,8 @@ docker compose -f deploy/compose.yaml up -d --wait
 ```
 
 Compose requires `IMAGE` in the shell environment for all manual recipes below.
-The export command combines all three module versions from root `versions.toml` as `ovs:s<sync>-w<web>-h<helper>`, matching the default tag from `make image`.
-Export `IMAGE` again in a new shell or after changing versions. For a custom image name, export that name before `make image`.
+The export command selects the release tag on tagged `main` or `dev`, matching the default tag from `make image`.
+Export `IMAGE` again in a new shell or after changing branches, commits, or tags. For a custom image name, export that name before `make image`.
 
 The default publication is `127.0.0.1:8080`. The named volume preserves `/data` across container replacement.
 The application runs without root privileges and with a read-only root filesystem.
@@ -218,7 +222,7 @@ Run Caddy separately on a private network shared only with OVS. Give Caddy a sta
 docker network create --subnet 172.30.0.0/24 --ip-range 172.30.0.128/25 ovs-proxy
 docker run -d --name caddy --network ovs-proxy --ip 172.30.0.2 -p 80:80 -p 443:443 \
   -v "$PWD/deploy/Caddyfile.container.example:/etc/caddy/Caddyfile:ro" \
-  -v caddy-data:/data -v caddy-config:/config caddy:2
+  -v caddy-data:/data -v caddy-config:/config caddy:alpine
 OVS_PUBLIC_ORIGIN=https://watch.example.com OVS_TRUSTED_PROXIES=172.30.0.2/32 \
   docker compose -f deploy/compose.yaml -f deploy/compose.caddy.yaml up -d --wait
 ```
@@ -275,7 +279,7 @@ Preserve `/data` across upgrades and use a binary compatible with its schema. Pl
 OVS has no backup/restore command or automated downgrade workflow.
 
 `make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
-`make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:2` and a local certificate authority.
+`make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:alpine` and a local certificate authority.
 It checks HTTPS pages, the `Secure` cookie, the helper scope, trusted-proxy client addresses, a same-epoch socket reconnect after `caddy reload --force`, and a clean stop.
 Both checks retain sanitized evidence under ignored `.misc/` and remove their containers, networks, and volumes.
 Certificate issuance and DNS belong to the operator's Caddy installation.

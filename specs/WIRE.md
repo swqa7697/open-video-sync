@@ -18,7 +18,7 @@ Durations range from 1 ms to seven days. Local file sizes range from 1 byte to 1
 `RoomSettings` is exactly `{controllers:"host"|"everyone", waitForAll:boolean}`.
 Defaults are `host` and `true`. Reject unknown settings fields.
 Local descriptors are `{kind:"local",fingerprintVersion:1,digest,sizeBytes,durationMs,label?}`.
-Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs}`. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
+Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs,episodeId?}`. Bangumi includes `episodeId`, a positive decimal string of at most 15 digits without leading zeros, and uses `part:1`. Resolve season inputs to one concrete episode in the browser before sending a descriptor. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
 
 Errors are `{code,message,requestId,retryable}` with bounded safe messages.
 Use HTTP 400 for invalid input, 401 for authentication, 403 for authorization, 404 for missing resources, 409 for conflicts, 413 for oversized bodies, 415 for unsupported content types, 429 for rate or capacity limits, and 503 for unavailable persistence or a busy server.
@@ -31,23 +31,23 @@ Use `/api/v2`, health endpoints under `/health`, and the helper distribution URL
 Bootstrap and authenticated mutations require the configured exact origin. Authenticated mutations also require the session-bound CSRF token.
 Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate expiry and authorization against application memory.
 
-| Method and relative path                    | Input                               | Result                                                            |
-| ------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------- |
-| `GET /version`                              | None                                | Public `{sync,web,helper,commit,dirty,tag}` build metadata        |
-| `POST /session`                             | `{}`                                | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`       |
-| `GET /me`                                   | None                                | Same profile/session shape                                        |
-| `PATCH /me`                                 | `{displayName}`                     | Same profile/session shape                                        |
-| `DELETE /session`                           | `{}`                                | `{forgotten:true}` after persistent revocation and socket closure |
-| `GET /rooms`                                | Optional `cursor` and `limit`       | `{rooms:[{roomId,title,role}],nextCursor}` from memory            |
-| `POST /rooms`                               | `{title,settings,media}`            | `{snapshot,invitation,replayed}`                                  |
-| `POST /invitations/redeem`                  | Exactly `{linkSecret}` or `{code}`  | `{snapshot,replayed}`                                             |
-| `GET /rooms/{roomId}`                       | None                                | Authorized snapshot from memory                                   |
-| `PATCH /rooms/{roomId}/settings`            | `{epoch,expectedRevision,settings}` | `{snapshot}`                                                      |
-| `GET /rooms/{roomId}/invitations`           | None                                | `{invitation}`; host only                                         |
-| `POST /rooms/{roomId}/invitations`          | `{epoch,expectedRevision}`          | `{snapshot,invitation}`; host-only reset                          |
-| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`          | `{roomId,revision,removedMemberId}`                               |
-| `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`          | Committed departure receipt; host membership retained for return  |
-| `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`          | `{roomId,revision,closed:true}`                                   |
+| Method and relative path                    | Input                               | Result                                                                   |
+| ------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| `GET /version`                              | None                                | Public `{sync,web,helper,image,release,commit,dirty,tag}` build metadata |
+| `POST /session`                             | `{}`                                | `{identity:{identityId,displayName},csrfToken,expiresAtMs}`              |
+| `GET /me`                                   | None                                | Same profile/session shape                                               |
+| `PATCH /me`                                 | `{displayName}`                     | Same profile/session shape                                               |
+| `DELETE /session`                           | `{}`                                | `{forgotten:true}` after persistent revocation and socket closure        |
+| `GET /rooms`                                | Optional `cursor` and `limit`       | `{rooms:[{roomId,title,role}],nextCursor}` from memory                   |
+| `POST /rooms`                               | `{title,settings,media}`            | `{snapshot,invitation,replayed}`                                         |
+| `POST /invitations/redeem`                  | Exactly `{linkSecret}` or `{code}`  | `{snapshot,replayed}`                                                    |
+| `GET /rooms/{roomId}`                       | None                                | Authorized snapshot from memory                                          |
+| `PATCH /rooms/{roomId}/settings`            | `{epoch,expectedRevision,settings}` | `{snapshot}`                                                             |
+| `GET /rooms/{roomId}/invitations`           | None                                | `{invitation}`; host only                                                |
+| `POST /rooms/{roomId}/invitations`          | `{epoch,expectedRevision}`          | `{snapshot,invitation}`; host-only reset                                 |
+| `DELETE /rooms/{roomId}/members/{memberId}` | `{epoch,expectedRevision}`          | `{roomId,revision,removedMemberId}`                                      |
+| `POST /rooms/{roomId}/leave`                | `{epoch,expectedRevision}`          | Committed departure receipt; host membership retained for return         |
+| `DELETE /rooms/{roomId}`                    | `{epoch,expectedRevision}`          | `{roomId,revision,closed:true}`                                          |
 
 `GET /version` needs no session and performs no storage access. Return the running binary's build version and the release versions of its embedded frontend and helper. Keep this metadata uncached; it does not report the helper installed in the browser.
 
@@ -118,8 +118,8 @@ The replaced page pauses and does not reconnect until explicitly reloaded or reo
 
 Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
-- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only.
-- `media.select`: `{media:MediaDescriptor}`. Host only; persist the descriptor, then reset runtime playback and advance media generation.
+- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent.
+- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Host only; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
 Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.
 Clock and heartbeat use `{v:2,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.

@@ -12,7 +12,7 @@ func TestEmbeddedShellAndAssetCaching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"/", "/join", "/rooms/example"} {
+	for _, route := range []string{"/", "/join", "/import", "/rooms/example"} {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, route, nil))
 		if w.Code != 200 || !strings.Contains(w.Body.String(), `<div id="app">`) || w.Header().Get("Cache-Control") != "no-cache" {

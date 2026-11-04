@@ -7,6 +7,51 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+test('local statistics report the playhead buffer and label observed frame rate as an estimate', () => {
+  const video = document.createElement('video');
+  video.pause = () => {};
+  video.load = () => {};
+  let frames = 30;
+  Object.defineProperties(video, {
+    videoWidth: { value: 1920 },
+    videoHeight: { value: 1080 },
+    paused: { value: false },
+    buffered: {
+      value: {
+        length: 2,
+        start: (index: number) => [0, 8][index],
+        end: (index: number) => [4, 12][index],
+      },
+    },
+  });
+  video.getVideoPlaybackQuality = () => ({
+    creationTime: 0,
+    totalVideoFrames: frames + 2,
+    droppedVideoFrames: 2,
+    corruptedVideoFrames: 0,
+  });
+  const adapter = new LocalAdapter(video);
+  expect(adapter.getStatistics()).toEqual({
+    width: 1920,
+    height: 1080,
+    bufferAheadSeconds: 4,
+  });
+  video.currentTime = 1;
+  frames = 60;
+  expect(adapter.getStatistics()).toMatchObject({
+    frameRate: 30,
+    frameRateEstimated: true,
+    bufferAheadSeconds: 3,
+  });
+  video.currentTime = 6;
+  video.dispatchEvent(new Event('seeking'));
+  expect(adapter.getStatistics().bufferAheadSeconds).toBe(0);
+  video.currentTime = 10;
+  expect(adapter.getStatistics().bufferAheadSeconds).toBe(2);
+  adapter.dispose();
+  expect(() => adapter.getStatistics()).toThrow('Disposed');
+});
+
 test('a streamed seek waits for data and a newer seek or disposal cancels the old wait', async () => {
   vi.useFakeTimers();
   const video = document.createElement('video');
