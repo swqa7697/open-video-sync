@@ -38,27 +38,25 @@ test('a playing MediaSource seek pauses at the target and stays paused when data
     expect(response.ok()).toBe(true);
     return decodeSnapshot(await response.json());
   };
-  const stream = await page.evaluateHandle(
-    async (initial) => {
-      const video = document.querySelector('video')!;
-      const source = new MediaSource();
-      const url = URL.createObjectURL(source);
-      const opened = new Promise<void>((resolve) =>
-        source.addEventListener('sourceopen', () => resolve(), { once: true }),
-      );
-      video.src = url;
-      await opened;
-      source.duration = 30;
-      const buffer = source.addSourceBuffer('video/webm; codecs="vp8"');
-      const appended = new Promise<void>((resolve) =>
-        buffer.addEventListener('updateend', () => resolve(), { once: true }),
-      );
-      buffer.appendBuffer(new Uint8Array(initial));
-      await appended;
-      return { source, buffer, url };
-    },
-    Array.from(file.subarray(0, split)),
-  );
+  const stream = await page.evaluateHandle(async (initial) => {
+    const video = document.querySelector('video')!;
+    const source = new MediaSource();
+    const url = URL.createObjectURL(source);
+    const opened = new Promise<void>((resolve) =>
+      source.addEventListener('sourceopen', () => resolve(), { once: true }),
+    );
+    video.src = url;
+    await opened;
+    source.duration = 30;
+    const buffer = source.addSourceBuffer('video/webm; codecs="vp8"');
+    const appended = new Promise<void>((resolve) =>
+      buffer.addEventListener('updateend', () => resolve(), { once: true }),
+    );
+    // Compact transport avoids serializing each media byte as a Playwright value.
+    buffer.appendBuffer(Uint8Array.from(atob(initial), (c) => c.charCodeAt(0)));
+    await appended;
+    return { source, buffer, url };
+  }, file.subarray(0, split).toString('base64'));
   try {
     await expect(page.getByTestId('media-status')).toHaveAttribute(
       'data-state',
@@ -77,17 +75,16 @@ test('a playing MediaSource seek pauses at the target and stays paused when data
     expect((await snapshot()).barrier).toBeNull();
     expect((await snapshot()).playback.desiredPlaying).toBe(false);
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
-    await stream.evaluate(
-      async ({ source, buffer }, remaining) => {
-        const appended = new Promise<void>((resolve) =>
-          buffer.addEventListener('updateend', () => resolve(), { once: true }),
-        );
-        buffer.appendBuffer(new Uint8Array(remaining));
-        await appended;
-        source.endOfStream();
-      },
-      Array.from(file.subarray(split)),
-    );
+    await stream.evaluate(async ({ source, buffer }, remaining) => {
+      const appended = new Promise<void>((resolve) =>
+        buffer.addEventListener('updateend', () => resolve(), { once: true }),
+      );
+      buffer.appendBuffer(
+        Uint8Array.from(atob(remaining), (c) => c.charCodeAt(0)),
+      );
+      await appended;
+      source.endOfStream();
+    }, file.subarray(split).toString('base64'));
     await expect
       .poll(() =>
         page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime),
