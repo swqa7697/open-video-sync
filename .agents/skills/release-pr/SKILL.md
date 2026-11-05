@@ -121,10 +121,10 @@ must complete successfully. Pending, missing, cancelled, timed-out, or unexpecte
 skipped jobs keep the gate closed; a successful job does not hide another failed job.
 
 The `CI / validate` job always runs. Its `Select validation mode` log identifies `full`
-or `release`; its summary records the tested source/base and the reused full run when
-applicable. In full mode, all static, unit, race, browser, image, and proxy steps must
-succeed. Do not accept a missing mode as full without inspecting every expected step
-in an older workflow.
+or `release`. In full mode, all static, unit, race, browser, image, and proxy steps must
+succeed; `Record validation result` records the tested source/base in the summary and
+full-validation artifact. Do not accept a missing mode as full without inspecting every
+expected step in an older workflow.
 
 Release mode is allowed only for a same-repository PR into `main`, with a single-parent
 release commit that modifies only regular `versions.toml` and optional existing
@@ -136,14 +136,18 @@ run never supplies reusable full evidence. Missing, expired, or mismatched evide
 API failures select full mode; invalid release metadata fails the run.
 
 For the final release commit, accept either a successful full run or a successful
-release-mode run whose dependency installation, `make check`, image build, image smoke,
-final source/base freshness check, and `Record validation result` step succeed.
-Both modes prepare pnpm and uv, then run `make install` and `make check`.
-Unit, race, browser, and proxy steps are expected to be skipped only in verified release
-mode. Check the linked full run and direct-parent relationship; a pre-bump green check
-alone is insufficient.
-Record both full and release-mode run links in the PR. Recheck the remote source/base
-after completion. A changed base needs fresh full validation. Require the PR branch
+release-mode run that verifies the metadata and matching direct-parent full evidence
+described above. Release mode performs checkout, Go setup, and `make ci-plan`, then
+reuses the direct parent's full validation. Node, pnpm, and uv setup, dependency
+installation, static, unit, race, browser, image, proxy, and tracked-output checks,
+`Record validation result`, and full-validation artifact upload are expected to be
+skipped. Do not require those repeated checks or a new summary/artifact in release mode.
+Check the classifier result, linked full run, and direct-parent relationship; a pre-bump
+green check alone is insufficient.
+Record both full and release-mode run links in the PR, distinguishing executed checks
+from reused evidence. Recheck the remote source/base after completion; release mode skips
+`ci-finish`, so verify freshness during release preparation. A changed base needs fresh
+full validation. Require the PR branch
 to be up to date with its base in branch rules when enforcing merge-time freshness;
 CI cannot prevent the base from moving after a run finishes.
 
