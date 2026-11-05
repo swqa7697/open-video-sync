@@ -539,6 +539,8 @@ export class BilibiliAdapter implements PlayerAdapter {
       (track.pending.seek !== seek || track.pending.segment.end <= target)
     ) {
       // Reset an incomplete MP4 parser even when no append is in progress.
+      // Reapplying segments mode reopens an ended source before abort().
+      if (this.source?.readyState === 'ended') track.buffer.mode = 'segments';
       track.buffer.abort();
       track.pending = undefined;
     }

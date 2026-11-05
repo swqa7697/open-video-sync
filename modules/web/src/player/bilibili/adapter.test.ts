@@ -69,6 +69,10 @@ function fixture(
     constructor(readonly track: number) {
       super();
     }
+    set mode(_mode: AppendMode) {
+      if (opening.source?.readyState === 'ended')
+        opening.source.readyState = 'open';
+    }
     get buffered() {
       return {
         length: this.times.length,
@@ -77,6 +81,8 @@ function fixture(
       };
     }
     appendBuffer(data: Uint8Array): void {
+      if (opening.source?.readyState === 'ended')
+        opening.source.readyState = 'open';
       if (this.initialized) {
         if (quota && this.track === 0)
           throw new DOMException('Synthetic full buffer', 'QuotaExceededError');
@@ -131,6 +137,8 @@ function fixture(
       });
     }
     abort(): void {
+      if (opening.source?.readyState !== 'open')
+        throw new DOMException('Source is not open', 'InvalidStateError');
       this.aborts++;
       this.next = undefined;
     }
@@ -841,6 +849,9 @@ test.each(['seek', 'dispose'] as const)(
       await reading;
       const before = f.buffers[0]!.appends.length;
       if (action === 'seek') {
+        // A read can still be pending after the browser's source has ended.
+        // Seeking must reopen it before resetting the abandoned parser.
+        f.opening.source!.endOfStream();
         f.video.currentTime = 9;
         f.video.dispatchEvent(new Event('seeking'));
       } else f.adapter.dispose();
