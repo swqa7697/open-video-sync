@@ -149,9 +149,6 @@ button.quiet,
   background: transparent;
   color: var(--text);
 }
-button.quiet.danger {
-  color: var(--danger);
-}
 button.danger {
   background: var(--danger-button);
   color: var(--on-danger);
