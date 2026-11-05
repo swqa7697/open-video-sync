@@ -71,11 +71,33 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     for (const track of tracks) track.data = Uint8Array.from(atob(track.bytes), c => c.charCodeAt(0));
     const unsafeWindow = window;
     const addBuffer = MediaSource.prototype.addSourceBuffer;
+    let activeSource;
     MediaSource.isTypeSupported = () => true;
     MediaSource.prototype.addSourceBuffer = function(mime) {
+      activeSource = this;
       return addBuffer.call(this, mime.startsWith('video/')
         ? 'video/webm; codecs="vp8"' : 'audio/webm; codecs="opus"');
     };
+    document.addEventListener('evict-future-media', event => {
+      const source = activeSource;
+      Promise.all(Array.from(source.sourceBuffers).map(async buffer => {
+        if (buffer.updating)
+          await new Promise(resolve => buffer.addEventListener('updateend', resolve, { once: true }));
+        const end = buffer.buffered.length ? buffer.buffered.end(buffer.buffered.length - 1) : 0;
+        if (end <= 10) return;
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            buffer.removeEventListener('updateend', done);
+            buffer.removeEventListener('error', failed);
+          };
+          const done = () => { cleanup(); resolve(); };
+          const failed = () => { cleanup(); reject(Error('Synthetic buffer eviction failed.')); };
+          buffer.addEventListener('updateend', done, { once: true });
+          buffer.addEventListener('error', failed, { once: true });
+          try { buffer.remove(10, end); } catch (error) { cleanup(); reject(error); }
+        });
+      })).then(event.detail.resolve, event.detail.reject);
+    });
     const held = new Set();
     const heldThumbnails = new Set();
     const heldEpisodes = new Set();
@@ -427,6 +449,28 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await clickPlayerControl(page, 'Play together');
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
   await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));
+  // A larger forward reserve can contain this entire synthetic clip. Ensure
+  // the held seek needs real media delivery by evicting its target first.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        document.dispatchEvent(
+          new CustomEvent('evict-future-media', {
+            detail: { resolve, reject },
+          }),
+        );
+      }),
+  );
+  await expect
+    .poll(() =>
+      page.locator('video').evaluate((video: HTMLVideoElement) => {
+        for (let i = 0; i < video.buffered.length; i++)
+          if (video.buffered.start(i) <= 20 && video.buffered.end(i) > 20)
+            return true;
+        return false;
+      }),
+    )
+    .toBe(false);
   await seekTo(page, 20);
   const roomPath = `/api/v2${new URL(page.url()).pathname}`;
   await expect

@@ -53,6 +53,7 @@ function fixture(
   });
   const ranges: Range[] = [];
   let onRead: ((range: Range) => Promise<void>) | undefined;
+  let onInitialize: ((range: Range) => Promise<void>) | undefined;
   const network = { downloadedBytes: 0, sampledAtMs: 0 };
   let quota = false;
   let freeOnRemove = false;
@@ -68,6 +69,10 @@ function fixture(
     constructor(readonly track: number) {
       super();
     }
+    set mode(_mode: AppendMode) {
+      if (opening.source?.readyState === 'ended')
+        opening.source.readyState = 'open';
+    }
     get buffered() {
       return {
         length: this.times.length,
@@ -76,6 +81,8 @@ function fixture(
       };
     }
     appendBuffer(data: Uint8Array): void {
+      if (opening.source?.readyState === 'ended')
+        opening.source.readyState = 'open';
       if (this.initialized) {
         if (quota && this.track === 0)
           throw new DOMException('Synthetic full buffer', 'QuotaExceededError');
@@ -130,6 +137,8 @@ function fixture(
       });
     }
     abort(): void {
+      if (opening.source?.readyState !== 'open')
+        throw new DOMException('Source is not open', 'InvalidStateError');
       this.aborts++;
       this.next = undefined;
     }
@@ -207,6 +216,7 @@ function fixture(
       };
       ranges.push(range);
       if (range.offset > 32) await onRead?.(range);
+      else await onInitialize?.(range);
       const data =
         range.offset === 0
           ? Buffer.alloc(32)
@@ -241,6 +251,9 @@ function fixture(
     until,
     read: (fn: typeof onRead) => {
       onRead = fn;
+    },
+    initialize: (fn: typeof onInitialize) => {
+      onInitialize = fn;
     },
     full: (value: boolean, recover = false) => {
       quota = value;
@@ -508,14 +521,27 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
   const f = fixture();
   let release: (() => void) | undefined;
   try {
+    // Delayed video metadata must not delay the independent audio reader.
+    let initialize: (() => void) | undefined;
+    const initializing = new Promise<void>((resolve) => {
+      initialize = resolve;
+    });
+    f.initialize((range) => {
+      if (range.track === 0 && range.offset === 0)
+        return new Promise<void>((resolve) => {
+          release = resolve;
+          initialize!();
+        });
+      return Promise.resolve();
+    });
     let started: (() => void) | undefined;
-    const reading = new Promise<void>((resolve) => {
+    let reading = new Promise<void>((resolve) => {
       started = resolve;
     });
     f.read((range) => {
       if (
         range.track === 0 &&
-        range.offset === f.segments[0]![0]!.offset + chunkSize
+        [0, chunkSize].includes(range.offset - f.segments[0]![0]!.offset)
       )
         return new Promise<void>((resolve) => {
           release = resolve;
@@ -524,6 +550,20 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
       return Promise.resolve();
     });
     const loading = f.load();
+    await initializing;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.buffers[1]!.initialized).toBe(true);
+    expect(f.buffers[0]!.initialized).toBe(false);
+    release!();
+    await reading;
+    await vi.advanceTimersByTimeAsync(0);
+    // Even the first video media request cannot hold back playable audio.
+    expect(f.buffers[0]!.appends).toHaveLength(0);
+    expect(f.buffers[1]!.appends).toHaveLength(1);
+    reading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    release!();
     await reading;
     await vi.advanceTimersByTimeAsync(0);
     // An outstanding read must not hold the current append or starve audio.
@@ -586,31 +626,31 @@ test('high-bitrate AVC streams beyond 64 MiB in order without blocking audio or 
 test.each(['network-or-permission-denied', 'request-timeout', 'http-503'])(
   'a transient %s during read-ahead resumes the same byte cursor',
   async (code) => {
-    const f = fixture(Array<number>(5).fill(12 * chunkSize));
+    const f = fixture(Array<number>(12).fill(3 * chunkSize));
     let failed: Range | undefined;
     try {
       await f.load();
-      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 30);
       const source = f.video.src;
       f.read(async (range) => {
         if (
           !failed &&
           range.track === 0 &&
-          range.offset === f.segments[0]![3]!.offset + chunkSize
+          range.offset === f.segments[0]![6]!.offset + chunkSize
         ) {
           failed = range;
           throw new HelperError(code);
         }
       });
-      f.video.currentTime = 12;
+      f.video.currentTime = 27;
       await f.until(() =>
-        f.buffers.every((buffer) => buffer.times.at(-1)?.[1] === 25),
+        f.buffers.every((buffer) => buffer.times.at(-1)?.[1] === 60),
       );
       expect(failed).toBeDefined();
       expect(f.video.src).toBe(source);
       expect(
         f.buffers[0]!.appends.reduce((total, range) => total + range.length, 0),
-      ).toBe(5 * 12 * chunkSize);
+      ).toBe(12 * 3 * chunkSize);
       expect(
         f.buffers[0]!.appends.filter(
           (range) => range.offset === failed!.offset,
@@ -638,9 +678,9 @@ test.each([
       const loading = expect(f.load()).rejects.toMatchObject({ code });
       await vi.advanceTimersByTimeAsync(10000);
       await loading;
-      expect(f.ranges.filter((range) => range.offset > 32)).toHaveLength(
-        attempts,
-      );
+      expect(
+        f.ranges.filter((range) => range.track === 0 && range.offset > 32),
+      ).toHaveLength(attempts);
       expect(f.onError).toHaveBeenCalledTimes(1);
     } finally {
       f.adapter.dispose();
@@ -658,7 +698,7 @@ test('seeks preserve playable frames when SIDX boundaries round past keyframes',
   );
   try {
     await f.load();
-    await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+    await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 30);
     for (const time of [7.9, 8.25, 9.75]) {
       f.video.currentTime = time;
       if (time === 7.9) f.video.dispatchEvent(new Event('seeking'));
@@ -683,11 +723,11 @@ test.each(['seek', 'dispose'] as const)(
     const f = fixture(Array<number>(8).fill(1024));
     try {
       await f.load();
-      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 15);
+      await f.until(() => f.buffers[0]!.times.at(-1)?.[1] === 30);
       f.read(async (range) => {
         if (range.track === 0) throw new HelperError('request-timeout');
       });
-      f.video.currentTime = 12;
+      f.video.currentTime = 27;
       await vi.advanceTimersByTimeAsync(250);
       const before = f.ranges.length;
       const appends = f.buffers[0]!.appends.length;
@@ -718,8 +758,9 @@ test.each(['seek', 'dispose'] as const)(
 
 test('a paused high-bitrate fragment stops prefetch at the byte budget and resumes from its cursor', async () => {
   for (const [latency, ahead] of [
-    [0, 15],
-    [4000, 20],
+    [0, 30],
+    [4000, 30],
+    [8000, 45],
   ]) {
     const sample = fixture(Array<number>(12).fill(1024));
     sample.read((range) =>
@@ -729,7 +770,7 @@ test('a paused high-bitrate fragment stops prefetch at the byte budget and resum
     );
     try {
       const loading = sample.load();
-      await vi.advanceTimersByTimeAsync(25000);
+      await vi.advanceTimersByTimeAsync(100000);
       await loading;
       expect(sample.buffers[0]!.times).toEqual([[0, ahead]]);
       expect(sample.onError).not.toHaveBeenCalled();
@@ -796,17 +837,21 @@ test.each(['seek', 'dispose'] as const)(
       const reading = new Promise<void>((resolve) => {
         started = resolve;
       });
-      f.read(
-        () =>
-          new Promise<void>((resolve) => {
-            release = resolve;
-            started!();
-          }),
+      f.read((range) =>
+        range.track === 0
+          ? new Promise<void>((resolve) => {
+              release = resolve;
+              started!();
+            })
+          : Promise.resolve(),
       );
       const tick = vi.advanceTimersByTimeAsync(250);
       await reading;
       const before = f.buffers[0]!.appends.length;
       if (action === 'seek') {
+        // A read can still be pending after the browser's source has ended.
+        // Seeking must reopen it before resetting the abandoned parser.
+        f.opening.source!.endOfStream();
         f.video.currentTime = 9;
         f.video.dispatchEvent(new Event('seeking'));
       } else f.adapter.dispose();
@@ -851,11 +896,11 @@ test.each(['seek', 'dispose'] as const)(
 );
 
 test('full buffers retain one chunk, then evict played data and retry without downloading it again', async () => {
-  const f = fixture([chunkSize, chunkSize, chunkSize, chunkSize]);
+  const f = fixture(Array<number>(7).fill(chunkSize));
   try {
     await f.load();
-    await f.until(() => f.buffers[0]!.times.at(-1)![1] >= 10);
-    f.video.currentTime = 4;
+    await f.until(() => f.buffers[0]!.times.at(-1)![1] === 30);
+    f.video.currentTime = 28;
     f.full(true);
     const before = f.buffers[0]!.appends.length;
     await vi.advanceTimersByTimeAsync(250);
@@ -865,10 +910,10 @@ test('full buffers retain one chunk, then evict played data and retry without do
     expect(f.ranges.filter((r) => r.track === 0 && r.offset > 32)).toHaveLength(
       reads,
     );
-    f.video.currentTime = 6;
+    f.video.currentTime = 31;
     f.full(true, true);
     await f.until(() => f.buffers[0]!.appends.length > before);
-    expect(f.buffers[0]!.times[0]![0]).toBe(5);
+    expect(f.buffers[0]!.times[0]![0]).toBe(30);
     expect(f.ranges.filter((r) => r.track === 0 && r.offset > 32)).toHaveLength(
       reads,
     );

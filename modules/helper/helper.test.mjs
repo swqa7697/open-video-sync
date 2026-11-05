@@ -1,5 +1,6 @@
 // Fault fixtures complement, and do not replace, live Tampermonkey experiments.
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -1031,6 +1032,99 @@ test('network windows preserve byte order, stay bounded, and cancel only obsolet
     4 * 1024 * 1024 + 123,
   );
   assert(!JSON.stringify(f.replies).includes(CANARY));
+
+  // An odd byte rate still downloads contiguous windows exactly once. The
+  // following window starts while the page is consuming the current window.
+  const streamingOptions = { ...options, hold: false },
+    streaming = fixture(streamingOptions),
+    stream = await streaming.open(),
+    cursor = {
+      ...read,
+      handle: stream.value.handle,
+      end: 64 + 6 * 1024 * 1024 - 1,
+      rate: 700001,
+    },
+    network = () =>
+      streaming.requests.filter((request) => request.headers.Range),
+    readChunk = async (at, seek = 0) => {
+      const offset = 64 + at * chunk,
+        reply = await streaming.call('bytes', { ...cursor, offset, seek });
+      assert.equal(reply.ok, true, reply.error);
+      const bytes = Buffer.from(reply.value.base64, 'base64');
+      assert.equal(bytes.length, chunk);
+      assert(bytes.every((byte, i) => byte === (offset + i) % 251));
+    };
+  await readChunk(0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(network().length, 2);
+  streamingOptions.hold = true;
+  for (let i = 1; i < 12; i++) await readChunk(i);
+  assert.equal(network().length, 3);
+  assert.equal(streaming.held.length, 1);
+  for (const [i, request] of network().entries())
+    assert.equal(
+      request.headers.Range,
+      `bytes=${64 + i * 6 * chunk}-${63 + (i + 1) * 6 * chunk}`,
+    );
+  const abandoned = streaming.call('bytes', {
+    ...cursor,
+    offset: 64 + 12 * chunk,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    (
+      await streaming.call('seek', {
+        handle: cursor.handle,
+        generation: 1,
+        seek: 1,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal((await abandoned).error, 'cancelled');
+  assert.equal(streaming.aborted, 1);
+  streamingOptions.hold = false;
+  await readChunk(0, 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  const completed = network().length;
+  // A completed lookahead also belongs to its seek and cannot survive a seek
+  // back to the same byte offset in a later generation.
+  await streaming.call('seek', {
+    handle: cursor.handle,
+    generation: 1,
+    seek: 2,
+  });
+  await readChunk(0, 2);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(network().length, completed + 2);
+  for (let i = 1; i < 24; i++) await readChunk(i, 2);
+  assert.equal(network().length, completed + 4);
+  assert.equal(
+    (await streaming.call('metrics')).value.maxResponseBytes,
+    6 * chunk,
+  );
+  const completeMedia = streamingOptions.media;
+  streamingOptions.media = (details, bytes) => {
+    const start = Number(details.headers.Range.match(/bytes=(\d+)/)[1]);
+    return start > 64 ? { status: 429 } : completeMedia(details, bytes);
+  };
+  await streaming.call('seek', {
+    handle: cursor.handle,
+    generation: 1,
+    seek: 3,
+  });
+  const beforeDenied = network().length;
+  for (let i = 0; i < 6; i++) await readChunk(i, 3);
+  const denied = await streaming.call('bytes', {
+    ...cursor,
+    seek: 3,
+    offset: 64 + 6 * chunk,
+  });
+  assert.equal(denied.error, 'http-429');
+  // A nonretryable speculative response is surfaced when needed, rather than
+  // issuing another rejected request or discarding playable prefix bytes.
+  assert.equal(network().length, beforeDenied + 2);
+  assert(!JSON.stringify(streaming.replies).includes(CANARY));
 });
 
 test('slow or failed CDN locations switch only to mirrors with matching initialization and index bytes', async () => {

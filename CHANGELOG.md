@@ -6,6 +6,13 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-05]
+
+### Fixed
+
+- Reduce Bilibili loading delays with concurrent audio/video initialization and continuous bounded downloads. Build a larger playback buffer within the existing memory budgets to absorb network interruptions, while preserving the selected quality. Keep playback usable when seeking backward after buffering the end of a video. Requires the updated playback helper.
+- Keep the close-room button's red background and use readable light text in both light and dark modes.
+
 ## [2026-11-04]
 
 ### Added

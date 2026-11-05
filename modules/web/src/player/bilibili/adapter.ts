@@ -133,37 +133,38 @@ export class BilibiliAdapter implements PlayerAdapter {
           throw new HelperError('unsupported-codec');
         return source.addSourceBuffer(mime);
       });
-      const initialization: {
-        buffer: SourceBuffer;
-        data: Uint8Array<ArrayBuffer>;
-      }[] = [];
-      for (const [index, track] of this.info.tracks.entries()) {
-        const buffer = buffers[index]!;
-        const data = await this.bytes(
-          index,
-          track.init[0],
-          track.init[1] - track.init[0] + 1,
-        );
-        const indexData = await this.bytes(
-          index,
-          track.index[0],
-          track.index[1] - track.index[0] + 1,
-        );
-        this.assertOwned();
-        this.tracks.push({
-          index,
-          buffer,
-          segments: parseIndex(indexData, track.index[0]),
-          delay: 0,
-          measuredAt: performance.now(),
-        });
-        initialization.push({ buffer, data });
-      }
-      await Promise.all(
-        initialization.map(({ buffer, data }) =>
-          this.update(buffer, () => buffer.appendBuffer(data)),
-        ),
+      // Each track has one reader. Initialize the independent tracks together,
+      // while keeping that reader's initialization/index requests in order.
+      const initialization = await Promise.allSettled(
+        this.info.tracks.map(async (track, index): Promise<Track> => {
+          const buffer = buffers[index]!;
+          const data = await this.bytes(
+            index,
+            track.init[0],
+            track.init[1] - track.init[0] + 1,
+          );
+          const indexData = await this.bytes(
+            index,
+            track.index[0],
+            track.index[1] - track.index[0] + 1,
+          );
+          this.assertOwned();
+          const segments = parseIndex(indexData, track.index[0]);
+          await this.update(buffer, () => buffer.appendBuffer(data));
+          return {
+            index,
+            buffer,
+            segments,
+            delay: 0,
+            measuredAt: performance.now(),
+          };
+        }),
       );
+      this.assertOwned();
+      this.tracks = initialization.map((result) => {
+        if (result.status === 'rejected') throw result.reason;
+        return result.value;
+      });
       await this.pump();
       this.assertOwned();
       this.loading = false;
@@ -460,14 +461,14 @@ export class BilibiliAdapter implements PlayerAdapter {
     // byte budget between history and prefetch, and also cap both by time.
     let rate = 1;
     for (const segment of track.segments)
-      if (segment.end > target - 4 && segment.time < target + 30)
+      if (segment.end > target - 4 && segment.time < target + 60)
         rate = Math.max(rate, segment.length / (segment.end - segment.time));
     const budget = (track.index === 0 ? 64 : 8) * 1024 * 1024;
     const history = Math.min(4, budget / 8 / rate);
-    const desired = this.loading
-      ? Math.max(3, 2 + track.delay * 2)
-      : Math.max(12, 6 + track.delay * 3);
-    return Math.max(1, Math.min(30, desired, budget / rate - history));
+    // Startup stays short. Once ready, build a larger reserve against CDN
+    // jitter without changing the selected representation or memory budget.
+    const desired = this.loading ? 3 : Math.max(30, 12 + track.delay * 4);
+    return Math.max(1, Math.min(60, desired, budget / rate - history));
   }
   private async trim(
     track: Track,
@@ -498,7 +499,7 @@ export class BilibiliAdapter implements PlayerAdapter {
     this.assertSeek(seek);
     const remaining = track.buffer.buffered;
     const end = remaining.length ? remaining.end(remaining.length - 1) : 0;
-    const after = Math.max(target + 30, current?.end ?? target);
+    const after = Math.max(target + 60, current?.end ?? target);
     if (end > after)
       await this.update(track.buffer, () => track.buffer.remove(after, end));
   }
@@ -538,6 +539,8 @@ export class BilibiliAdapter implements PlayerAdapter {
       (track.pending.seek !== seek || track.pending.segment.end <= target)
     ) {
       // Reset an incomplete MP4 parser even when no append is in progress.
+      // Reapplying segments mode reopens an ended source before abort().
+      if (this.source?.readyState === 'ended') track.buffer.mode = 'segments';
       track.buffer.abort();
       track.pending = undefined;
     }
@@ -623,19 +626,25 @@ export class BilibiliAdapter implements PlayerAdapter {
     let progressed = false;
     try {
       const seek = this.seekGeneration;
-      const blocked = new Set<Track>();
-      // Alternate tracks and bound work per tick. A long video fragment must
-      // not block audio, readiness, cancellation, or the next buffering pass.
-      let steps = 0;
-      for (let round = 0; round < 8 && steps < 8; round++)
-        for (const track of this.tracks) {
-          if (steps === 8) break;
-          if (blocked.has(track)) continue;
-          if (await this.step(track, seek)) {
-            steps++;
-            progressed = true;
-          } else blocked.add(track);
-        }
+      let stopped = false;
+      // A slow video request must not hold the audio reader or append queue.
+      // Each worker owns one track and at most four chunks per pass. Join both
+      // workers before handling failure or starting a new seek's pump.
+      const results = await Promise.allSettled(
+        this.tracks.map(async (track) => {
+          try {
+            for (let step = 0; step < 4 && !stopped; step++) {
+              if (!(await this.step(track, seek))) break;
+              progressed = true;
+            }
+          } catch (error) {
+            stopped = true;
+            throw error;
+          }
+        }),
+      );
+      for (const result of results)
+        if (result.status === 'rejected') throw result.reason;
       if (
         this.info &&
         this.video.currentTime > this.info.duration - 15 &&

@@ -374,7 +374,7 @@ defineExpose({ commands });
           <p class="hint">{{ t('room.closeHint') }}</p>
           <button
             type="button"
-            class="danger quiet"
+            class="danger"
             :disabled="busy"
             @click="
               settingsOpen = false;
