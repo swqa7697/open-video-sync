@@ -9,6 +9,13 @@ export interface RoomSettings {
   waitForAll: boolean;
 }
 
+export const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+
+export type PlaybackCommand =
+  | { action: 'play' | 'pause' | 'replay' }
+  | { action: 'seek'; positionMs: number }
+  | { action: 'rate'; rate: number };
+
 export type MediaDescriptor =
   | {
       kind: 'local';
@@ -87,6 +94,28 @@ function choice<T extends string>(value: unknown, options: readonly T[]): T {
     if (value === option) return option;
   }
   return invalid();
+}
+
+export function decodePlaybackRate(value: unknown): number {
+  if (!playbackRates.some((rate) => rate === value)) return invalid();
+  return value as number;
+}
+
+export function decodePlaybackCommand(value: unknown): PlaybackCommand {
+  const input = object(value);
+  if (input.action === 'rate') {
+    shape(input, ['action', 'rate']);
+    return { action: 'rate', rate: decodePlaybackRate(input.rate) };
+  }
+  if (input.action === 'seek') {
+    shape(input, ['action', 'positionMs']);
+    return {
+      action: 'seek',
+      positionMs: integer(input.positionMs, 0, maxDurationMs),
+    };
+  }
+  shape(input, ['action']);
+  return { action: choice(input.action, ['play', 'pause', 'replay']) };
 }
 
 export function decodeProfilePatch(value: unknown): ProfilePatch {

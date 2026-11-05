@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 
 import vectors from '../../../../specs/fixtures/http-digests-v2.json';
-import { NetworkError, request, ResponseError } from './api';
+import { roomFixture } from '../test-support/room';
+import { decodeSnapshot, NetworkError, request, ResponseError } from './api';
 import { consumeInvitation } from './invitation';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -12,6 +13,34 @@ test('browser JSON encoding agrees with server HTTP request digests', () => {
     expect(
       createHash('sha256').update(JSON.stringify(vector.input)).digest('hex'),
     ).toBe(vector.digest);
+});
+test('room snapshots require a bounded shared playback rate', () => {
+  const snapshot = {
+    ...roomFixture,
+    mediaGeneration: 1,
+    media: {
+      kind: 'local',
+      fingerprintVersion: 1,
+      digest: 'f'.repeat(64),
+      sizeBytes: 9,
+      durationMs: 10000,
+    },
+    playback: { ...roomFixture.playback, phase: 'paused', rate: 1 },
+  };
+  for (const rate of [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2])
+    expect(
+      decodeSnapshot({
+        ...snapshot,
+        playback: { ...snapshot.playback, rate },
+      }).playback.rate,
+    ).toBe(rate);
+  for (const rate of [undefined, null, '1.5', 0, 0.6, 2.25, NaN, Infinity])
+    expect(() =>
+      decodeSnapshot({
+        ...snapshot,
+        playback: { ...snapshot.playback, rate },
+      }),
+    ).toThrow();
 });
 test('removes invitation fragments and retains pending entry across reloads', () => {
   history.replaceState(null, '', '/join#invite=AAECAwQFBgcICQoLDA0ODw');

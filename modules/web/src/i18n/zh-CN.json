@@ -327,6 +327,8 @@
     "connecting": "正在连接…",
     "calibrating": "正在校准时钟…",
     "calibrated": "时钟已校准",
+    "playbackSpeed": "播放倍速",
+    "playbackSpeedShared": "调整所有人的播放倍速",
     "degraded": "同步可能出现偏差（网络时延不稳定）",
     "qualityNumber": "画质 {value}",
     "dolby": "杜比视界",

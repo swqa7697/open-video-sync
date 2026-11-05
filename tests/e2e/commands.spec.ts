@@ -29,7 +29,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await name.fill('Keep this draft');
   await openQuickActions(page);
   const palette = page.locator('.command-palette'),
-    input = page.getByRole('combobox');
+    input = palette.getByRole('combobox');
   await expect(input).toHaveCSS('outline-style', 'none');
   await expect(page.locator('.command-search')).toHaveCSS(
     'outline-style',
@@ -121,7 +121,7 @@ test('quick actions search locally, prefill videos, and preserve keyboard focus'
   await runQuickAction(page, '加入');
   await expect(page.locator('#join-code')).toBeFocused();
   await openQuickActions(page, '/theme dark');
-  await page.getByRole('option', { selected: true }).click();
+  await palette.getByRole('option', { selected: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
   await runQuickAction(page, '/language en');
 

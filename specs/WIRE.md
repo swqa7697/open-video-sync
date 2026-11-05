@@ -80,7 +80,7 @@ Use the following exact shape. `ID` denotes the common ID format; nullable field
   media: MediaDescriptor | null,
   playback: {
     phase: "empty" | "paused" | "waiting" | "playing" | "ended",
-    positionMs, anchorServerMs, desiredPlaying: boolean
+    positionMs, anchorServerMs, rate, desiredPlaying: boolean
   },
   barrier: {
     barrierId, requiredMemberIds: ID[], reason: "play" | "buffering",
@@ -99,7 +99,7 @@ Revision is an in-memory counter, starting at 1 for each new epoch.
 Media generation starts at 0 without media or 1 with restored selected media, and advances on replacement within that epoch.
 Do not compare these counters across epochs or store them in SQLite.
 Only `playing` advances the timeline. Only `waiting` has a barrier. Restart has position zero, no barrier, and no desired play.
-A loaded descriptor restarts paused; absent media restarts empty. Base playback rate is always 1.0 and needs no wire field.
+A loaded descriptor restarts paused; absent media restarts empty. `rate` is a number from 0.5 to 2 inclusive in steps of 0.25, defaulting to 1.0. The playing timeline advances by elapsed monotonic time multiplied by `rate`. Rate is memory-only and resets to 1.0 on media replacement and runtime recreation.
 Only ready local players apply a playing timeline. A late joiner loads, permits playback, and catches up without enlarging an existing barrier.
 
 `Readiness` is `{status,mediaGeneration,barrierId,sampledAtClientMs,positionMs,durationMs,capabilities}`.
@@ -118,7 +118,7 @@ The replaced page pauses and does not reconnect until explicitly reloaded or reo
 
 Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
-- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent.
+- `playback.command`: `{action:"play"|"pause"|"replay"}`, `{action:"seek",positionMs}`, or `{action:"rate",rate}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent. Rate uses the snapshot bounds, reanchors the current position, and preserves phase, waiting, and play intent. Controller permissions apply to every action.
 - `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Host only; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
 Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.

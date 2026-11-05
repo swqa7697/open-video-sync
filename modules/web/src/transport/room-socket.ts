@@ -11,7 +11,12 @@ import {
   text,
   type Snapshot,
 } from './api';
-import { decodeMedia, type MediaDescriptor } from './contracts';
+import {
+  decodeMedia,
+  decodePlaybackCommand,
+  type MediaDescriptor,
+  type PlaybackCommand,
+} from './contracts';
 import { parseFrame } from './protocol-values';
 
 export interface Command {
@@ -21,10 +26,7 @@ export interface Command {
   epoch: string;
   mediaGeneration: number;
   expectedRevision: number;
-  payload:
-    | { action: 'play' | 'pause' | 'replay' }
-    | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor; autoPlay?: boolean };
+  payload: PlaybackCommand | { media: MediaDescriptor; autoPlay?: boolean };
 }
 // Why a room connection ended for good. Other closures reconnect with backoff.
 export type EndReason =
@@ -363,7 +365,7 @@ export class RoomSocket {
             media: decodeMedia(payload.media),
             ...(payload.autoPlay === true ? { autoPlay: true } : {}),
           }
-        : payload;
+        : decodePlaybackCommand(payload);
     const command: Command = {
       v: 2,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',

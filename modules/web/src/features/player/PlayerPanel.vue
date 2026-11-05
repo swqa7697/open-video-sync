@@ -41,9 +41,13 @@ import {
 } from '../../player/preferences';
 import type { PlayerStatistics as StatisticsSnapshot } from '../../player/statistics';
 import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
-import { reportedReadiness, SyncController } from '../../sync/controller';
+import {
+  reportedReadiness,
+  supportsPlaybackRate,
+  SyncController,
+} from '../../sync/controller';
 import { APIError, request, type Snapshot } from '../../transport/api';
-import type { MediaDescriptor } from '../../transport/contracts';
+import { playbackRates, type MediaDescriptor } from '../../transport/contracts';
 import type {
   Readiness,
   ReadinessStatus,
@@ -1670,6 +1674,7 @@ async function sample(): Promise<void> {
     return;
   }
   const matched = mediaMatches(snapshot.media, descriptor.value);
+  const rateSupported = supportsPlaybackRate(local, snapshot.playback.rate);
   if (!matched && descriptor.value) {
     mediaStatus.value = 'mismatch';
     sync.invalidate();
@@ -1688,6 +1693,7 @@ async function sample(): Promise<void> {
         matched &&
         active.value &&
         transport.connected &&
+        rateSupported &&
         barrier &&
         local.getState().status === 'ready' &&
         !local.getState().seeking &&
@@ -1715,7 +1721,7 @@ async function sample(): Promise<void> {
         showError(message('player.applyFailed'));
     }
     if (adapter !== local || disposed) return;
-    mediaStatus.value = local.getState().status;
+    mediaStatus.value = rateSupported ? local.getState().status : 'unsupported';
   }
   if (adapter !== local || disposed) return;
   if (
@@ -1780,6 +1786,16 @@ function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
       ? { action, positionMs: Math.round(seekSeconds.value * 1000) }
       : { action },
   );
+}
+function changePlaybackRate(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  const rate = Number(select.value);
+  // Display the authoritative choice until the server accepts this command.
+  select.value = String(current.value.playback.rate);
+  if (!canControl.value || rate === current.value.playback.rate) return;
+  showError('');
+  roomError.value = '';
+  transport.command({ action: 'rate', rate });
 }
 async function enable(): Promise<void> {
   const local = adapter,
@@ -2180,6 +2196,20 @@ onUnmounted(() => {
               >
             </div>
             <div class="control-end">
+              <select
+                class="playback-rate"
+                :value="current.playback.rate"
+                :aria-label="t('player.playbackSpeed')"
+                :title="controlNote || t('player.playbackSpeedShared')"
+                :disabled="!canControl && !pendingCommand"
+                :aria-disabled="!canControl"
+                :aria-describedby="controlNote ? 'control-note' : undefined"
+                @change="changePlaybackRate"
+              >
+                <option v-for="rate in playbackRates" :key="rate" :value="rate">
+                  {{ rate }}×
+                </option>
+              </select>
               <DanmakuControl
                 v-if="current.media?.kind === 'bilibili'"
                 :open="danmakuMenu"

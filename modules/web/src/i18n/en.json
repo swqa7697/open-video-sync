@@ -327,6 +327,8 @@
     "connecting": "Connecting…",
     "calibrating": "Calibrating clocks…",
     "calibrated": "Clock calibrated",
+    "playbackSpeed": "Playback speed",
+    "playbackSpeedShared": "Playback speed for everyone",
     "degraded": "Synchronization may drift (unstable network timing)",
     "qualityNumber": "Quality {value}",
     "dolby": "Dolby Vision",

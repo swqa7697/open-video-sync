@@ -95,7 +95,7 @@ func (s *Service) advancePolicy(l *liveRoom, r Room, now int64) (bool, error) {
 		return changed, nil
 	}
 	if l.playback.Phase == "playing" && l.position(now) >= l.media.DurationMs {
-		l.playback = Playback{Phase: "ended", PositionMs: l.media.DurationMs, AnchorServerMs: now}
+		l.playback = Playback{Phase: "ended", Rate: l.playback.Rate, PositionMs: l.media.DurationMs, AnchorServerMs: now}
 		l.barrier = nil
 		return true, nil
 	}

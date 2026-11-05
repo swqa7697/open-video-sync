@@ -31,7 +31,7 @@ Open Video Sync (OVS) is a private, self-hosted app for watching videos together
 The initial release is in development. OVS supports:
 
 - **Private rooms** with reusable invitation links and codes, without registration.
-- **Synchronized play, pause, and seeking**, with optional waiting for everyone.
+- **Synchronized play, pause, seeking, and playback speed**, with optional waiting for everyone.
 - **Local video files and Bilibili videos** with quality selection, episodes, and danmaku.
 - **Host controls** for room settings, media selection, invitations, and participants.
 - **English and Simplified Chinese**, light and dark modes, and browser-local preferences.
@@ -98,6 +98,8 @@ Invitations remain reusable until the host replaces them or closes the room. A r
 
 Volume, mute, quality, danmaku, language, and appearance affect only your browser. Use **Settings** in the header to change application preferences.
 Danmaku visibility, density, text size, scrolling speed, and display area are remembered across reloads and rooms in the same browser.
+
+Use **Playback speed** in the player to select 0.5×–2× for everyone. The room's controller permission applies. Changing speed preserves the position and playback state. Selecting another video or restarting OVS resets speed to 1×.
 
 ### Keyboard shortcuts
 

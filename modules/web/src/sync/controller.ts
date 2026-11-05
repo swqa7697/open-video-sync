@@ -25,6 +25,7 @@ export class DriftController {
     rateSupported: boolean,
     degraded: boolean,
     resolution: number,
+    baseRate = 1,
   ): Correction {
     if (now < this.settledUntil || now - this.sampledAt < 250)
       return { kind: 'none' };
@@ -34,7 +35,7 @@ export class DriftController {
       hard = Math.max(750, resolution * 2);
     if (distance < soft) {
       this.samples = 0;
-      return { kind: 'rate', rate: 1 };
+      return { kind: 'rate', rate: baseRate };
     }
     this.samples++;
     if (distance > hard || (this.samples >= 3 && !rateSupported)) {
@@ -44,14 +45,25 @@ export class DriftController {
       this.samples = 0;
       return { kind: 'seek', target };
     }
-    if (degraded && rateSupported) return { kind: 'rate', rate: 1 };
+    if (degraded && rateSupported) return { kind: 'rate', rate: baseRate };
     if (this.samples >= 3 && rateSupported)
       return {
         kind: 'rate',
-        rate: Math.max(0.95, Math.min(1.05, 1 + error / 5000)),
+        rate: baseRate * Math.max(0.95, Math.min(1.05, 1 + error / 5000)),
       };
     return { kind: 'none' };
   }
+}
+
+export function supportsPlaybackRate(
+  adapter: PlayerAdapter,
+  rate: number,
+): boolean {
+  return (
+    rate === 1 ||
+    (adapter.capabilities.canSetPlaybackRate &&
+      typeof adapter.setPlaybackRate === 'function')
+  );
 }
 // Ownership belongs to the active panel. Every async completion checks adapter and generation.
 export class SyncController {
@@ -62,6 +74,7 @@ export class SyncController {
   private identity = '';
   private targetFloor = 0;
   private operation = 0;
+  private baseRate = 1;
   invalidate(): void {
     this.generation++;
     this.operation++;
@@ -69,6 +82,7 @@ export class SyncController {
     this.revision = -1;
     this.identity = '';
     this.targetFloor = 0;
+    this.baseRate = 1;
     this.drift.reset();
   }
   async reconcile(
@@ -88,6 +102,15 @@ export class SyncController {
       this.invalidate();
       this.identity = key;
     }
+    const baseRate = snapshot.playback.rate;
+    if (!supportsPlaybackRate(adapter, baseRate)) {
+      this.invalidate();
+      await adapter.pause();
+      return;
+    }
+    const setRate = adapter.capabilities.canSetPlaybackRate
+      ? adapter.setPlaybackRate?.bind(adapter)
+      : undefined;
     const observed = adapter.getState();
     if (
       [
@@ -116,10 +139,11 @@ export class SyncController {
           ? Math.max(
               0,
               now + estimate.offsetMs - snapshot.playback.anchorServerMs,
-            )
+            ) * baseRate
           : 0),
     );
-    const explicit = this.revision !== snapshot.revision;
+    const explicit =
+      this.revision !== snapshot.revision || this.baseRate !== baseRate;
     // Calibration changes alone cannot send a running target backward.
     if (!explicit && playing) target = Math.max(this.targetFloor, target);
     this.targetFloor = target;
@@ -129,6 +153,8 @@ export class SyncController {
     }
     if (this.applying) return;
     this.revision = snapshot.revision;
+    this.baseRate = baseRate;
+    if (explicit) this.drift.reset();
     const token = this.generation,
       operation = ++this.operation;
     this.applying = true;
@@ -138,7 +164,7 @@ export class SyncController {
       if (!playing) {
         await adapter.pause();
         if (!current()) return;
-        await adapter.setPlaybackRate?.(1);
+        await setRate?.(baseRate);
         if (!current()) return;
         if (Math.abs(target - adapter.getState().positionMs) > 100) {
           await adapter.seek(target);
@@ -150,7 +176,7 @@ export class SyncController {
             await adapter.seek(target);
             if (!current()) return;
           }
-          await adapter.setPlaybackRate?.(1);
+          await setRate?.(baseRate);
           if (!current()) return;
           if (adapter.getState().paused) {
             await adapter.play();
@@ -164,19 +190,24 @@ export class SyncController {
             target - observed.positionMs,
             target,
             now,
-            adapter.capabilities.canSetPlaybackRate,
+            setRate !== undefined,
             estimate.uncertaintyMs > 250,
             adapter.capabilities.positionResolutionMs,
+            baseRate,
           );
           if (correction.kind === 'seek') {
-            await adapter.setPlaybackRate?.(1);
+            await setRate?.(baseRate);
             if (!current()) return;
             await adapter.seek(correction.target);
             if (!current()) return;
           } else if (correction.kind === 'rate')
-            await adapter.setPlaybackRate?.(correction.rate);
+            await setRate?.(correction.rate);
         }
-      } else await adapter.pause();
+      } else {
+        await adapter.pause();
+        if (!current()) return;
+        await setRate?.(baseRate);
+      }
     } catch (error) {
       // A newer room state or connection owns playback once this operation is superseded.
       if (current()) throw error;

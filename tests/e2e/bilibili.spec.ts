@@ -352,6 +352,14 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
+  await stage.hover({ position: { x: 16, y: 8 } });
+  const playbackSpeed = page.getByRole('combobox', {
+    name: 'Playback speed',
+    exact: true,
+  });
+  await playbackSpeed.selectOption('1.5');
+  await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1.5);
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
   await openPlayerMenu(page);
   const danmakuRequests = await page.evaluate(() =>
     Number(sessionStorage.getItem('danmaku-requests')),
@@ -448,6 +456,16 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('.seek-preview')).toHaveCount(0);
   await clickPlayerControl(page, 'Play together');
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await expect(playbackSpeed).toHaveValue('1.5');
+  await expect
+    .poll(() =>
+      page
+        .locator('video')
+        .evaluate((video: HTMLVideoElement) =>
+          Math.abs(video.playbackRate - 1.5),
+        ),
+    )
+    .toBeLessThanOrEqual(0.076);
   await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));
   // A larger forward reserve can contain this entire synthetic clip. Ensure
   // the held seek needs real media delivery by evicting its target first.
@@ -547,6 +565,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         (await (await page.request.get(roomPath)).json()).media.episodeId,
     )
     .toBe('9000000000011');
+  await expect(playbackSpeed).toHaveValue('1');
+  await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1);
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',

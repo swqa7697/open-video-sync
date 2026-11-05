@@ -9,6 +9,7 @@ import { ClockEstimator, nextSyncQuality } from './clock';
 import {
   DriftController,
   reportedReadiness,
+  supportsPlaybackRate,
   SyncController,
 } from './controller';
 
@@ -68,6 +69,21 @@ test('drift correction persists soft error, clamps rates, and bounds corrective 
   fallback.decide(150, 1000, 0, false, false, 40);
   fallback.decide(150, 1000, 250, false, false, 40);
   expect(fallback.decide(150, 1000, 500, false, false, 40).kind).toBe('seek');
+  c.reset();
+  c.decide(300, 1000, 0, true, false, 40, 2);
+  c.decide(300, 1000, 250, true, false, 40, 2);
+  expect(c.decide(300, 1000, 500, true, false, 40, 2)).toEqual({
+    kind: 'rate',
+    rate: 2.1,
+  });
+  expect(c.decide(-300, 1000, 750, true, false, 40, 2)).toEqual({
+    kind: 'rate',
+    rate: 1.9,
+  });
+  expect(c.decide(0, 1000, 1000, true, false, 40, 2)).toEqual({
+    kind: 'rate',
+    rate: 2,
+  });
 });
 class Player implements PlayerAdapter {
   capabilities = {
@@ -89,8 +105,11 @@ class Player implements PlayerAdapter {
   };
   pendingSeek?: (error?: Error) => void;
   blockSeek = false;
+  rate = 1;
+  playedAtRate: number | undefined;
   async load(): Promise<void> {}
   async play(): Promise<void> {
+    this.playedAtRate = this.rate;
     this.state.paused = false;
   }
   async pause(): Promise<void> {
@@ -103,7 +122,9 @@ class Player implements PlayerAdapter {
       });
     this.state.positionMs = position;
   }
-  async setPlaybackRate(): Promise<void> {}
+  async setPlaybackRate(rate: number): Promise<void> {
+    this.rate = rate;
+  }
   getState(): PlayerObservation {
     return { ...this.state };
   }
@@ -116,6 +137,7 @@ const timeline = (
   phase: 'playing' | 'paused',
   revision: number,
   position = 1000,
+  rate = 1,
 ): Snapshot => ({
   roomId: 'a'.repeat(32),
   epoch: 'b'.repeat(32),
@@ -155,6 +177,7 @@ const timeline = (
     phase,
     positionMs: position,
     anchorServerMs: 0,
+    rate,
     desiredPlaying: phase === 'playing',
   },
 });
@@ -166,7 +189,7 @@ test.each([false, true])(
     p.blockSeek = true;
     const original = c.reconcile(
       p,
-      timeline('playing', 1),
+      timeline('playing', 1, 1000, 1.5),
       { offsetMs: 0, uncertaintyMs: 1 },
       0,
       true,
@@ -176,7 +199,7 @@ test.each([false, true])(
     p.blockSeek = false;
     await c.reconcile(
       p,
-      timeline('paused', 2, 0),
+      timeline('paused', 2, 0, 0.5),
       { offsetMs: 0, uncertaintyMs: 1 },
       0,
       true,
@@ -187,13 +210,14 @@ test.each([false, true])(
     await original;
     await c.reconcile(
       p,
-      timeline('paused', 2, 0),
+      timeline('paused', 2, 0, 0.5),
       { offsetMs: 0, uncertaintyMs: 1 },
       250,
       true,
     );
     expect(p.getState().paused).toBe(true);
     expect(p.getState().positionMs).toBe(0);
+    expect(p.rate).toBe(0.5);
   },
 );
 test('loss of connection cancels pending playback application', async () => {
@@ -212,6 +236,70 @@ test('loss of connection cancels pending playback application', async () => {
   p.pendingSeek?.();
   await original;
   expect(p.getState().paused).toBe(true);
+});
+
+// This scenario catches fixed-1x projection and rate corrections that overwrite room intent.
+test('shared rates govern playback, drift settling, paused changes, and a fresh player', async () => {
+  const c = new SyncController(),
+    p = new Player(),
+    estimate = { offsetMs: 0, uncertaintyMs: 1 },
+    snapshot = timeline('playing', 1, 1000, 1.5);
+  await c.reconcile(p, snapshot, estimate, 1000, true);
+  expect(p.state.positionMs).toBe(2500);
+  expect(p.state.paused).toBe(false);
+  expect(p.playedAtRate).toBe(1.5);
+  for (const now of [1250, 1500, 1750]) {
+    p.state.positionMs = 1000 + now * 1.5 - 300;
+    await c.reconcile(p, snapshot, estimate, now, true);
+  }
+  expect(p.rate).toBeCloseTo(1.575);
+  p.state.positionMs = 4000;
+  await c.reconcile(p, snapshot, estimate, 2000, true);
+  expect(p.rate).toBe(1.5);
+  const slower = timeline('playing', 2, 4000, 0.5);
+  slower.playback.anchorServerMs = 2000;
+  await c.reconcile(p, slower, estimate, 2000, true);
+  expect(p.state.positionMs).toBe(4000);
+  expect(p.state.paused).toBe(false);
+  expect(p.rate).toBe(0.5);
+  const paused = timeline('paused', 3, 4000, 0.5);
+  await c.reconcile(p, paused, estimate, 2250, true);
+  expect(p.state.paused).toBe(true);
+  expect(p.rate).toBe(0.5);
+  const waiting: Snapshot = {
+    ...paused,
+    revision: 4,
+    playback: { ...paused.playback, phase: 'waiting', desiredPlaying: true },
+  };
+  await c.reconcile(p, waiting, estimate, 2500, true);
+  expect(p.state.paused).toBe(true);
+  expect(p.rate).toBe(0.5);
+  c.invalidate();
+  const replacement = new Player();
+  await c.reconcile(replacement, slower, estimate, 3000, true);
+  expect(replacement.state.positionMs).toBe(4500);
+  expect(replacement.playedAtRate).toBe(0.5);
+});
+
+test('an adapter without rate control pauses at shared non-1x rates and retains the 1x seek fallback', async () => {
+  const c = new SyncController(),
+    p = new Player(),
+    estimate = { offsetMs: 0, uncertaintyMs: 1 };
+  p.capabilities.canSetPlaybackRate = false;
+  p.state.paused = false;
+  expect(supportsPlaybackRate(p, 1.5)).toBe(false);
+  await c.reconcile(p, timeline('playing', 1, 1000, 1.5), estimate, 0, true);
+  expect(p.state.paused).toBe(true);
+  expect(p.playedAtRate).toBeUndefined();
+  expect(supportsPlaybackRate(p, 1)).toBe(true);
+  const snapshot = timeline('playing', 2);
+  await c.reconcile(p, snapshot, estimate, 0, true);
+  for (const now of [250, 500, 750]) {
+    p.state.positionMs = 1000 + now - 150;
+    await c.reconcile(p, snapshot, estimate, now, true);
+  }
+  expect(p.state.positionMs).toBe(1750);
+  expect(p.state.paused).toBe(false);
 });
 
 test.each(['loading', 'access_denied'] as const)(

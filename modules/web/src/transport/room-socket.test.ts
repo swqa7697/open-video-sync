@@ -4,6 +4,7 @@ import { translate } from '../i18n';
 import { FakeSocket, roomFixture } from '../test-support/room';
 import {
   RoomSocket,
+  type Command,
   type EndReason,
   type ProbeResult,
   type SocketEvents,
@@ -145,5 +146,49 @@ test('disposal aborts an in-flight refusal probe and ignores its answer', async 
   await vi.advanceTimersByTimeAsync(20000);
   expect(signals[0]?.aborted).toBe(true);
   expect(ended).toEqual([]);
+  socket.dispose();
+});
+
+test('rate commands reject malformed input and retry the original validated rate', () => {
+  const { socket, errors } = harness([]);
+  socket.start();
+  const connection = FakeSocket.instances[0]!;
+  connection.welcome();
+  connection.frame('room.snapshot', {
+    ...roomFixture,
+    mediaGeneration: 1,
+    media: {
+      kind: 'local',
+      fingerprintVersion: 1,
+      digest: 'f'.repeat(64),
+      sizeBytes: 9,
+      durationMs: 10000,
+    },
+    playback: { ...roomFixture.playback, phase: 'paused', rate: 1.5 },
+  });
+  expect(socket.snapshot?.playback.rate).toBe(1.5);
+  expect(socket.connected).toBe(true);
+  expect(errors).toEqual([]);
+  const initialFrames = connection.sent.length;
+  for (const rate of [0, 0.6, 2.25, NaN, Infinity])
+    expect(() => socket.command({ action: 'rate', rate })).toThrow();
+  for (const payload of [
+    { action: 'rate' },
+    { action: 'rate', rate: '1.5' },
+    { action: 'rate', rate: 1.5, positionMs: 0 },
+    { action: 'play', rate: 1.5 },
+  ])
+    expect(() => socket.command(payload as Command['payload'])).toThrow();
+  expect(connection.sent).toHaveLength(initialFrames);
+  const payload = { action: 'rate' as const, rate: 1.5 };
+  expect(socket.command(payload)).toBe(true);
+  const original = connection.sent.at(-1)!;
+  expect(JSON.parse(original)).toMatchObject({
+    type: 'playback.command',
+    payload: { action: 'rate', rate: 1.5 },
+  });
+  payload.rate = 0.5;
+  socket.resolveUncertain();
+  expect(connection.sent.at(-1)).toBe(original);
   socket.dispose();
 });

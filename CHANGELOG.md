@@ -6,6 +6,10 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+
+- Add shared playback speed from 0.5× to 2× in the player. Apply room control permissions, synchronize all participants, and preserve playback position and play/pause state when changing speed. Reset to 1× when selecting another video or recreating the room runtime.
+
 ## [2026-11-05]
 
 ### Fixed

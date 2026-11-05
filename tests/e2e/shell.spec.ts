@@ -319,9 +319,10 @@ test('independent identities manage a private room over direct HTTP', async ({
       .toBe(true);
     await openQuickActions(page);
     const paletteKeys = await observePageKeyboard(page);
-    await page.getByRole('combobox').pressSequentially('m f k d s ');
-    await page.getByRole('combobox').press('Control+a');
-    await page.getByRole('combobox').press('Backspace');
+    const actionSearch = page.locator('.command-palette').getByRole('combobox');
+    await actionSearch.pressSequentially('m f k d s ');
+    await actionSearch.press('Control+a');
+    await actionSearch.press('Backspace');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
 
@@ -551,9 +552,10 @@ test('independent identities manage a private room over direct HTTP', async ({
     await openQuickActions(page);
 
     await page
+      .locator('.command-palette')
       .getByRole('combobox')
       .fill('$ https://www.bilibili.com/video/BV1TESTaaaaa/?p=2');
-    await page.getByRole('combobox').press('Enter');
+    await actionSearch.press('Enter');
     await expect(
       page.getByRole('dialog', { name: 'Change the video', exact: true }),
     ).toBeVisible();
@@ -624,21 +626,22 @@ test('independent identities manage a private room over direct HTTP', async ({
       'ready',
     );
     await openQuickActions(other, '/play');
-    await expect(other.getByRole('option', { selected: true })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    await expect(other.getByRole('option', { selected: true })).toContainText(
-      'Only the host',
-    );
-    await other.getByRole('combobox').press('Enter');
-    await expect(other.locator('.command-palette')).toBeVisible();
-    await other.getByRole('combobox').fill('/video');
+    const guestPalette = other.locator('.command-palette');
     await expect(
-      other.getByRole('option').filter({ hasText: '/video' }),
+      guestPalette.getByRole('option', { selected: true }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    await expect(
+      guestPalette.getByRole('option', { selected: true }),
+    ).toContainText('Only the host');
+    const guestActionSearch = guestPalette.getByRole('combobox');
+    await guestActionSearch.press('Enter');
+    await expect(other.locator('.command-palette')).toBeVisible();
+    await guestActionSearch.fill('/video');
+    await expect(
+      guestPalette.getByRole('option').filter({ hasText: '/video' }),
     ).toHaveCount(0);
-    await other.getByRole('combobox').fill('$ BV1TESTaaaaa');
-    await expect(other.getByRole('option')).toHaveCount(0);
+    await guestActionSearch.fill('$ BV1TESTaaaaa');
+    await expect(guestPalette.getByRole('option')).toHaveCount(0);
     await other.keyboard.press('Escape');
     await expect(other.locator('.command-palette')).toHaveCount(0);
     await runQuickAction(page, '/play');
@@ -706,9 +709,9 @@ test('independent identities manage a private room over direct HTTP', async ({
       .toBe(true);
     await deferredExit.evaluate((state) => state.release());
     await deferredExit.dispose();
-    await expect(page.getByRole('combobox')).toBeFocused();
+    await expect(actionSearch).toBeFocused();
     const fileChooser = page.waitForEvent('filechooser');
-    await page.getByRole('combobox').press('Enter');
+    await actionSearch.press('Enter');
     await expect(page.locator('.command-palette')).toHaveCount(0);
     await (await fileChooser).setFiles(file);
     await expect(page.getByTestId('media-status')).toHaveAttribute(

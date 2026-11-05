@@ -169,6 +169,39 @@ func TestMediaSelectionPlaybackIntentBoundary(t *testing.T) {
 	}
 }
 
+func TestPlaybackRateBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		payload string
+		valid   bool
+	}{
+		{`{"action":"rate","rate":0.5}`, true},
+		{`{"action":"rate","rate":0.75}`, true},
+		{`{"action":"rate","rate":1}`, true},
+		{`{"action":"rate","rate":1.25}`, true},
+		{`{"action":"rate","rate":1.5}`, true},
+		{`{"action":"rate","rate":1.75}`, true},
+		{`{"action":"rate","rate":2}`, true},
+		{`{"action":"rate"}`, false},
+		{`{"action":"rate","rate":null}`, false},
+		{`{"action":"rate","rate":"1.5"}`, false},
+		{`{"action":"rate","rate":0}`, false},
+		{`{"action":"rate","rate":0.25}`, false},
+		{`{"action":"rate","rate":2.25}`, false},
+		{`{"action":"rate","rate":1.1}`, false},
+		{`{"action":"rate","rate":1e999}`, false},
+		{`{"action":"rate","rate":1,"positionMs":0}`, false},
+		{`{"action":"rate","rate":1,"rate":2}`, false},
+		{`{"action":"play","rate":1}`, false},
+	} {
+		t.Run(tc.payload, func(t *testing.T) {
+			raw := `{"v":2,"type":"playback.command","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":` + tc.payload + `}`
+			if _, err := DecodeClientFrame([]byte(raw)); (err == nil) != tc.valid {
+				t.Fatalf("accepted=%v, want %v: %v", err == nil, tc.valid, err)
+			}
+		})
+	}
+}
+
 // Retired operations must fail at the frame boundary before reaching a room owner.
 func TestApplicationV2RejectsRetiredMessages(t *testing.T) {
 	for _, typ := range []string{"member.activate", "member.observation", "waiting.exclude"} {

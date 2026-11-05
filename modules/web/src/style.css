@@ -1491,6 +1491,25 @@ fieldset select {
 .player-controls button:disabled {
   opacity: 0.4;
 }
+.playback-rate {
+  width: auto;
+  min-width: 64px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.5rem 0.25rem;
+}
+.playback-rate option {
+  background: var(--surface);
+  color: var(--text);
+}
+.playback-rate:disabled {
+  opacity: 0.4;
+}
 .volume-slider {
   width: 65px;
   height: 4px;

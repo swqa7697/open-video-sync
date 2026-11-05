@@ -17,6 +17,7 @@ export const roomFixture = {
     phase: 'empty',
     positionMs: 0,
     anchorServerMs: 0,
+    rate: 1,
     desiredPlaying: false,
   },
   members: [

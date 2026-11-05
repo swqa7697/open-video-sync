@@ -47,7 +47,7 @@ func CanonicalDigest(value []any) string {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
 	e.SetEscapeHTML(false)
-	_ = e.Encode(value) // Only validated strings, integers, booleans, and arrays enter here.
+	_ = e.Encode(value) // Only validated strings, finite numbers, booleans, and arrays enter here.
 	raw := bytes.TrimSuffix(b.Bytes(), []byte{'\n'})
 	// encoding/json escapes U+2028/U+2029 even with HTML escaping disabled.
 	// Decode only those actual escapes, preserving literal backslash-u text.

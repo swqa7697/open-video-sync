@@ -17,7 +17,7 @@ import {
 } from './flows';
 import { decodedFrame, generatedVideo } from './media';
 
-test('two independent local players match, play, seek, pause, reconnect, and transfer tab ownership', async ({
+test('two independent local players match, play, change speed, seek, pause, reconnect, and transfer tab ownership', async ({
   page,
   browser,
   guestBrowser,
@@ -79,6 +79,9 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     await expect(
       other.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
+    await expect(
+      other.getByRole('combobox', { name: 'Playback speed', exact: true }),
+    ).toBeDisabled();
     await settings(page, 'everyone');
     await expect(
       page.getByRole('status').filter({ hasText: 'Preferences saved.' }),
@@ -119,12 +122,28 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       'data-state',
       'ready',
     );
+    const speed = (player: typeof page) =>
+      player.getByRole('combobox', { name: 'Playback speed', exact: true });
+    await page.locator('.video-stage').hover({ position: { x: 16, y: 8 } });
+    await speed(page).selectOption('1.5');
+    for (const player of [page, other]) {
+      await expect(speed(player)).toHaveValue('1.5');
+      await expect(player.locator('video')).toHaveJSProperty('paused', true);
+      await expect(player.locator('video')).toHaveJSProperty(
+        'playbackRate',
+        1.5,
+      );
+    }
     await page.setViewportSize({ width: 375, height: 1000 });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+    await page.locator('.video-stage').hover({ position: { x: 16, y: 8 } });
+    await page.screenshot({
+      path: testInfo.outputPath('playback-speed-narrow.png'),
+    });
     // Narrow screens reach the room heading and navigation before the player.
     expect(
       await page.evaluate(() => {
@@ -232,6 +251,22 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         )
         .toBe(true);
     await expect(page.locator('.playback-indicator')).toHaveCount(0);
+    // Everyone controls changes both actual players without pausing playback.
+    await other.locator('.video-stage').hover({ position: { x: 16, y: 8 } });
+    await speed(other).selectOption('2');
+    for (const player of [page, other]) {
+      await expect(speed(player)).toHaveValue('2');
+      await expect(player.locator('video')).toHaveJSProperty('paused', false);
+      await expect
+        .poll(() =>
+          player
+            .locator('video')
+            .evaluate((video: HTMLVideoElement) =>
+              Math.abs(video.playbackRate - 2),
+            ),
+        )
+        .toBeLessThanOrEqual(0.101);
+    }
     await openPlayerMenu(page);
     await playerMenu
       .getByRole('menuitem', { name: 'Video statistics', exact: true })
@@ -286,7 +321,13 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
     expect(await background.evaluate((state) => state.pauses)).toBe(0);
     await background.dispose();
     await seekTo(page, Number('10'));
+    await speed(page).selectOption('0.75');
     for (const player of [page, other]) {
+      await expect(speed(player)).toHaveValue('0.75');
+      await expect(player.locator('video')).toHaveJSProperty(
+        'playbackRate',
+        0.75,
+      );
       await expect(player.locator('video')).toHaveJSProperty('paused', true);
       await expect
         .poll(() =>
@@ -297,6 +338,9 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
         .toBeCloseTo(10, 1);
       await expect.poll(() => decodedFrame(player)).toBe(300);
     }
+    await page.screenshot({
+      path: testInfo.outputPath('playback-speed-desktop.png'),
+    });
     // Seeking again while paused keeps both players at the new target.
     await seekTo(page, 12);
     for (const player of [page, other])
@@ -344,6 +388,7 @@ test('two independent local players match, play, seek, pause, reconnect, and tra
       timeout: 20000,
     });
     await clickPlayerControl(page, 'Play together');
+    await expect(speed(other)).toHaveValue('0.75');
     await expect
       .poll(() =>
         other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused),

@@ -40,6 +40,7 @@ const room = (phase: 'playing' | 'paused' | 'waiting', revision: number) => ({
       : null,
   playback: {
     phase,
+    rate: 1,
     positionMs: phase === 'waiting' ? 0 : 1000,
     anchorServerMs: 0,
     desiredPlaying: phase !== 'paused',
@@ -453,6 +454,7 @@ afterEach(() => {
 test('player controls distinguish playing idle, paused hover, leaving, and seek holds', async () => {
   vi.useFakeTimers();
   const { wrapper, socket } = await join('playing');
+  expect(wrapper.get('.playback-rate').attributes('disabled')).toBeDefined();
   const snapshot = {
     ...room('playing', 2),
     settings: { controllers: 'everyone', waitForAll: false },
@@ -868,15 +870,26 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
   fakeMedia(video);
   const commands = () =>
     socket.sent
-      .map((text) => JSON.parse(text) as { type: string; commandId: string })
+      .map(
+        (text) =>
+          JSON.parse(text) as {
+            type: string;
+            commandId: string;
+            payload: { action: string; rate?: number };
+          },
+      )
       .filter((frame) => frame.type === 'playback.command');
-  const receipt = () =>
-    socket.frame('command.result', {
-      commandId: commands().at(-1)!.commandId,
-      accepted: true,
-      revision: 1,
-      error: null,
-    });
+  const receipt = (epoch = roomFixture.epoch) =>
+    socket.frame(
+      'command.result',
+      {
+        commandId: commands().at(-1)!.commandId,
+        accepted: true,
+        revision: 1,
+        error: null,
+      },
+      epoch,
+    );
   try {
     await flushPromises();
     const input = wrapper.get('#local-video');
@@ -952,7 +965,32 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     await vi.advanceTimersByTimeAsync(2);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     expect(play.attributes('aria-disabled')).toBe('false');
-    await play.trigger('click');
+    const rate = wrapper.get<HTMLSelectElement>('.playback-rate');
+    rate.element.focus();
+    await rate.setValue('2');
+    expect(commands().at(-1)?.payload).toEqual({ action: 'rate', rate: 2 });
+    expect(rate.element.value).toBe('1');
+    expect(rate.attributes('aria-disabled')).toBe('true');
+    expect(rate.attributes('disabled')).toBeUndefined();
+    expect(document.activeElement).toBe(rate.element);
+    const sent = commands().length;
+    await rate.setValue('0.5');
+    expect(commands()).toHaveLength(sent);
+    receipt('9'.repeat(32));
+    socket.frame(
+      'room.snapshot',
+      {
+        ...snapshot,
+        epoch: '9'.repeat(32),
+        revision: 2,
+        playback: { ...snapshot.playback, rate: 2 },
+      },
+      '9'.repeat(32),
+    );
+    await flushPromises();
+    expect(rate.element.value).toBe('2');
+    expect(rate.attributes('aria-disabled')).toBe('false');
+    expect(document.activeElement).toBe(rate.element);
   } finally {
     wrapper.unmount();
   }
@@ -1027,6 +1065,7 @@ test('a playing seek waits for data at the paused target and stays paused when d
       settings: { ...roomFixture.settings, controllers: 'everyone' },
       playback: {
         phase: 'playing',
+        rate: 1,
         positionMs: 0,
         anchorServerMs: 0,
         desiredPlaying: true,

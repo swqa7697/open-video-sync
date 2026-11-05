@@ -69,7 +69,7 @@ func (s *Service) coordinator(id string) *coordinator {
 }
 func (s *Service) live(r Room, c *coordinator) *liveRoom {
 	if c.live == nil {
-		p := Playback{Phase: "empty", AnchorServerMs: s.monotonicMs()}
+		p := Playback{Phase: "empty", Rate: 1, AnchorServerMs: s.monotonicMs()}
 		generation := int64(0)
 		if r.Media != nil {
 			p.Phase = "paused"
@@ -117,7 +117,7 @@ func (l *liveRoom) position(now int64) int64 {
 	}
 	p := l.playback.PositionMs
 	if l.playback.Phase == "playing" {
-		p += max(0, now-l.playback.AnchorServerMs)
+		p += int64(float64(max(0, now-l.playback.AnchorServerMs)) * l.playback.Rate)
 	}
 	return min(l.media.DurationMs, max(0, p))
 }
@@ -288,6 +288,9 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 			if (f.Type == "media.select" || r.Settings.Controllers != "everyone") && r.HostIdentityID != c.Session.IdentityID {
 				return contracts.Failure("forbidden")
 			}
+			if f.Type == "playback.command" && f.Action == "rate" && !contracts.ValidPlaybackRate(f.Rate) {
+				return contracts.Failure("invalid_command")
+			}
 			now := s.monotonicMs()
 			digest := contracts.CommandDigest(f)
 			receiptKey := c.Session.IdentityID + ":" + f.CommandID
@@ -327,7 +330,7 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 				}
 				next.media = &media
 				next.generation++
-				next.playback = Playback{Phase: "paused", AnchorServerMs: now}
+				next.playback = Playback{Phase: "paused", Rate: 1, AnchorServerMs: now}
 				next.barrier = nil
 				next.reports = make(map[string]*contracts.Readiness)
 				next.cohort = make(map[string]bool)
@@ -348,6 +351,8 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 					return contracts.Failure("invalid_command")
 				}
 				switch f.Action {
+				case "rate":
+					next.playback.Rate = f.Rate
 				case "pause":
 					next.playback.Phase = "paused"
 					next.playback.DesiredPlaying = false
