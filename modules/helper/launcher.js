@@ -141,10 +141,15 @@ export function mountBilibiliLauncher(origin) {
         positionMenu();
       });
       function place() {
-        const toolbar =
+        const candidate =
           document.querySelector?.('.video-toolbar-left-main') ||
           document.querySelector?.('.video-toolbar-left') ||
           document.querySelector?.('.toolbar .toolbar-left');
+        // Editing Vue's SSR subtree before hydration triggers a full rebuild,
+        // which disrupts Bilibili's separately mounted navigation header.
+        const toolbar = candidate?.closest('[data-server-rendered]')
+          ? undefined
+          : candidate;
         const target = toolbar || document.body;
         root.dataset.ovsPlacement = toolbar ? 'toolbar' : 'floating';
         if (root.parentElement !== target) target.append(root);
@@ -184,7 +189,12 @@ export function mountBilibiliLauncher(origin) {
           : undefined;
       function start() {
         place();
-        observer?.observe(document.body, { childList: true, subtree: true });
+        observer?.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['data-server-rendered'],
+        });
         document.addEventListener('pointerdown', outside);
         document.addEventListener('keydown', keyboard);
         document.addEventListener('scroll', scroll, true);

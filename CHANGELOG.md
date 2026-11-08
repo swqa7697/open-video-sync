@@ -19,6 +19,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 ### Fixed
 
 - Clarify Simplified Chinese episode names, statistics information, and notification positions. Distinguish menu names from shortcut actions, and correct playback-wait and file-matching hints.
+- Preserve Bilibili's top navigation when the helper starts before the page finishes initializing. Requires the updated helper.
 
 ## [2026-11-05]
 
