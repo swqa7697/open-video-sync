@@ -10,6 +10,7 @@ import {
   expectFittedPlayer,
   invitationLink,
   observePageKeyboard,
+  openAppPanel,
   openPlayerMenu,
   openQuickActions,
   runQuickAction,
@@ -279,6 +280,47 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('.video-description h3')).toContainText(
     syntheticVideos[1].title,
   );
+  // Live accent changes reach the player without replacing or interrupting media.
+  const accents = [];
+  for (const name of ['Soft iris', 'Quiet teal', 'Dusty rose']) {
+    await openAppPanel(page, 'Appearance');
+    await page.getByRole('radio', { name, exact: true }).check();
+    await page.keyboard.press('Escape');
+    await page.locator('.danmaku-toggle').press('ArrowDown');
+    await expect(page.locator('.danmaku-menu')).toBeVisible();
+    const colors = await page.evaluate(() => {
+      const button = document.querySelector('.playback-toggle')!;
+      const style = getComputedStyle(button);
+      return {
+        playback: style.color,
+        icon: getComputedStyle(button.querySelector('path')!).fill,
+        surface: style.backgroundColor,
+        border: style.borderColor,
+        volume: getComputedStyle(document.querySelector('.volume-slider')!)
+          .color,
+        danmaku: Array.from(
+          document.querySelectorAll('.danmaku-menu input[type="range"]'),
+          (input) => getComputedStyle(input).accentColor,
+        ),
+      };
+    });
+    expect(colors.icon).toBe(colors.playback);
+    expect(colors.volume).toBe(colors.playback);
+    expect(colors.danmaku).toHaveLength(3);
+    for (const color of colors.danmaku) expect(color).toBe(colors.playback);
+    accents.push(colors);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await page.keyboard.press('Escape');
+  }
+  for (const field of ['playback', 'surface', 'border', 'volume'] as const)
+    expect(new Set(accents.map((colors) => colors[field])).size).toBe(3);
+  await openAppPanel(page, 'Appearance');
+  await page.getByRole('radio', { name: 'Slate blue', exact: true }).check();
+  await page.keyboard.press('Escape');
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1966, height: 654 },

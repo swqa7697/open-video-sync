@@ -12,7 +12,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Changed
 
-- Align player controls with compact, consistently sized buttons and clearer hover, press, and keyboard feedback. Use matching translucent danmaku and quality menus anchored above the control bar.
+- Align player controls with compact buttons and clearer hover, press, and keyboard feedback. Give playback a distinct circular button, use a slim volume bar without a thumb, and improve time readability. Match playback controls, volume, and danmaku sliders to the selected accent. Use matching translucent danmaku and quality menus anchored above the control bar.
 
 ## [2026-11-05]
 

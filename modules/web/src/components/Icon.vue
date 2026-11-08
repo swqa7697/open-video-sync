@@ -3,7 +3,11 @@ import { computed } from 'vue';
 
 const props = defineProps<{ name: string; size?: number }>();
 const filled = computed(
-  () => props.name === 'window-fullscreen' || props.name === 'window-restore',
+  () =>
+    props.name === 'window-fullscreen' ||
+    props.name === 'window-restore' ||
+    props.name === 'play-filled' ||
+    props.name === 'pause-filled',
 );
 const windowFrame =
   'M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z';
@@ -24,6 +28,9 @@ const paths: Record<string, string> = {
   moon: 'M20.5 13.5A9 9 0 0 1 10.5 3a9 9 0 1 0 10 10.5Z',
   play: 'm9 5 11 7-11 7Z',
   pause: 'M8 5v14M16 5v14',
+  'play-filled':
+    'M8 5.4a1 1 0 0 1 1.53-.85l10.4 6.6a1 1 0 0 1 0 1.7l-10.4 6.6A1 1 0 0 1 8 18.6Z',
+  'pause-filled': 'M7 5h3v14H7ZM14 5h3v14h-3Z',
   loader: 'M21 12a9 9 0 1 1-9-9',
   replay: 'M3 10a9 9 0 1 1 1 8M3 4v6h6',
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',

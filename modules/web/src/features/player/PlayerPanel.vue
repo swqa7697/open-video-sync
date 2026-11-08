@@ -2075,7 +2075,7 @@ onUnmounted(() => {
           <div class="control-bar">
             <div class="control-start">
               <button
-                class="icon-button"
+                class="icon-button playback-toggle"
                 :aria-label="
                   isPlaying
                     ? t('player.pauseTogether')
@@ -2099,41 +2099,52 @@ onUnmounted(() => {
                 <Icon
                   :name="
                     isPlaying
-                      ? 'pause'
+                      ? 'pause-filled'
                       : current.playback.phase === 'ended'
                         ? 'replay'
-                        : 'play'
+                        : 'play-filled'
                   "
                 />
               </button>
-              <button
-                class="icon-button"
-                :aria-label="muted ? t('player.unmute') : t('player.mute')"
-                :aria-pressed="muted"
-                @click="muted = !muted"
+              <div
+                class="volume-control"
+                :class="{ 'is-muted': muted || !volume }"
               >
-                <Icon :name="muted || !volume ? 'mute' : 'volume'" />
-              </button>
-              <input
-                id="local-volume"
-                v-model.number="volume"
-                class="volume-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                @input="muted = false"
-                :aria-label="t('player.localVolume')"
-                :aria-valuetext="
-                  t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
-                    volume: Math.round(volume * 100),
-                  })
-                "
-              />
-              <span class="player-time"
-                >{{ formatTime(dragging ? seekSeconds : position)
-                }}<span>/ {{ formatTime(totalSeconds) }}</span></span
-              >
+                <button
+                  class="icon-button"
+                  :aria-label="muted ? t('player.unmute') : t('player.mute')"
+                  :aria-pressed="muted"
+                  @click="muted = !muted"
+                >
+                  <Icon :name="muted || !volume ? 'mute' : 'volume'" />
+                </button>
+                <input
+                  id="local-volume"
+                  v-model.number="volume"
+                  class="volume-slider"
+                  :style="{ '--volume-level': `${volume * 100}%` }"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  @input="muted = false"
+                  :aria-label="t('player.localVolume')"
+                  :aria-valuetext="
+                    t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
+                      volume: Math.round(volume * 100),
+                    })
+                  "
+                />
+              </div>
+              <span class="player-time">
+                <span class="player-time-current">{{
+                  formatTime(dragging ? seekSeconds : position)
+                }}</span>
+                <span class="player-time-separator">/</span>
+                <span class="player-time-duration">{{
+                  formatTime(totalSeconds)
+                }}</span>
+              </span>
             </div>
             <div class="control-end">
               <DanmakuControl
