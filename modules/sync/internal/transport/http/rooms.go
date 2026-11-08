@@ -16,7 +16,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 	service.SessionValid = a.Identity.Validate
 	a.Identity.OnRevoked = service.RevokeSession
 	a.Identity.OnRenamed = service.RenameIdentity
-	a.mux.HandleFunc("GET /api/v2/rooms", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("GET /api/v1/rooms", func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.auth(r)
 		if err != nil {
 			fail(w, err)
@@ -48,7 +48,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, map[string]any{"rooms": list, "nextCursor": next})
 	})
-	a.mux.HandleFunc("POST /api/v2/rooms", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("POST /api/v1/rooms", func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.roomAuth(r)
 		if err != nil {
 			fail(w, err)
@@ -84,7 +84,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, result)
 	})
-	a.mux.HandleFunc("POST /api/v2/invitations/redeem", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("POST /api/v1/invitations/redeem", func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.roomAuth(r)
 		if err != nil {
 			fail(w, err)
@@ -119,7 +119,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, map[string]any{"snapshot": result.Snapshot, "replayed": result.Replayed})
 	})
-	a.mux.HandleFunc("GET /api/v2/rooms/{roomId}", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("GET /api/v1/rooms/{roomId}", func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.auth(r)
 		if err != nil {
 			fail(w, err)
@@ -132,7 +132,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, snapshot)
 	})
-	a.mux.HandleFunc("GET /api/v2/rooms/{roomId}/invitations", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("GET /api/v1/rooms/{roomId}/invitations", func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.auth(r)
 		if err != nil {
 			fail(w, err)
@@ -145,7 +145,7 @@ func (a *API) WithRooms(service *rooms.Service) *API {
 		}
 		respond(w, map[string]any{"invitation": inv})
 	})
-	for pattern, operation := range map[string]string{"PATCH /api/v2/rooms/{roomId}/settings": "settings", "POST /api/v2/rooms/{roomId}/invitations": "rotate", "DELETE /api/v2/rooms/{roomId}/members/{memberId}": "remove", "DELETE /api/v2/rooms/{roomId}": "close", "POST /api/v2/rooms/{roomId}/leave": "leave"} {
+	for pattern, operation := range map[string]string{"PATCH /api/v1/rooms/{roomId}/settings": "settings", "POST /api/v1/rooms/{roomId}/invitations": "rotate", "DELETE /api/v1/rooms/{roomId}/members/{memberId}": "remove", "DELETE /api/v1/rooms/{roomId}": "close", "POST /api/v1/rooms/{roomId}/leave": "leave"} {
 		a.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			p, err := a.roomAuth(r)
 			if err != nil {

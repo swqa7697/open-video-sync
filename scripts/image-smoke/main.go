@@ -181,7 +181,7 @@ func checkHTTP(ctx context.Context, name string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	for path, code := range map[string]int{"/": 200, "/join": 200, "/api/v2/version": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v2/session": 404, "/api/v2/rooms/test/ws": 404, "/api/v1/rooms": 409, "/ws/v1/rooms/test": 409} {
+	for path, code := range map[string]int{"/": 200, "/join": 200, "/api/v1/version": 200, "/userscripts/ovs-bilibili.user.js": 200, "/userscripts/absent.user.js": 404, "/api/v1/session": 404, "/api/v1/rooms/test/ws": 404, "/api/v2/rooms": 409, "/ws/v2/rooms/test": 409} {
 		if err := request(ctx, client, base, path, code, want); err != nil {
 			return err
 		}
@@ -211,7 +211,7 @@ func request(ctx context.Context, client *http.Client, base, path string, code i
 	if path == "/userscripts/ovs-bilibili.user.js" {
 		validBody = strings.Contains(string(body), "@name OVS Bilibili http://ovs.example") && strings.Contains(string(body), "// @version "+want.Helper+"\n") && strings.Contains(string(body), `const ORIGIN = "http://ovs.example"`) && strings.HasPrefix(response.Header.Get("Content-Type"), "application/javascript") && !strings.Contains(string(body), "{{")
 	}
-	if path == "/api/v2/version" {
+	if path == "/api/v1/version" {
 		// The scratch image must report all embedded module versions and build metadata.
 		var got releaseVersions
 		if err := json.Unmarshal(body, &got); err != nil {

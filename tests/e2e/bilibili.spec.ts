@@ -585,7 +585,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     )
     .toBe(false);
   await seekTo(page, 20);
-  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const roomPath = `/api/v1${new URL(page.url()).pathname}`;
   await expect
     .poll(
       async () =>
@@ -1148,7 +1148,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
     end: 2 * 1024 * 1024 - 1,
     rate: 2 * 1024 * 1024,
   };
-  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const roomPath = `/api/v1${new URL(page.url()).pathname}`;
   const before = await (await page.request.get(roomPath)).json();
   const originalSource = await page
     .locator('video')
@@ -1525,8 +1525,8 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     .click();
   await expect(page.getByRole('alert')).toContainText('Sign in to Bilibili');
   // Synthetic stable metadata isolates automatic entry from live provider availability.
-  const session = await (await page.request.get('/api/v2/me')).json();
-  const created = await page.request.post('/api/v2/rooms', {
+  const session = await (await page.request.get('/api/v1/me')).json();
+  const created = await page.request.post('/api/v1/rooms', {
     headers: {
       Origin: baseURL!,
       'X-OVS-CSRF': session.csrfToken,
@@ -1796,7 +1796,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       exact: true,
     });
     await expect(setup).toContainText('not detected');
-    const beforeInstall = await (await other.request.get('/api/v2/me')).json();
+    const beforeInstall = await (await other.request.get('/api/v1/me')).json();
     const script = await other.request.get('/userscripts/ovs-bilibili.user.js');
     expect(script.ok()).toBe(true);
     // Start the actual distributed helper on the next document, as installation does.
@@ -1826,12 +1826,12 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await expect(
       other.getByRole('button', { name: 'Join', exact: true }),
     ).toHaveCount(0);
-    const afterInstall = await (await other.request.get('/api/v2/me')).json();
+    const afterInstall = await (await other.request.get('/api/v1/me')).json();
     expect(afterInstall.identity.identityId).toBe(
       beforeInstall.identity.identityId,
     );
     const restored = await (
-      await other.request.get(`/api/v2/rooms/${room.snapshot.roomId}`)
+      await other.request.get(`/api/v1/rooms/${room.snapshot.roomId}`)
     ).json();
     expect(restored.members).toHaveLength(2);
     expect(await invitationLink(page)).toBe(invitation);

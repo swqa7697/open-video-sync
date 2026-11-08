@@ -260,10 +260,10 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 			if v.kind == "clock.pong" || v.kind == "heartbeat" {
 				var p map[string]any
 				_ = json.Unmarshal(v.payload, &p)
-				frame = map[string]any{"v": 2, "type": v.kind, "requestId": p["requestId"], "payload": p["payload"]}
+				frame = map[string]any{"v": 1, "type": v.kind, "requestId": p["requestId"], "payload": p["payload"]}
 			} else {
 				seq++
-				frame = map[string]any{"v": 2, "type": v.kind, "epoch": v.epoch, "eventSeq": seq, "payload": v.payload}
+				frame = map[string]any{"v": 1, "type": v.kind, "epoch": v.epoch, "eventSeq": seq, "payload": v.payload}
 			}
 			if send(frame) != nil {
 				return
@@ -282,7 +282,7 @@ func (o *output) write(ctx context.Context, c *websocket.Conn, last *atomic.Int6
 			}
 			heartbeatAt = clock()
 			id, _ := contracts.RandomID(rand.Reader)
-			if send(map[string]any{"v": 2, "type": "heartbeat", "requestId": id, "payload": map[string]bool{"reply": false}}) != nil {
+			if send(map[string]any{"v": 1, "type": "heartbeat", "requestId": id, "payload": map[string]bool{"reply": false}}) != nil {
 				return
 			}
 		}

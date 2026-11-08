@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 
-import vectors from '../../../../specs/fixtures/http-digests-v2.json';
+import vectors from '../../../../specs/fixtures/http-digests-v1.json';
 import { roomFixture } from '../test-support/room';
 import { decodeSnapshot, NetworkError, request, ResponseError } from './api';
 import { consumeInvitation } from './invitation';

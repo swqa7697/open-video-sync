@@ -72,7 +72,7 @@ func CanonicalDigest(value []any) string {
 	return Hash(canonical)
 }
 
-// SettingsArray defines the version-2 digest order.
+// SettingsArray defines the version-1 digest order.
 func SettingsArray(s RoomSettings) []any {
 	return []any{s.EveryoneCanControl, s.EveryoneCanSelectMedia, s.WaitForAll}
 }

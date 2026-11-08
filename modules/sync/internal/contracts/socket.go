@@ -42,7 +42,7 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 	if err != nil {
 		return f, err
 	}
-	if v, ok := integer(o["v"], 2, 2); !ok || v != 2 {
+	if v, ok := integer(o["v"], 1, 1); !ok || v != 1 {
 		return f, Failure("upgrade_required")
 	}
 	f.Type, _ = o["type"].(string)
@@ -176,7 +176,7 @@ func decodeReadiness(p map[string]any) (Readiness, error) {
 
 // CommandDigest hashes the canonical validated intent, including its original preconditions.
 func CommandDigest(f ClientFrame) string {
-	a := []any{"ovs-command-v2", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
+	a := []any{"ovs-command-v1", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
 	switch f.Type {
 	case "playback.command":
 		var p any

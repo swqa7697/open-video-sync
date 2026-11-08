@@ -95,7 +95,7 @@ test.each([
     expect(wrapper.get('header [role="status"]').text()).toBe(text);
     expect(document.title).toBe('Watch together · Open Video Sync');
     expect(wrapper.find('#display-name').exists()).toBe(false);
-    expect(fetch.mock.calls.some(([url]) => url === '/api/v2/rooms')).toBe(
+    expect(fetch.mock.calls.some(([url]) => url === '/api/v1/rooms')).toBe(
       false,
     );
     healthy = true;
@@ -511,7 +511,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
       if (url.startsWith('/health'))
         return Promise.resolve(new Response(null, { status: 204 }));
       if (url.endsWith('/session')) return Promise.resolve(json(identity));
-      if (url.startsWith(`/api/v2/rooms/${snapshot.roomId}`))
+      if (url.startsWith(`/api/v1/rooms/${snapshot.roomId}`))
         return Promise.resolve(
           new Response(JSON.stringify({ code: 'not_found' }), { status: 404 }),
         );

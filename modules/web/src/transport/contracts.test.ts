@@ -12,7 +12,7 @@ const fixtures: {
   contract: string;
   valid: boolean;
   input: unknown;
-}[] = JSON.parse(readFileSync('../../specs/fixtures/wire-v2.json', 'utf8'));
+}[] = JSON.parse(readFileSync('../../specs/fixtures/wire-v1.json', 'utf8'));
 
 test.each(fixtures)(
   'shared wire values: $name',

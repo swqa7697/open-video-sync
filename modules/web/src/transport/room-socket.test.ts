@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 
-import { translate } from '../i18n';
+import { message, translate } from '../i18n';
 import { FakeSocket, roomFixture } from '../test-support/room';
 import {
   RoomSocket,
@@ -149,10 +149,41 @@ test('disposal aborts an in-flight refusal probe and ignores its answer', async 
   socket.dispose();
 });
 
+test('an unsupported application frame requires reload without accepting room state or reconnecting', async () => {
+  const { socket, errors } = harness([]);
+  sessionStorage.setItem('ovs-protocol-reload', '1');
+  try {
+    socket.start();
+    const connection = FakeSocket.instances[0]!;
+    connection.onmessage?.({
+      data: JSON.stringify({
+        v: 2,
+        type: 'session.welcome',
+        epoch: roomFixture.epoch,
+        eventSeq: 1,
+        payload: {
+          connectionId: 'e'.repeat(32),
+          snapshot: roomFixture,
+        },
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(socket.snapshot).toBeUndefined();
+    expect(socket.connected).toBe(false);
+    expect(errors).toEqual([translate(message('socket.upgrade'))]);
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(connection.readyState).toBe(3);
+  } finally {
+    socket.dispose();
+    sessionStorage.removeItem('ovs-protocol-reload');
+  }
+});
+
 test('rate commands reject malformed input and retry the original validated rate', () => {
   const { socket, errors } = harness([]);
   socket.start();
   const connection = FakeSocket.instances[0]!;
+  expect(connection.url.pathname).toBe(`/ws/v1/rooms/${roomFixture.roomId}`);
   connection.welcome();
   connection.frame('room.snapshot', {
     ...roomFixture,
@@ -184,6 +215,7 @@ test('rate commands reject malformed input and retry the original validated rate
   expect(socket.command(payload)).toBe(true);
   const original = connection.sent.at(-1)!;
   expect(JSON.parse(original)).toMatchObject({
+    v: 1,
     type: 'playback.command',
     payload: { action: 'rate', rate: 1.5 },
   });

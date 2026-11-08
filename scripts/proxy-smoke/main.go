@@ -362,7 +362,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 // client and ignored both the spoofed hops and the untrusted direct peer's header.
 func checkAddresses(ctx context.Context, httpClient *http.Client, directPort string, result *summary) error {
 	probe := func(client *http.Client, base, spoofed string) (int, error) {
-		r, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v2/session", strings.NewReader("{}"))
+		r, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/session", strings.NewReader("{}"))
 		if err != nil {
 			return 0, err
 		}

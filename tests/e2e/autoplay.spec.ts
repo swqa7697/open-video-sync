@@ -41,7 +41,7 @@ test.describe('autoplay permission', () => {
       await expect(
         h.getByRole('status').filter({ hasText: 'Clock calibrated' }),
       ).toBeVisible();
-      const response = await guest.request.post(`${baseURL}/api/v2/session`, {
+      const response = await guest.request.post(`${baseURL}/api/v1/session`, {
         headers: { Origin: baseURL! },
         data: {},
       });
@@ -55,7 +55,7 @@ test.describe('autoplay permission', () => {
         .getByRole('button', { name: 'Close dialog', exact: true })
         .click();
       const joined = await guest.request.post(
-        `${baseURL}/api/v2/invitations/redeem`,
+        `${baseURL}/api/v1/invitations/redeem`,
         {
           headers: {
             Origin: baseURL!,

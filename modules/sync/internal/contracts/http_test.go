@@ -8,7 +8,7 @@ import (
 )
 
 func TestSharedCanonicalHTTPDigests(t *testing.T) {
-	b, err := os.ReadFile("../../../../specs/fixtures/http-digests-v2.json")
+	b, err := os.ReadFile("../../../../specs/fixtures/http-digests-v1.json")
 	if err != nil {
 		t.Fatal(err)
 	}

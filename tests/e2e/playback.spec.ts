@@ -45,7 +45,7 @@ test('two independent local players match, play, change speed, seek, pause, reco
     // real server normally, then explicitly cut both sides and reject outage retries.
     let socketAvailable = true;
     let interruptSocket: (() => Promise<void>) | undefined;
-    await guest.routeWebSocket('**/ws/v2/rooms/*', async (socket) => {
+    await guest.routeWebSocket('**/ws/v1/rooms/*', async (socket) => {
       if (!socketAvailable) {
         await socket.close({
           code: 1013,

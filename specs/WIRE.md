@@ -2,7 +2,7 @@
 
 This document defines the initial release's HTTP and WebSocket contracts.
 [DESIGN](DESIGN.md) defines memory ownership and persistence. Serve the matching frontend and backend together.
-The application protocol identifier is 2. The browser-local helper protocol and local fingerprint encoding each use identifier 1.
+The application protocol, browser-local helper protocol, and local fingerprint encoding each use identifier 1.
 These identifiers describe independent encodings, not published application releases.
 
 ## Encoding and common values
@@ -27,7 +27,7 @@ No non-application API or socket route falls through to SPA HTML.
 
 ## HTTP
 
-Use `/api/v2`, health endpoints under `/health`, and the helper distribution URL `/userscripts/ovs-bilibili.user.js`.
+Use `/api/v1`, health endpoints under `/health`, and the helper distribution URL `/userscripts/ovs-bilibili.user.js`.
 Bootstrap and authenticated mutations require the configured exact origin. Authenticated mutations also require the session-bound CSRF token.
 Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate expiry and authorization against application memory.
 
@@ -111,21 +111,21 @@ Send readiness changes and current-barrier confirmations; do not send a separate
 
 ## WebSocket
 
-Use `/ws/v2/rooms/{roomId}` with cookie, exact Origin, membership, and resource checks before admission.
+Use `/ws/v1/rooms/{roomId}` with cookie, exact Origin, membership, and resource checks before admission.
 Clock/heartbeat traffic and real-time commands never query SQLite.
 The latest authenticated connection owns playback for its membership. Replacement closes the older connection and invalidates all its pending work.
 The replaced page pauses and does not reconnect until explicitly reloaded or reopened.
 
-Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
+Mutation envelopes are `{v:1,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
 - `playback.command`: `{action:"play"|"pause"|"replay"}`, `{action:"seek",positionMs}`, or `{action:"rate",rate}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent. Rate uses the snapshot bounds, reanchors the current position, and preserves phase, waiting, and play intent. Controller permissions apply to every action.
 - `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Allow the host, or any current member when `everyoneCanSelectMedia` is true; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
-Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.
-Clock and heartbeat use `{v:2,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.
+Readiness uses `{v:1,type:"member.readiness",epoch,payload:Readiness}`.
+Clock and heartbeat use `{v:1,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.
 Reject unsupported message types. No frame can override its authenticated room, identity, or connection.
 
-Server room envelopes are `{v:2,type,epoch,eventSeq,payload}`. Sequence is per connection, starts at 1, and is never persisted.
+Server room envelopes are `{v:1,type,epoch,eventSeq,payload}`. Sequence is per connection, starts at 1, and is never persisted.
 
 | Type               | Payload                                                                            |
 | ------------------ | ---------------------------------------------------------------------------------- |

@@ -20,7 +20,7 @@ import {
 import { parseFrame } from './protocol-values';
 
 export interface Command {
-  v: 2;
+  v: 1;
   type: 'playback.command' | 'media.select';
   commandId: string;
   epoch: string;
@@ -98,7 +98,7 @@ export class RoomSocket {
     this.pings.clear();
     this.sequence = 0;
     this.events.status(message('player.connecting'));
-    const url = new URL(`/ws/v2/rooms/${this.roomId}`, location.href);
+    const url = new URL(`/ws/v1/rooms/${this.roomId}`, location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -166,7 +166,7 @@ export class RoomSocket {
     this.events.ended(reason);
   }
   private receive(f: Record<string, unknown>): void {
-    if (f.v !== 2) {
+    if (f.v !== 1) {
       this.upgrade();
       return;
     }
@@ -180,7 +180,7 @@ export class RoomSocket {
         if (typeof p.reply !== 'boolean') throw new Error('Invalid heartbeat.');
         if (!p.reply)
           this.send({
-            v: 2,
+            v: 1,
             type: 'heartbeat',
             requestId: key,
             payload: { reply: true },
@@ -339,7 +339,7 @@ export class RoomSocket {
         at = Math.floor(performance.now());
       this.pings.set(key, at);
       this.send({
-        v: 2,
+        v: 1,
         type: 'clock.ping',
         requestId: key,
         payload: { clientSendMs: at },
@@ -367,7 +367,7 @@ export class RoomSocket {
           }
         : decodePlaybackCommand(payload);
     const command: Command = {
-      v: 2,
+      v: 1,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',
       commandId: intent?.commandId ?? requestKey(),
       epoch: intent?.epoch ?? s.epoch,
@@ -391,7 +391,7 @@ export class RoomSocket {
   readiness(payload: unknown): void {
     if (this.connected && this.active && this.snapshot)
       this.send({
-        v: 2,
+        v: 1,
         type: 'member.readiness',
         epoch: this.snapshot.epoch,
         payload,

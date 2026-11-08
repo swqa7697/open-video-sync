@@ -182,7 +182,7 @@ func (s *Service) create(ctx context.Context, p identity.Session, key, title str
 		return Result{}, err
 	}
 	defer release()
-	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "rooms.create", title, contracts.SettingsArray(settings), initial})
+	digest := contracts.CanonicalDigest([]any{"ovs-http-v1", "rooms.create", title, contracts.SettingsArray(settings), initial})
 	if o, ok := s.receipt(k); ok {
 		snap, err := s.Snapshot(ctx, p, o.RoomID)
 		if err != nil {
@@ -333,7 +333,7 @@ func (s *Service) Redeem(ctx context.Context, p identity.Session, key, kind, sec
 		return Result{}, err
 	}
 	defer release()
-	digest := contracts.CanonicalDigest([]any{"ovs-http-v2", "invitations.redeem", kind, secret})
+	digest := contracts.CanonicalDigest([]any{"ovs-http-v1", "invitations.redeem", kind, secret})
 	o, replay := s.receipt(k)
 	id := o.RoomID
 	if !replay {

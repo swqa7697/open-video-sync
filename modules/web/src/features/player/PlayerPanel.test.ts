@@ -477,7 +477,7 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
     await vi.advanceTimersByTimeAsync(ms);
     socket.onmessage?.({
       data: JSON.stringify({
-        v: 2,
+        v: 1,
         type: 'heartbeat',
         requestId: '1'.repeat(32),
         payload: { reply: true },
@@ -899,7 +899,7 @@ test('a failed Bilibili player keeps readiness valid and video replacement avail
       if (ping.type !== 'clock.ping') continue;
       socket.onmessage?.({
         data: JSON.stringify({
-          v: 2,
+          v: 1,
           type: 'clock.pong',
           requestId: ping.requestId,
           payload: {
@@ -1093,7 +1093,7 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
     const sent = (ping.payload as { clientSendMs: number }).clientSendMs;
     socket.onmessage?.({
       data: JSON.stringify({
-        v: 2,
+        v: 1,
         type: 'clock.pong',
         requestId: ping.requestId,
         payload: {
@@ -1131,7 +1131,7 @@ test('a playing seek waits for data at the paused target and stays paused when d
       const sent = ping.payload.clientSendMs;
       socket.onmessage?.({
         data: JSON.stringify({
-          v: 2,
+          v: 1,
           type: 'clock.pong',
           requestId: ping.requestId,
           payload: {

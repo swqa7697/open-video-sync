@@ -2,26 +2,26 @@
   {
     "name": "create unicode and escapes",
     "input": [
-      "ovs-http-v2",
+      "ovs-http-v1",
       "rooms.create",
       "Room <>& \ud83d\ude00\u2028\u2029 \\u2028 \"quoted\"",
       [false, false, true]
     ],
-    "digest": "20066c529f912161c772ab81a6e7cdf4843209b1aea8c928edfe2a0d826e65ae"
+    "digest": "add4da8e0e8b4e3658079e2ccb3b505fee6a0ebd55a302d197fb94648d08ce68"
   },
   {
     "name": "redeem normalized code",
-    "input": ["ovs-http-v2", "invitations.redeem", "code", "0123456789ABCDEF"],
-    "digest": "ccc58264affe18d613caed9b9ea3995c9b1bfc04ceae5205b2324a6519edcd84"
+    "input": ["ovs-http-v1", "invitations.redeem", "code", "0123456789ABCDEF"],
+    "digest": "bb8dd39964d5623f8c2080493c5e47f8f63f9f13ac5f1fd4625f3985c2d7825b"
   },
   {
     "name": "redeem link",
     "input": [
-      "ovs-http-v2",
+      "ovs-http-v1",
       "invitations.redeem",
       "link",
       "AAECAwQFBgcICQoLDA0ODw"
     ],
-    "digest": "fef5411c4f568c27d59e923e374e1c9cfcc5593d435e00f3cef5f109f25e573b"
+    "digest": "4f703f68178f3ea3a82af79abd99310955b15fcbffb3a0a6d7d9b5d0316544df"
   }
 ]

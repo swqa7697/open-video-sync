@@ -387,7 +387,7 @@ export async function request(
   if (replayOnly) headers['Idempotency-Replay-Only'] = 'true';
   let response: Response;
   try {
-    response = await fetch(`/api/v2${path}`, {
+    response = await fetch(`/api/v1${path}`, {
       method,
       headers,
       credentials: 'same-origin',

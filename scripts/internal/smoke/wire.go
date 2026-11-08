@@ -3,7 +3,7 @@ package smoke
 // These client-owned views contain only fields used by application smoke checks.
 // specs/WIRE.md defines the public contract; server domain types stay private.
 
-// MaxMessageBytes is the version-2 HTTP and WebSocket JSON size limit.
+// MaxMessageBytes is the version-1 HTTP and WebSocket JSON size limit.
 const MaxMessageBytes = 64 << 10
 
 // Snapshot contains the room state observed by smoke checks.

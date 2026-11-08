@@ -145,7 +145,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     holdResults = false;
     for (const send of heldResults.splice(0)) send();
   };
-  await page.routeWebSocket('**/ws/v2/rooms/*', (socket) => {
+  await page.routeWebSocket('**/ws/v1/rooms/*', (socket) => {
     const server = socket.connectToServer();
     server.onMessage((data) => {
       const frame =
@@ -197,7 +197,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.getByRole('main')).toBeFocused();
     await expect(page.getByRole('main')).toHaveCSS('outline-style', 'none');
     await dismissHelper(page);
-    const firstIdentity = await (await page.request.get('/api/v2/me')).json();
+    const firstIdentity = await (await page.request.get('/api/v1/me')).json();
     await page.locator('.profile-button').click();
     await page.getByLabel('Display name (optional)').fill('<b>Alice 😀</b>');
     await page.getByLabel('Display name (optional)').press('Enter');
@@ -547,7 +547,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       inviteURL = await invitationLink(page);
     // The quick video path only prefills the existing confirmation; it cannot publish early.
     const selectedMedia = await (
-      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+      await page.request.get(`/api/v1${new URL(roomURL).pathname}`)
     ).json();
     await openQuickActions(page);
 
@@ -564,7 +564,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.locator('#bilibili-part')).toHaveValue('2');
     await page.keyboard.press('Escape');
     const unchangedMedia = await (
-      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+      await page.request.get(`/api/v1${new URL(roomURL).pathname}`)
     ).json();
     expect(unchangedMedia.mediaGeneration).toBe(selectedMedia.mediaGeneration);
     expect(unchangedMedia.media).toEqual(selectedMedia.media);
@@ -572,7 +572,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(await page.locator('.roster b').count()).toBe(0);
     // Keep the host online while a lost join response and helper reload interrupt the guest.
     let interrupted = true;
-    await other.route('**/api/v2/invitations/redeem', async (route) => {
+    await other.route('**/api/v1/invitations/redeem', async (route) => {
       if (interrupted) {
         // Commit membership, then lose the reply before the guest can enter.
         const response = await route.fetch();
@@ -587,7 +587,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(new URL(other.url()).hash).toBe('');
     expect(new URL(other.url()).pathname).toBe('/join');
     const duringJoin = await (
-      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+      await page.request.get(`/api/v1${new URL(roomURL).pathname}`)
     ).json();
     expect(
       duringJoin.members.find(
@@ -610,7 +610,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       other.getByRole('heading', { name: 'Friday watch party' }),
     ).toBeVisible();
     const afterJoin = await (
-      await page.request.get(`/api/v2${new URL(roomURL).pathname}`)
+      await page.request.get(`/api/v1${new URL(roomURL).pathname}`)
     ).json();
     expect(afterJoin.members).toHaveLength(2);
     expect(
@@ -719,7 +719,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       'ready',
     );
     const guestIdentity = await (
-      await guest.request.get(`${baseURL}/api/v2/me`)
+      await guest.request.get(`${baseURL}/api/v1/me`)
     ).json();
     expect(guestIdentity.identity.identityId).not.toBe(
       firstIdentity.identity.identityId,
@@ -982,12 +982,12 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(
       (
         await outsider.request.get(
-          `${baseURL}/api/v2${new URL(roomURL).pathname}`,
+          `${baseURL}/api/v1${new URL(roomURL).pathname}`,
         )
       ).status(),
     ).toBe(404);
     expect(
-      (await (await outsider.request.get(`${baseURL}/api/v2/rooms`)).json())
+      (await (await outsider.request.get(`${baseURL}/api/v1/rooms`)).json())
         .rooms,
     ).toEqual([]);
     await outside.getByLabel('Invitation link or code').fill(firstCode);
@@ -1005,7 +1005,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       other.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeVisible();
     expect(
-      (await other.request.get(`/api/v2${new URL(roomURL).pathname}`)).status(),
+      (await other.request.get(`/api/v1${new URL(roomURL).pathname}`)).status(),
     ).toBe(404);
     await expect(
       other.getByRole('status').filter({ hasText: 'Friday watch party' }),
@@ -1035,7 +1035,7 @@ test('independent identities manage a private room over direct HTTP', async ({
       page.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeFocused();
     expect(
-      (await page.request.get(`/api/v2${new URL(roomURL).pathname}`)).status(),
+      (await page.request.get(`/api/v1${new URL(roomURL).pathname}`)).status(),
     ).toBe(404);
     await page.locator('.profile-button').click();
     await page
@@ -1047,7 +1047,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     await expect(page.locator('.app-message')).toContainText(
       'A new identity is active.',
     );
-    const changed = await (await page.request.get('/api/v2/me')).json();
+    const changed = await (await page.request.get('/api/v1/me')).json();
     expect(changed.identity.identityId).not.toBe(
       firstIdentity.identity.identityId,
     );
@@ -1526,7 +1526,7 @@ test('settings groups local preferences and separates build identity from packag
     Promise.all(node.getAnimations().map((animation) => animation.finished)),
   );
   // The response is public, uncached metadata from the running artifact, not browser helper state.
-  const response = await page.request.get('/api/v2/version');
+  const response = await page.request.get('/api/v1/version');
   expect(response.headers()['cache-control']).toBe('no-store');
   const buildInfo = JSON.parse(
     execFileSync('node', ['../../scripts/versions.mjs', 'build-info'], {
@@ -1598,7 +1598,7 @@ test('settings groups local preferences and separates build identity from packag
     },
     { image: 'ovs:dev', release: false, commit: '', dirty: false, tag: '' },
   ]) {
-    await page.route('**/api/v2/version', (route) =>
+    await page.route('**/api/v1/version', (route) =>
       route.fulfill({ json: { ...release, ...info } }),
     );
     await openAppPanel(page, 'About');
@@ -1624,7 +1624,7 @@ test('settings groups local preferences and separates build identity from packag
       await about.evaluate((node) => node.scrollWidth <= node.clientWidth),
     ).toBe(true);
     await page.keyboard.press('Escape');
-    await page.unroute('**/api/v2/version');
+    await page.unroute('**/api/v1/version');
   }
 
   // A failed or malformed metadata response offers recovery without showing raw errors.
@@ -1636,7 +1636,7 @@ test('settings groups local preferences and separates build identity from packag
     JSON.stringify({ ...deployed, image: 'ovs:dev\nunsafe' }),
     JSON.stringify({ ...deployed, release: 'false' }),
   ]) {
-    await page.route('**/api/v2/version', (route) =>
+    await page.route('**/api/v1/version', (route) =>
       route.fulfill({
         status: body === 'unavailable' ? 503 : 200,
         contentType: 'application/json',
@@ -1648,7 +1648,7 @@ test('settings groups local preferences and separates build identity from packag
       'Versions are unavailable',
     );
     await expect(about.locator('dd')).toHaveCount(0);
-    await page.unroute('**/api/v2/version');
+    await page.unroute('**/api/v1/version');
     await about.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(componentValues).toHaveText(componentVersions);
     await page.keyboard.press('Escape');
@@ -1937,7 +1937,7 @@ test.describe('interface language', () => {
     await createLocalRoom(page, file, title);
     const videoSource = await page.locator('video').getAttribute('src');
     const before = await (
-      await page.request.get(`/api/v2${new URL(page.url()).pathname}`)
+      await page.request.get(`/api/v1${new URL(page.url()).pathname}`)
     ).json();
     await selectLanguage('zh-CN');
     await expect(page).toHaveTitle('房间 · Open Video Sync');
@@ -1952,7 +1952,7 @@ test.describe('interface language', () => {
     await expect(page.locator('.playback-status')).toContainText('已连接');
     expect(await page.locator('video').getAttribute('src')).toBe(videoSource);
     const after = await (
-      await page.request.get(`/api/v2${new URL(page.url()).pathname}`)
+      await page.request.get(`/api/v1${new URL(page.url()).pathname}`)
     ).json();
     expect(after.revision).toBe(before.revision);
     expect(after.mediaGeneration).toBe(before.mediaGeneration);

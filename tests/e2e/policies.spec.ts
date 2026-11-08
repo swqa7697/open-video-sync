@@ -181,7 +181,7 @@ test('waiting, buffering, ready late joining, and host absence preserve controll
       late.getByRole('heading', { name: 'Start a watch party', exact: true }),
     ).toBeVisible();
     expect(
-      (await late.request.get(`/api/v2${new URL(roomURL).pathname}`)).status(),
+      (await late.request.get(`/api/v1${new URL(roomURL).pathname}`)).status(),
     ).toBe(404);
     await returned.close();
   } finally {

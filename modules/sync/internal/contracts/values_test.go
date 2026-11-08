@@ -16,7 +16,7 @@ import (
 // These shared cases own metadata compatibility and credential exclusion.
 // Existing HTTP/WS tests own routing/origin rules, not unimplemented routes.
 func TestSharedWireValues(t *testing.T) {
-	data, err := os.ReadFile("../../../../specs/fixtures/wire-v2.json")
+	data, err := os.ReadFile("../../../../specs/fixtures/wire-v1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestMediaSelectionPlaybackIntentBoundary(t *testing.T) {
 		{"unknown", `,"autoPlay":true,"extra":true`, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw := `{"v":2,"type":"media.select","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":{` + media + tc.extra + `}}`
+			raw := `{"v":1,"type":"media.select","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":{` + media + tc.extra + `}}`
 			frame, err := DecodeClientFrame([]byte(raw))
 			if (err == nil) != tc.valid || frame.AutoPlay != tc.play {
 				t.Fatalf("accepted=%v, play=%v: %v", err == nil, frame.AutoPlay, err)
@@ -194,7 +194,7 @@ func TestPlaybackRateBoundary(t *testing.T) {
 		{`{"action":"play","rate":1}`, false},
 	} {
 		t.Run(tc.payload, func(t *testing.T) {
-			raw := `{"v":2,"type":"playback.command","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":` + tc.payload + `}`
+			raw := `{"v":1,"type":"playback.command","commandId":"` + strings.Repeat("a", 32) + `","epoch":"` + strings.Repeat("b", 32) + `","mediaGeneration":1,"expectedRevision":1,"payload":` + tc.payload + `}`
 			if _, err := DecodeClientFrame([]byte(raw)); (err == nil) != tc.valid {
 				t.Fatalf("accepted=%v, want %v: %v", err == nil, tc.valid, err)
 			}
@@ -202,15 +202,19 @@ func TestPlaybackRateBoundary(t *testing.T) {
 	}
 }
 
-// Retired operations must fail at the frame boundary before reaching a room owner.
-func TestApplicationV2RejectsRetiredMessages(t *testing.T) {
+// Unsupported operations must fail at the frame boundary before reaching a room owner.
+func TestApplicationRejectsUnsupportedMessagesAndVersions(t *testing.T) {
 	for _, typ := range []string{"member.activate", "member.observation", "waiting.exclude"} {
-		raw, _ := json.Marshal(map[string]any{"v": 2, "type": typ, "epoch": strings.Repeat("a", 32), "payload": map[string]any{}})
+		raw, _ := json.Marshal(map[string]any{"v": 1, "type": typ, "epoch": strings.Repeat("a", 32), "payload": map[string]any{}})
 		if _, err := DecodeClientFrame(raw); err != Failure("invalid_command") {
-			t.Fatalf("retired %s accepted: %v", typ, err)
+			t.Fatalf("unsupported %s accepted: %v", typ, err)
 		}
 	}
-	if _, err := DecodeClientFrame([]byte(`{"v":1,"type":"heartbeat","requestId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{"reply":true}}`)); err != Failure("upgrade_required") {
-		t.Fatal("old application protocol accepted", err)
+	frame := `{"v":1,"type":"heartbeat","requestId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{"reply":true}}`
+	if got, err := DecodeClientFrame([]byte(frame)); err != nil || got.Type != "heartbeat" || !got.Reply {
+		t.Fatal("initial application protocol rejected", got, err)
+	}
+	if _, err := DecodeClientFrame([]byte(strings.Replace(frame, `"v":1`, `"v":2`, 1))); err != Failure("upgrade_required") {
+		t.Fatal("unsupported application protocol accepted", err)
 	}
 }

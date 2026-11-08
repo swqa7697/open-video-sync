@@ -34,7 +34,7 @@ func call(t *testing.T, a http.Handler, p apiPeer, method, path, payload string)
 }
 func bootstrapPeer(t *testing.T, a http.Handler) apiPeer {
 	t.Helper()
-	w := call(t, a, apiPeer{}, "POST", "/api/v2/session", "{}")
+	w := call(t, a, apiPeer{}, "POST", "/api/v1/session", "{}")
 	if w.Code != 200 {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body)
 	}
@@ -60,7 +60,7 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	a := NewAPI("http://watch.example", service)
 	wantVersions := Versions{Sync: "1.2.3", Web: "2.3.4", Helper: "3.4.5", Image: "ovs:dev", Release: false, Commit: strings.Repeat("a", 40), Dirty: true, Tag: "v1.2.3"}
 	a.WithVersions(wantVersions)
-	release := call(t, a, apiPeer{}, "GET", "/api/v2/version", "")
+	release := call(t, a, apiPeer{}, "GET", "/api/v1/version", "")
 	var versions Versions
 	if err := json.Unmarshal(release.Body.Bytes(), &versions); err != nil {
 		t.Fatal(err)
@@ -73,21 +73,21 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	if p.id == q.id {
 		t.Fatal("profiles share identity")
 	}
-	w := call(t, a, p, "POST", "/api/v2/session", "{}")
+	w := call(t, a, p, "POST", "/api/v1/session", "{}")
 	if len(w.Result().Cookies()) != 0 {
 		t.Fatal("renewed within one day")
 	}
 	for _, body := range []string{`{"displayName":"a","displayName":"b"}`, `{"displayName":"a","cookie":"synthetic-secret"}`, `{"displayName":null}`, `{"displayName":"\ud800"}`} {
-		if w := call(t, a, p, "PATCH", "/api/v2/me", body); w.Code != 400 {
+		if w := call(t, a, p, "PATCH", "/api/v1/me", body); w.Code != 400 {
 			t.Fatalf("invalid profile accepted: %d %s", w.Code, w.Body)
 		}
 	}
 	bad := p
 	bad.csrf = "wrong"
-	if w := call(t, a, bad, "PATCH", "/api/v2/me", `{"displayName":"wrong"}`); w.Code != 403 {
+	if w := call(t, a, bad, "PATCH", "/api/v1/me", `{"displayName":"wrong"}`); w.Code != 403 {
 		t.Fatal("wrong CSRF accepted")
 	}
-	r := httptest.NewRequest("POST", "http://watch.example/api/v2/session", strings.NewReader("{}"))
+	r := httptest.NewRequest("POST", "http://watch.example/api/v1/session", strings.NewReader("{}"))
 	r.Header.Set("Origin", "https://attacker.example")
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal("cross-origin bootstrap accepted")
 	}
-	w = call(t, a, p, "PATCH", "/api/v2/me", `{"displayName":"<b>😀</b>"}`)
+	w = call(t, a, p, "PATCH", "/api/v1/me", `{"displayName":"<b>😀</b>"}`)
 	if w.Code != 200 {
 		t.Fatal(w.Body)
 	}
@@ -107,12 +107,12 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.Repository = store
-	w = call(t, a, p, "GET", "/api/v2/me", "")
+	w = call(t, a, p, "GET", "/api/v1/me", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), p.id) || !strings.Contains(w.Body.String(), "😀") {
 		t.Fatal("restart lost identity", w.Body)
 	}
 	now = now.Add(25 * time.Hour)
-	w = call(t, a, p, "POST", "/api/v2/session", "{}")
+	w = call(t, a, p, "POST", "/api/v1/session", "{}")
 	cookies := w.Result().Cookies()
 	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].Secure || cookies[0].Domain != "" || cookies[0].SameSite != http.SameSiteLaxMode {
 		t.Fatal("invalid HTTP cookie")
@@ -131,7 +131,7 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 	secureAPI.Origin = tlsServer.URL
 	client := tlsServer.Client()
 	client.Jar, _ = cookiejar.New(nil)
-	req, _ := http.NewRequest("POST", tlsServer.URL+"/api/v2/session", strings.NewReader("{}"))
+	req, _ := http.NewRequest("POST", tlsServer.URL+"/api/v1/session", strings.NewReader("{}"))
 	req.Header.Set("Origin", tlsServer.URL)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(req)
@@ -142,7 +142,7 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 		t.Fatal("TLS bootstrap failed")
 	}
 	_ = response.Body.Close()
-	response, err = client.Get(tlsServer.URL + "/api/v2/me")
+	response, err = client.Get(tlsServer.URL + "/api/v1/me")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,18 +154,18 @@ func TestIdentityLifecycleAndBoundary(t *testing.T) {
 
 	revoked := false
 	service.OnRevoked = func(string) { revoked = true }
-	w = call(t, a, p, "DELETE", "/api/v2/session", "{}")
+	w = call(t, a, p, "DELETE", "/api/v1/session", "{}")
 	if w.Code != 200 || !revoked {
 		t.Fatal("revocation failed", w.Body)
 	}
-	if w := call(t, a, p, "GET", "/api/v2/me", ""); w.Code != 401 {
+	if w := call(t, a, p, "GET", "/api/v1/me", ""); w.Code != 401 {
 		t.Fatal("revoked token accepted")
 	}
 	now = now.Add(366 * 24 * time.Hour)
-	if w := call(t, a, q, "GET", "/api/v2/me", ""); w.Code != 401 {
+	if w := call(t, a, q, "GET", "/api/v1/me", ""); w.Code != 401 {
 		t.Fatal("expired token accepted")
 	}
-	w = call(t, a, q, "POST", "/api/v2/session", "{}")
+	w = call(t, a, q, "POST", "/api/v1/session", "{}")
 	if w.Code != 200 || strings.Contains(w.Body.String(), q.id) {
 		t.Fatal("expired bootstrap reused identity")
 	}
@@ -188,7 +188,7 @@ func TestStrictTransportAndAddressLimits(t *testing.T) {
 		{`{"displayName":"no"}`, "application/json", "http://attacker.example", 403},
 		{`{"displayName":"no"} {}`, "application/json", "http://watch.example", 400},
 	} {
-		r := httptest.NewRequest("PATCH", "http://watch.example/api/v2/me", strings.NewReader(tc.body))
+		r := httptest.NewRequest("PATCH", "http://watch.example/api/v1/me", strings.NewReader(tc.body))
 		r.Header.Set("Content-Type", tc.content)
 		r.Header.Set("Origin", tc.origin)
 		r.Header.Set("X-OVS-CSRF", p.csrf)
@@ -203,7 +203,7 @@ func TestStrictTransportAndAddressLimits(t *testing.T) {
 		}
 	}
 	for i := 0; i < 9; i++ {
-		r := httptest.NewRequest("POST", "http://watch.example/api/v2/session", strings.NewReader("{}"))
+		r := httptest.NewRequest("POST", "http://watch.example/api/v1/session", strings.NewReader("{}"))
 		r.Header.Set("Origin", a.Origin)
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("X-Forwarded-For", string(rune('a'+i)))
@@ -213,7 +213,7 @@ func TestStrictTransportAndAddressLimits(t *testing.T) {
 			t.Fatal("premature limit", w.Body)
 		}
 	}
-	if w := call(t, a, apiPeer{}, "POST", "/api/v2/session", "{}"); w.Code != 429 {
+	if w := call(t, a, apiPeer{}, "POST", "/api/v1/session", "{}"); w.Code != 429 {
 		t.Fatal("forwarding headers bypassed address limit", w.Code)
 	}
 
@@ -222,7 +222,7 @@ func TestStrictTransportAndAddressLimits(t *testing.T) {
 	b := NewAPI("http://watch.example", &identity.Service{Repository: store, Now: func() time.Time { return fixed }, Random: rand.Reader})
 	b.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}
 	probe := func(peer string, forwarded ...string) int {
-		r := httptest.NewRequest("POST", "http://watch.example/api/v2/session", strings.NewReader("{}"))
+		r := httptest.NewRequest("POST", "http://watch.example/api/v1/session", strings.NewReader("{}"))
 		r.RemoteAddr = peer
 		r.Header.Set("Origin", b.Origin)
 		r.Header.Set("Content-Type", "text/plain")

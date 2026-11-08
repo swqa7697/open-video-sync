@@ -100,7 +100,7 @@ type Playback struct {
 	DesiredPlaying bool    `json:"desiredPlaying"`
 }
 
-// Snapshot is a credential-free, caller-specific v2 room snapshot.
+// Snapshot is a credential-free, caller-specific v1 room snapshot.
 type Snapshot struct {
 	RoomID          string                     `json:"roomId"`
 	Title           string                     `json:"title"`

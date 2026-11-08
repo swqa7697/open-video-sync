@@ -209,9 +209,9 @@ test('HTTP and WebSocket proxies map only the two allowed development origins', 
     ].includes(origin)
       ? 'http://127.0.0.1:8080'
       : origin;
-    const http = await request('/api/v2/session', { Origin: origin }, 'POST');
+    const http = await request('/api/v1/session', { Origin: origin }, 'POST');
     expect(http.body).toBe(expected);
-    const websocket = await request('/ws/v2/rooms/test', {
+    const websocket = await request('/ws/v1/rooms/test', {
       Origin: origin,
       Connection: 'Upgrade',
       Upgrade: 'websocket',
