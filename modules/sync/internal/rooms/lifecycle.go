@@ -52,14 +52,14 @@ func (s *Service) tickLifecycle(c *coordinator) {
 	}
 	now := s.monotonicMs()
 	closeRoom := c.emptyDeadline > 0 && now >= c.emptyDeadline && s.finalDeparture(c, "")
-	hostLeft := c.hostDeadline > 0 && now >= c.hostDeadline && c.room.Settings.Controllers == "host"
+	hostLeft := c.hostDeadline > 0 && now >= c.hostDeadline && !c.room.Settings.EveryoneCanControl
 	if !closeRoom && !hostLeft {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	settings := c.room.Settings
-	settings.Controllers = "everyone"
+	settings.EveryoneCanControl = true
 	err := s.Repository.Transact(ctx, func(tx Tx) error {
 		if closeRoom {
 			return tx.DeleteRoom(c.room.ID)

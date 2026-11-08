@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/helper"
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/history"
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/identity"
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/rooms"
 	"github.com/swqa7697/open-video-sync/modules/sync/internal/storage"
@@ -34,8 +35,18 @@ func main() {
 		fmt.Printf("ovs %s (%s)\n", version, channel)
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "migrate" {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := migrate(ctx, os.Getenv); err != nil {
+			fmt.Fprintln(os.Stderr, "database migration failed:", err)
+			os.Exit(1)
+		}
+		fmt.Println("Database schema is current.")
+		return
+	}
 	if len(os.Args) > 1 && !(len(os.Args) == 2 && os.Args[1] == "healthcheck") {
-		fmt.Fprintln(os.Stderr, "usage: ovs [version|healthcheck]")
+		fmt.Fprintln(os.Stderr, "usage: ovs [version|healthcheck|migrate]")
 		os.Exit(2)
 	}
 	cfg, err := environmentConfig()
@@ -58,6 +69,14 @@ func main() {
 		logger.Error("process failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func migrate(ctx context.Context, getenv func(string) string) error {
+	directory := getenv("OVS_DATA_DIR")
+	if directory == "" {
+		directory = "/data"
+	}
+	return storage.Migrate(ctx, directory)
 }
 
 func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
@@ -104,11 +123,16 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (err error) {
 	if err := identities.Initialize(startup); err != nil {
 		return err
 	}
+	personalHistory, err := history.New(startup, store, time.Now, identities.Validate)
+	if err != nil {
+		return err
+	}
 	cleanupCtx, stopCleanup := context.WithCancel(ctx)
 	cleanupDone := make(chan struct{})
 	go func() { defer close(cleanupDone); identities.RunCleanup(cleanupCtx) }()
 	defer func() { stopCleanup(); <-cleanupDone }()
 	api := transport.NewAPI(cfg.origin.String(), identities)
+	api.WithHistory(personalHistory)
 	api.WithVersions(transport.Versions{
 		Sync: version, Web: webRelease.Version, Helper: helperVersion,
 		Image: webRelease.Image, Release: webRelease.Release,

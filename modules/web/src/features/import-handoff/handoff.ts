@@ -28,7 +28,7 @@ export interface ImportResult {
 }
 
 interface HandoffOptions {
-  // Return nothing unless this page currently owns a connected host socket.
+  // Return nothing unless this page owns a connected socket with video selection permission.
   room?: () => Omit<ImportTarget, 'tabId'> | undefined;
   // Resolve accepted only after the matching server command result. Retries keep requestId.
   execute?: (request: ImportRequest) => Promise<ImportResult>;

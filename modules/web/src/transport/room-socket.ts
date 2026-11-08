@@ -11,20 +11,22 @@ import {
   text,
   type Snapshot,
 } from './api';
-import { decodeMedia, type MediaDescriptor } from './contracts';
+import {
+  decodeMedia,
+  decodePlaybackCommand,
+  type MediaDescriptor,
+  type PlaybackCommand,
+} from './contracts';
 import { parseFrame } from './protocol-values';
 
 export interface Command {
-  v: 2;
+  v: 1;
   type: 'playback.command' | 'media.select';
   commandId: string;
   epoch: string;
   mediaGeneration: number;
   expectedRevision: number;
-  payload:
-    | { action: 'play' | 'pause' | 'replay' }
-    | { action: 'seek'; positionMs: number }
-    | { media: MediaDescriptor; autoPlay?: boolean };
+  payload: PlaybackCommand | { media: MediaDescriptor; autoPlay?: boolean };
 }
 // Why a room connection ended for good. Other closures reconnect with backoff.
 export type EndReason =
@@ -96,7 +98,7 @@ export class RoomSocket {
     this.pings.clear();
     this.sequence = 0;
     this.events.status(message('player.connecting'));
-    const url = new URL(`/ws/v2/rooms/${this.roomId}`, location.href);
+    const url = new URL(`/ws/v1/rooms/${this.roomId}`, location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -164,7 +166,7 @@ export class RoomSocket {
     this.events.ended(reason);
   }
   private receive(f: Record<string, unknown>): void {
-    if (f.v !== 2) {
+    if (f.v !== 1) {
       this.upgrade();
       return;
     }
@@ -178,7 +180,7 @@ export class RoomSocket {
         if (typeof p.reply !== 'boolean') throw new Error('Invalid heartbeat.');
         if (!p.reply)
           this.send({
-            v: 2,
+            v: 1,
             type: 'heartbeat',
             requestId: key,
             payload: { reply: true },
@@ -337,7 +339,7 @@ export class RoomSocket {
         at = Math.floor(performance.now());
       this.pings.set(key, at);
       this.send({
-        v: 2,
+        v: 1,
         type: 'clock.ping',
         requestId: key,
         payload: { clientSendMs: at },
@@ -363,9 +365,9 @@ export class RoomSocket {
             media: decodeMedia(payload.media),
             ...(payload.autoPlay === true ? { autoPlay: true } : {}),
           }
-        : payload;
+        : decodePlaybackCommand(payload);
     const command: Command = {
-      v: 2,
+      v: 1,
       type: 'media' in safePayload ? 'media.select' : 'playback.command',
       commandId: intent?.commandId ?? requestKey(),
       epoch: intent?.epoch ?? s.epoch,
@@ -389,7 +391,7 @@ export class RoomSocket {
   readiness(payload: unknown): void {
     if (this.connected && this.active && this.snapshot)
       this.send({
-        v: 2,
+        v: 1,
         type: 'member.readiness',
         epoch: this.snapshot.epoch,
         payload,

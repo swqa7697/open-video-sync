@@ -22,7 +22,7 @@ pnpm --dir modules/web run build
 
 The frontend build writes `dist/`. Root `versions.toml` supplies `versions.web`, included in the built HTML metadata and `dist/release.json`.
 The header settings menu groups appearance, language, and About. Appearance defaults to dark and changes only through a local choice.
-About reads `/api/v2/version` for the running service and its embedded frontend and helper versions, independent of the installed browser helper.
+About reads `/api/v1/version` for the running service and its embedded frontend and helper versions, independent of the installed browser helper.
 The development server proxies API, health, and WebSocket routes to the Go server. Start that server with `make dev`.
 Use `make dev-web` to build and serve the helper locally for `http://127.0.0.1:5173` or `http://localhost:5173`. Install from the development page and reload; each helper activates only on its exact origin.
 Production browser journeys remain under root `tests/e2e/` because they exercise all three modules.

@@ -26,35 +26,33 @@ test('instance helpers share a Bilibili launcher and import the current video', 
           .video { aspect-ratio:16/9; border-radius:4px; background:#18191c; display:grid; place-items:center; color:#aeb4bd; }
           .video-toolbar-left-main,.toolbar-left { display:flex; align-items:center; gap:20px; flex-wrap:wrap; min-height:56px; border-bottom:1px solid var(--line_regular); }
           .native-action { padding:4px 0; border:0; color:var(--text2); background:none; font:inherit; } .description { color:var(--text2); }
-        </style></head><body><header>bilibili</header><main><h1>Synthetic Bilibili video</h1><p class="meta">2026-11-03 · Public video preview</p><div class="video">Bilibili player</div>
+        </style></head><body><div id="app" data-server-rendered="true"><header>bilibili</header><main><h1>Synthetic Bilibili video</h1><p class="meta">2026-11-03 · Public video preview</p><div class="video">Bilibili player</div>
         <div id="video-actions"><div class="video-toolbar-left"><div class="video-toolbar-left-main"><button class="native-action">赞 64</button><button class="native-action">币 15</button><button class="native-action">藏 49</button><button class="native-action">分享 5</button></div></div></div>
-        <p class="description">Video details and episode information</p></main></body></html>`,
+        <p class="description">Video details and episode information</p></main></div></body></html>`,
     }),
   );
-  await page.goto('https://www.bilibili.com/video/BV1TESTaaaaa?p=2');
-  // Bilibili hydrates its action bar after userscripts start.
-  const actions = await page.locator('#video-actions').innerHTML();
-  await page
-    .locator('#video-actions')
-    .evaluate((node) => node.replaceChildren());
-  await page.evaluate(() => {
-    document.documentElement.dataset.launcherRequests = '0';
-    document.documentElement.dataset.launcherReplies = '0';
-    window.addEventListener('message', (event: MessageEvent<unknown>) => {
-      if (typeof event.data !== 'string') return;
-      const value: unknown = JSON.parse(event.data);
-      if (
-        value &&
-        typeof value === 'object' &&
-        'channel' in value &&
-        value.channel === 'ovs-bilibili-response'
-      )
-        document.documentElement.dataset.launcherReplies = '1';
+  await page.addInitScript(() => {
+    if (location.origin !== 'https://www.bilibili.com') return;
+    document.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.dataset.launcherRequests = '0';
+      document.documentElement.dataset.launcherReplies = '0';
+      window.addEventListener('message', (event: MessageEvent<unknown>) => {
+        if (typeof event.data !== 'string') return;
+        const value: unknown = JSON.parse(event.data);
+        if (
+          value &&
+          typeof value === 'object' &&
+          'channel' in value &&
+          value.channel === 'ovs-bilibili-response'
+        )
+          document.documentElement.dataset.launcherReplies = '1';
+      });
     });
   });
   for (const code of [script, script.replaceAll(origin, otherOrigin), script]) {
-    await page.addScriptTag({
+    await page.addInitScript({
       content: `(() => {
+        if (location.origin !== 'https://www.bilibili.com') return;
         const unsafeWindow = window;
         const GM_xmlhttpRequest = () => {
           document.documentElement.dataset.launcherRequests = '1';
@@ -64,9 +62,27 @@ test('instance helpers share a Bilibili launcher and import the current video', 
       })();`,
     });
   }
+  await page.goto('https://www.bilibili.com/video/BV1TESTaaaaa?p=2');
   const launcher = page.locator('#ovs-bilibili-launcher-v1');
   await expect(launcher).toHaveCount(1);
   await expect(launcher.locator('a').first()).not.toBeVisible();
+  // Editing the SSR subtree before Vue hydrates it causes a full rebuild and
+  // disrupts Bilibili's separately mounted header. Keep the entry outside it.
+  await expect(page.locator('body > #ovs-bilibili-launcher-v1')).toHaveCount(1);
+  await expect(page.getByRole('banner')).toHaveText('bilibili');
+  const actions = await page.locator('#video-actions').innerHTML();
+  // Hydration can finish without a child-list mutation.
+  await page.locator('#app').evaluate((node) => {
+    node.removeAttribute('data-server-rendered');
+  });
+  await expect(
+    page.locator('.video-toolbar-left-main > #ovs-bilibili-launcher-v1'),
+  ).toHaveCount(1);
+  // The platform can also replace its action bar after hydration.
+  await page
+    .locator('#video-actions')
+    .evaluate((node) => node.replaceChildren());
+  await expect(page.locator('body > #ovs-bilibili-launcher-v1')).toHaveCount(1);
   await page.locator('#video-actions').evaluate((node, html) => {
     node.innerHTML = html;
   }, actions);
@@ -199,5 +215,7 @@ test('instance helpers share a Bilibili launcher and import the current video', 
   await expect(siteMenu).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(siteMenu).not.toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('banner')).toHaveText('bilibili');
   expect(errors).toEqual([]);
 });

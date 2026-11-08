@@ -20,12 +20,19 @@ import {
 } from '../../player/bilibili/media';
 import { localFingerprint } from '../../player/fingerprint';
 import { decodeMedia, type MediaDescriptor } from '../../transport/contracts';
+import type { HistoryVideo } from '../../transport/history';
+import HistoryPanel from '../history/HistoryPanel.vue';
 
 const props = defineProps<{
   disabled?: boolean;
   roomId: string;
   bilibiliOnly?: boolean;
+  historyEnabled?: boolean;
+  inlineHistory?: boolean;
+  currentMedia?: MediaDescriptor | null | undefined;
 }>();
+const emit = defineEmits<{ history: []; current: [] }>();
+const historyOpen = ref(false);
 const source = ref<'bilibili' | 'local'>('bilibili');
 const url = ref(''),
   part = ref(1),
@@ -173,129 +180,165 @@ async function selectLocal(): Promise<void> {
   await nextTick();
   document.getElementById('create-local-video')?.focus();
 }
-defineExpose({ prepare, selectBilibili, selectLocal });
+function openHistory(): void {
+  if (props.inlineHistory) historyOpen.value = true;
+  else emit('history');
+}
+async function selectHistorical(video: HistoryVideo): Promise<void> {
+  historyOpen.value = false;
+  await selectBilibili(video);
+  await prepare();
+}
+defineExpose({ prepare, selectBilibili, selectLocal, historyOpen });
 </script>
 <template>
   <div class="media-picker">
-    <div
-      v-if="!bilibiliOnly"
-      class="source-tabs"
-      role="group"
-      :aria-label="t('media.source')"
-    >
-      <button
-        type="button"
-        :aria-pressed="source === 'bilibili'"
-        :disabled="disabled || working"
-        @click="switchSource('bilibili')"
+    <div v-if="!historyOpen" class="media-source-row">
+      <div
+        v-if="!bilibiliOnly"
+        class="source-tabs"
+        role="group"
+        :aria-label="t('media.source')"
       >
-        <Icon name="screen" />{{ t('media.bilibili') }}
-      </button>
-      <button
-        type="button"
-        :aria-pressed="source === 'local'"
-        :disabled="disabled || working"
-        @click="switchSource('local')"
-      >
-        <Icon name="file" />{{ t('common.localFile') }}
-      </button>
-    </div>
-    <template v-if="source === 'bilibili'">
-      <label for="bilibili-url">{{ t('media.url') }}</label>
-      <div class="input-action media-input">
-        <input
-          id="bilibili-url"
-          v-model="url"
-          :readonly="disabled || working"
-          maxlength="2048"
-          autocomplete="off"
-          :placeholder="t('media.urlPlaceholder')"
-          @input="invalidate"
-        /><button
+        <button
           type="button"
-          class="quiet"
-          :disabled="disabled || working || !url.trim()"
-          @click="prepare"
+          :aria-pressed="source === 'bilibili'"
+          :disabled="disabled || working"
+          @click="switchSource('bilibili')"
         >
-          <span class="stable-label">
-            <span
-              :data-inactive="working"
-              :aria-hidden="working || undefined"
-              >{{ t('media.preview') }}</span
-            >
-            <span
-              :data-inactive="!working"
-              :aria-hidden="!working || undefined"
-              >{{ t('media.checking') }}</span
-            >
-          </span>
+          <Icon name="screen" />{{ t('media.bilibili') }}
+        </button>
+        <button
+          type="button"
+          :aria-pressed="source === 'local'"
+          :disabled="disabled || working"
+          @click="switchSource('local')"
+        >
+          <Icon name="file" />{{ t('common.localFile') }}
         </button>
       </div>
-    </template>
-    <div v-else class="file-drop" @dragover.prevent @drop="drop">
-      <Icon name="file" :size="24" />
-      <FormFeedback
-        class="file-name"
-        :text="
-          translate(error) ||
-          (working
-            ? t('common.preparingVideo')
-            : translate(localSummary) || fileName || t('media.bringVideo'))
-        "
-        :tone="error ? 'error' : localSummary ? 'success' : 'hint'"
-        :announce="!!error || working || !!localSummary"
-      />
-      <span class="hint file-privacy">{{ t('media.fileHint') }}</span>
-      <label class="file-button" for="create-local-video"
-        ><span class="stable-label">
-          <span
-            :data-inactive="!!fileName"
-            :aria-hidden="!!fileName || undefined"
-            >{{ t('media.chooseFile') }}</span
-          >
-          <span
-            :data-inactive="!fileName"
-            :aria-hidden="!fileName || undefined"
-            >{{ t('common.chooseAnother') }}</span
-          >
-        </span></label
-      >
-      <input
-        id="create-local-video"
-        class="visually-hidden"
-        type="file"
-        accept="video/*,.mkv"
+      <button
+        v-if="historyEnabled"
+        type="button"
+        class="quiet history-trigger"
         :disabled="disabled || working"
-        @change="fileInput"
-      />
+        @click="openHistory"
+      >
+        <Icon name="history" :size="17" />{{ t('history.title') }}
+      </button>
     </div>
-    <div v-if="source === 'bilibili'" class="media-info">
-      <div v-if="parts > 1 || part > 1" class="part-row">
-        <label for="bilibili-part">{{ t('media.part') }}</label
-        ><input
-          id="bilibili-part"
-          v-model.number="part"
-          type="number"
-          autocomplete="off"
-          min="1"
-          :max="parts || 10000"
-          :readonly="disabled || working"
-          @input="invalidate"
-        /><span v-if="parts" class="hint">{{
-          t('media.partTotal', { count: parts })
-        }}</span>
+    <template v-if="historyOpen">
+      <button
+        type="button"
+        class="quiet history-back"
+        @click="historyOpen = false"
+      >
+        {{ t('history.back') }}
+      </button>
+      <HistoryPanel
+        :current="currentMedia?.kind === 'bilibili' ? currentMedia : undefined"
+        @select="selectHistorical"
+        @current="emit('current')"
+      />
+    </template>
+    <template v-else>
+      <template v-if="source === 'bilibili'">
+        <label for="bilibili-url">{{ t('media.url') }}</label>
+        <div class="input-action media-input">
+          <input
+            id="bilibili-url"
+            v-model="url"
+            :readonly="disabled || working"
+            maxlength="2048"
+            autocomplete="off"
+            :placeholder="t('media.urlPlaceholder')"
+            @input="invalidate"
+          /><button
+            type="button"
+            class="quiet"
+            :disabled="disabled || working || !url.trim()"
+            @click="prepare"
+          >
+            <span class="stable-label">
+              <span
+                :data-inactive="working"
+                :aria-hidden="working || undefined"
+                >{{ t('media.preview') }}</span
+              >
+              <span
+                :data-inactive="!working"
+                :aria-hidden="!working || undefined"
+                >{{ t('media.checking') }}</span
+              >
+            </span>
+          </button>
+        </div>
+      </template>
+      <div v-else class="file-drop" @dragover.prevent @drop="drop">
+        <Icon name="file" :size="24" />
+        <FormFeedback
+          class="file-name"
+          :text="
+            translate(error) ||
+            (working
+              ? t('common.preparingVideo')
+              : translate(localSummary) || fileName || t('media.bringVideo'))
+          "
+          :tone="error ? 'error' : localSummary ? 'success' : 'hint'"
+          :announce="!!error || working || !!localSummary"
+        />
+        <span class="hint file-privacy">{{ t('media.fileHint') }}</span>
+        <label class="file-button" for="create-local-video"
+          ><span class="stable-label">
+            <span
+              :data-inactive="!!fileName"
+              :aria-hidden="!!fileName || undefined"
+              >{{ t('media.chooseFile') }}</span
+            >
+            <span
+              :data-inactive="!fileName"
+              :aria-hidden="!fileName || undefined"
+              >{{ t('common.chooseAnother') }}</span
+            >
+          </span></label
+        >
+        <input
+          id="create-local-video"
+          class="visually-hidden"
+          type="file"
+          accept="video/*,.mkv"
+          :disabled="disabled || working"
+          @change="fileInput"
+        />
       </div>
-      <FormFeedback
-        reserve
-        class="media-preview"
-        :text="
-          translate(error) ||
-          (working
-            ? t('common.preparingVideo')
-            : summary || t('media.previewHint'))
-        "
-        :tone="error ? 'error' : working || !summary ? 'hint' : 'success'"
-      />
-    </div>
+      <div v-if="source === 'bilibili'" class="media-info">
+        <div v-if="parts > 1 || part > 1" class="part-row">
+          <label for="bilibili-part">{{ t('media.part') }}</label
+          ><input
+            id="bilibili-part"
+            v-model.number="part"
+            type="number"
+            autocomplete="off"
+            min="1"
+            :max="parts || 10000"
+            :readonly="disabled || working"
+            @input="invalidate"
+          /><span v-if="parts" class="hint">{{
+            t('media.partTotal', { count: parts })
+          }}</span>
+        </div>
+        <FormFeedback
+          reserve
+          class="media-preview"
+          :text="
+            translate(error) ||
+            (working
+              ? t('common.preparingVideo')
+              : summary || t('media.previewHint'))
+          "
+          :tone="error ? 'error' : working || !summary ? 'hint' : 'success'"
+        />
+      </div>
+    </template>
   </div>
 </template>

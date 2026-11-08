@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 
-import { translate } from '../i18n';
+import { message, translate } from '../i18n';
 import { FakeSocket, roomFixture } from '../test-support/room';
 import {
   RoomSocket,
+  type Command,
   type EndReason,
   type ProbeResult,
   type SocketEvents,
@@ -145,5 +146,81 @@ test('disposal aborts an in-flight refusal probe and ignores its answer', async 
   await vi.advanceTimersByTimeAsync(20000);
   expect(signals[0]?.aborted).toBe(true);
   expect(ended).toEqual([]);
+  socket.dispose();
+});
+
+test('an unsupported application frame requires reload without accepting room state or reconnecting', async () => {
+  const { socket, errors } = harness([]);
+  sessionStorage.setItem('ovs-protocol-reload', '1');
+  try {
+    socket.start();
+    const connection = FakeSocket.instances[0]!;
+    connection.onmessage?.({
+      data: JSON.stringify({
+        v: 2,
+        type: 'session.welcome',
+        epoch: roomFixture.epoch,
+        eventSeq: 1,
+        payload: {
+          connectionId: 'e'.repeat(32),
+          snapshot: roomFixture,
+        },
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(socket.snapshot).toBeUndefined();
+    expect(socket.connected).toBe(false);
+    expect(errors).toEqual([translate(message('socket.upgrade'))]);
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(connection.readyState).toBe(3);
+  } finally {
+    socket.dispose();
+    sessionStorage.removeItem('ovs-protocol-reload');
+  }
+});
+
+test('rate commands reject malformed input and retry the original validated rate', () => {
+  const { socket, errors } = harness([]);
+  socket.start();
+  const connection = FakeSocket.instances[0]!;
+  expect(connection.url.pathname).toBe(`/ws/v1/rooms/${roomFixture.roomId}`);
+  connection.welcome();
+  connection.frame('room.snapshot', {
+    ...roomFixture,
+    mediaGeneration: 1,
+    media: {
+      kind: 'local',
+      fingerprintVersion: 1,
+      digest: 'f'.repeat(64),
+      sizeBytes: 9,
+      durationMs: 10000,
+    },
+    playback: { ...roomFixture.playback, phase: 'paused', rate: 1.5 },
+  });
+  expect(socket.snapshot?.playback.rate).toBe(1.5);
+  expect(socket.connected).toBe(true);
+  expect(errors).toEqual([]);
+  const initialFrames = connection.sent.length;
+  for (const rate of [0, 0.6, 2.25, NaN, Infinity])
+    expect(() => socket.command({ action: 'rate', rate })).toThrow();
+  for (const payload of [
+    { action: 'rate' },
+    { action: 'rate', rate: '1.5' },
+    { action: 'rate', rate: 1.5, positionMs: 0 },
+    { action: 'play', rate: 1.5 },
+  ])
+    expect(() => socket.command(payload as Command['payload'])).toThrow();
+  expect(connection.sent).toHaveLength(initialFrames);
+  const payload = { action: 'rate' as const, rate: 1.5 };
+  expect(socket.command(payload)).toBe(true);
+  const original = connection.sent.at(-1)!;
+  expect(JSON.parse(original)).toMatchObject({
+    v: 1,
+    type: 'playback.command',
+    payload: { action: 'rate', rate: 1.5 },
+  });
+  payload.rate = 0.5;
+  socket.resolveUncertain();
+  expect(connection.sent.at(-1)).toBe(original);
   socket.dispose();
 });

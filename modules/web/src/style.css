@@ -655,6 +655,143 @@ main {
   width: 17px;
   height: 17px;
 }
+.media-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.media-source-row:empty {
+  display: none;
+}
+.media-source-row .source-tabs {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.history-trigger {
+  flex: none;
+  min-height: 40px;
+  padding-inline: 8px;
+  gap: 5px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.history-back {
+  margin-bottom: 10px;
+}
+.history-dialog {
+  width: min(560px, calc(100% - 32px));
+}
+.watch-history {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.history-recording {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.history-recording input {
+  flex: none;
+}
+.history-clear {
+  flex: none;
+  padding-inline: 7px;
+  font-size: 0.78rem;
+}
+.history-results {
+  min-height: 110px;
+  height: min(38dvh, 350px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-block: 1px solid var(--subtle-border);
+}
+.change-media-dialog .history-results {
+  height: min(25dvh, 200px);
+}
+.history-results > p {
+  padding: 18px 4px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px 36px;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--subtle-border);
+}
+.history-list li:last-child {
+  border-bottom: none;
+}
+.history-video {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 3px;
+  padding: 12px 5px;
+  text-align: left;
+}
+.history-video:disabled {
+  opacity: 0.8;
+}
+.history-video[aria-current='true'] .history-video-title {
+  color: var(--accent);
+}
+.history-video-title,
+.history-episode,
+.history-time {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-video-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.history-episode,
+.history-time {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.history-original {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.history-footnote {
+  margin: 0;
+  line-height: 1.5;
+}
+.history-confirm {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+}
+.history-confirm .actions {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
 .input-action {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
@@ -927,9 +1064,6 @@ legend {
 }
 fieldset > label {
   margin-bottom: 20px;
-}
-fieldset select {
-  margin-top: 8px;
 }
 .checkbox {
   display: flex;
@@ -1448,8 +1582,9 @@ fieldset select {
   left: 0;
   right: 0;
   z-index: 4;
-  padding: 32px 18px 10px;
-  background: linear-gradient(transparent, #000b);
+  /* Match half the seek target below the row to balance progress-to-edge spacing. */
+  padding: 32px 18px 12px;
+  background: linear-gradient(transparent, #060a1080);
   color: var(--text);
   opacity: 1;
 }
@@ -1467,23 +1602,34 @@ fieldset select {
 .control-end {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
+}
+.control-end {
+  gap: 4px;
+}
+.display-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid #ffffff24;
 }
 .player-controls button {
   background: transparent;
   color: var(--text);
   min-height: 40px;
   height: 40px;
-  padding: 0.5rem;
-  border-radius: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  line-height: 1;
 }
 .player-controls button.icon-button {
-  width: 38px;
+  width: 40px;
+  padding: 0;
 }
-.control-start > .icon-button > svg,
-.control-end > .icon-button > svg,
-.danmaku-toggle > svg {
+.control-bar .icon-button > svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -1491,20 +1637,210 @@ fieldset select {
 .player-controls button:disabled {
   opacity: 0.4;
 }
+.player-choice,
+.danmaku-control {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.danmaku-control {
+  gap: 2px;
+  margin-right: 4px;
+}
+.player-controls .player-choice-trigger {
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.player-choice-trigger > svg {
+  opacity: 0.65;
+}
+.player-controls
+  .control-end
+  :is(
+    .player-choice-trigger,
+    .danmaku-toggle,
+    .danmaku-settings-trigger,
+    .display-controls > :where(.icon-button)
+  ) {
+  min-width: 32px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+}
+.player-controls
+  .control-end
+  :is(.danmaku-control > .icon-button, .display-controls > .icon-button) {
+  width: 32px;
+  padding: 0;
+}
+.player-controls button[aria-expanded='true'] {
+  background: #ffffff1a;
+}
+.player-controls button:active:not(:disabled):not([aria-disabled='true']),
+.player-menu button:active:not([aria-disabled='true']) {
+  background: #ffffff26;
+  filter: none;
+}
+:root[data-input='keyboard'] .player-controls button:focus-visible,
+:root[data-input='keyboard'] .player-menu :is(button, select):focus-visible {
+  background: #ffffff24;
+  filter: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .video-stage
+    .player-controls
+    button:hover:not(:disabled):not([aria-disabled='true']) {
+    background: #ffffff18;
+    filter: none;
+  }
+  .video-stage
+    .player-controls
+    button:active:not(:disabled):not([aria-disabled='true']) {
+    background: #ffffff26;
+  }
+}
+.control-start {
+  gap: 10px;
+}
+.control-start .icon-button > svg {
+  filter: drop-shadow(0 1px 2px #0008);
+}
+.player-controls .control-start .icon-button {
+  width: 28px;
+  min-height: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+}
+.video-stage .player-controls .control-start .playback-toggle {
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+.control-start .playback-toggle > svg {
+  width: 18px;
+  height: 18px;
+}
+:root[data-input='keyboard']
+  .player-controls
+  .control-start
+  .playback-toggle:focus-visible {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .video-stage
+    .player-controls
+    .control-start
+    .playback-toggle:hover:not(:disabled):not([aria-disabled='true']) {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+  .video-stage
+    .player-controls
+    .control-start
+    .playback-toggle:active:not(:disabled):not([aria-disabled='true']) {
+    background: color-mix(in srgb, var(--primary) 32%, transparent);
+  }
+}
+.volume-control {
+  --volume-fill: var(--primary);
+  --volume-track: #ffffff38;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+}
+.volume-control.is-muted {
+  --volume-fill: color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.volume-control.is-muted > button {
+  color: var(--muted);
+}
 .volume-slider {
-  width: 65px;
-  height: 4px;
-  margin: 0 10px 0 2px;
+  width: 64px;
+  height: 26px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--volume-fill);
+  border: 0;
+  border-radius: 0;
+}
+.volume-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    currentColor 0 var(--volume-level),
+    var(--volume-track) var(--volume-level) 100%
+  );
+}
+.volume-slider::-moz-range-track {
+  height: 3px;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    currentColor 0 var(--volume-level),
+    var(--volume-track) var(--volume-level) 100%
+  );
+}
+.volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+}
+.volume-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+}
+.volume-slider::-moz-range-progress {
+  background: transparent;
+}
+:root[data-input='keyboard'] .volume-slider:focus-visible {
+  --volume-fill: color-mix(in srgb, var(--primary) 82%, white);
+  --volume-track: #ffffff60;
+  filter: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .volume-slider:hover {
+    --volume-fill: color-mix(in srgb, var(--primary) 82%, white);
+    --volume-track: #ffffff60;
+  }
 }
 .player-time {
+  display: inline-grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
+  line-height: 1;
   white-space: nowrap;
-  margin-left: 8px;
+  text-shadow: 0 1px 2px #0008;
 }
-.player-time span {
+.player-time-current {
+  font-weight: 500;
+  text-align: right;
+}
+.player-time-duration,
+.player-time-separator {
   color: var(--muted);
-  margin-left: 5px;
+}
+.player-time-separator {
+  opacity: 0.65;
 }
 .seek-track {
   position: relative;
@@ -1589,10 +1925,6 @@ fieldset select {
   display: block;
   padding: 4px 8px;
 }
-.quality-trigger {
-  font-size: 0.65rem;
-  gap: 3px !important;
-}
 .waiting-overlay {
   position: absolute;
   z-index: 3;
@@ -1611,63 +1943,103 @@ fieldset select {
 }
 .player-menu {
   position: absolute;
-  right: 18px;
-  bottom: 88px;
   z-index: 5;
-  width: min(285px, calc(100% - 36px));
-  max-height: calc(100% - 110px);
   overflow: auto;
-  border: 1px solid var(--control-border);
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 15px;
-  box-shadow: 0 10px 30px #0006;
+  overscroll-behavior: contain;
+  border: 1px solid #ffffff26;
+  background: #151a228c;
+  backdrop-filter: blur(18px) saturate(130%);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow:
+    0 12px 32px #0005,
+    inset 0 1px 0 #ffffff08;
+  color: var(--text);
   font-size: 0.8rem;
+  line-height: 1.4;
+  scrollbar-width: thin;
 }
 .player-menu .menu-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.player-menu .menu-heading strong {
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 .player-menu .menu-heading button {
-  width: 30px;
-  min-height: 30px;
-  padding: 3px;
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
 }
 .player-menu label {
-  margin-top: 12px;
+  margin: 12px 0 4px;
 }
 .player-menu input[type='range'] {
   display: block;
   width: 100%;
-  height: 20px;
+  height: 24px;
   margin: 0;
+  accent-color: var(--primary);
 }
-.quality-menu {
-  width: min(190px, calc(100% - 36px));
+.player-controls .player-choice-menu {
   padding: 6px;
-  right: 100px;
 }
-.quality-menu button {
+.player-menu .menu-title {
+  padding: 8px 10px 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.player-menu .menu-note {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.player-choice-menu button {
   width: 100%;
+  min-height: 36px;
+  height: 36px;
   justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
-.quality-menu button[aria-checked='true'] {
+.player-choice-menu button[aria-checked='true'] {
+  color: #f4f7fc;
+  background: #ffffff14;
+  font-weight: 600;
+}
+.player-choice-menu button[aria-checked='true'] > svg {
   color: var(--primary);
-  background: var(--notice);
 }
-.danmaku-control {
-  display: flex;
-  align-items: center;
+.episode-menu .player-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
-.danmaku-menu {
-  right: auto;
+.player-controls .episode-menu button {
+  height: auto;
+  padding-block: 9px;
+  text-align: left;
+}
+.episode-menu button > svg {
+  flex-shrink: 0;
 }
 .danmaku-menu label {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  font-size: 0.75rem;
 }
 .danmaku-menu output {
   color: var(--muted);
@@ -1675,15 +2047,38 @@ fieldset select {
 }
 .danmaku-menu select {
   margin-top: 6px;
-  min-height: 36px;
-  padding: 0.4rem 0.6rem;
-  font-size: inherit;
+  min-height: 34px;
+  padding: 0.35rem 0.6rem;
+  border-color: #ffffff26;
+  background: #ffffff0c;
+  font-size: 0.75rem;
+}
+.danmaku-menu option {
+  background: var(--surface);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .player-menu {
+    background: #1a1f26;
+    border-color: var(--control-border);
+    backdrop-filter: none;
+  }
 }
 .danmaku-toggle[aria-pressed='false'] {
   color: var(--muted);
 }
 .danmaku-toggle[aria-pressed='true'] {
   color: var(--primary);
+}
+@media (pointer: coarse) {
+  .player-controls .control-end :is(.icon-button, .player-choice-trigger) {
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
+  .player-choice-menu button {
+    min-height: 44px;
+    height: 44px;
+  }
 }
 .video-information {
   display: flex;
@@ -1773,7 +2168,7 @@ fieldset select {
 }
 .video-stage:fullscreen .player-controls,
 .video-stage.window-fullscreen .player-controls {
-  padding-bottom: max(18px, env(safe-area-inset-bottom));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 .modal .members-heading {
   padding: 0 0 12px;
@@ -1837,10 +2232,6 @@ fieldset select {
   }
   .roster .remove-member {
     font-size: 0.6rem;
-  }
-  .volume-slider {
-    width: 45px;
-    margin-right: 5px;
   }
   .video-information {
     padding: 14px 16px 10px;
@@ -2072,55 +2463,52 @@ fieldset select {
 /* Controls adapt to the fitted video surface, including portrait sources on desktop. */
 @container player-surface (max-width: 760px) {
   .player-controls {
-    padding: 25px 8px 8px;
+    padding: 25px 8px 12px;
   }
   .danmaku-overlay {
     bottom: 144px;
-  }
-  .player-controls button.icon-button {
-    width: 44px;
-    min-height: 44px;
   }
   .control-bar {
     flex-wrap: wrap;
   }
   .control-end {
     margin-left: auto;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .danmaku-control {
+    gap: 0;
+    margin-right: 0;
   }
   .control-start,
   .control-end {
     gap: 0;
   }
-  .control-start > .icon-button > svg,
-  .control-end > .icon-button > svg,
-  .danmaku-toggle > svg {
+  .control-bar .icon-button > svg {
     width: 18px;
     height: 18px;
   }
+  .control-start {
+    gap: 6px;
+  }
   .volume-slider {
-    width: 45px;
-    height: 24px;
-    margin: 0 6px;
+    width: 44px;
   }
-  .player-time {
-    font-size: 0.59rem;
-    margin-left: 3px;
+  .player-controls .control-end .player-choice-trigger {
+    padding-inline: 6px;
+    font-size: 0.75rem;
   }
-  .player-time span {
-    margin-left: 3px;
+  .control-end .player-choice-trigger > svg {
+    display: none;
   }
-  .quality-trigger {
-    display: inline-flex;
-    min-height: 44px;
-    font-size: 0.7rem;
+  .display-controls {
+    gap: 0;
+    margin-left: 4px;
+    padding-left: 4px;
   }
   .video-stage:has(.quality-trigger) .player-state {
     padding-bottom: 132px;
-  }
-  .player-menu {
-    bottom: 78px;
-    right: 10px;
-    max-height: calc(100% - 90px);
   }
 }
 @media (max-width: 360px) {
@@ -2250,7 +2638,7 @@ fieldset select {
     text-overflow: ellipsis;
   }
   .player-controls {
-    padding: 0 8px 4px;
+    padding: 0 8px 12px;
   }
   .home {
     padding-block: 8px;
@@ -2282,10 +2670,6 @@ fieldset select {
     display: none;
   }
 }
-#playback-controls {
-  margin: 0 0 20px;
-}
-
 .played-track {
   position: absolute;
   height: 3px;
@@ -2451,13 +2835,22 @@ fieldset select {
 }
 @media (prefers-reduced-motion: no-preference) {
   :root[data-input='pointer']
-    :is(.create-submit, .room-actions button, .modal button, .appearance-tile) {
+    :is(
+      .create-submit,
+      .room-actions button,
+      .modal button,
+      .appearance-tile,
+      .control-bar button
+    ) {
     transition: transform var(--motion-press) var(--ease-out);
   }
   :root[data-input='pointer']
     :is(.create-submit, .room-actions button, .modal button):active:not(
       :disabled
     ),
+  :root[data-input='pointer']
+    .control-bar
+    button:active:not(:disabled):not([aria-disabled='true']),
   :root[data-input='pointer'] .appearance-choice:active .appearance-tile {
     transform: scale(0.98);
   }

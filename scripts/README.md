@@ -31,7 +31,7 @@ go -C scripts test -race ./...
 
 Smoke clients define the response fields they inspect under `internal/smoke/`, following [the public wire contract](../specs/WIRE.md).
 Smoke clients use public HTTP and WebSocket endpoints and do not import server internal packages.
-The image check also reads an isolated database copy to verify the persisted schema version.
+The image check also reads an isolated database copy to verify the persisted schema version and migration ledger. It verifies exclusive application/migration ownership and runs the deployment-only migration command between container replacements.
 See [deployment validation](../deploy/README.md#remote-deployment-validation) for the isolated SSH test requirements.
 
 The notice generator accepts `-sync` to select the server module and `-frontend` to read pnpm license metadata.

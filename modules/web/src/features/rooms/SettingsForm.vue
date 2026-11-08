@@ -8,11 +8,20 @@ defineProps<{ disabled: boolean }>();
 <template>
   <fieldset :disabled="disabled">
     <legend>{{ t('settings.preferences') }}</legend>
-    <label for="playback-controls">{{ t('settings.controls') }}</label>
-    <select id="playback-controls" v-model="settings.controllers">
-      <option value="host">{{ t('settings.hostOnly') }}</option>
-      <option value="everyone">{{ t('settings.everyone') }}</option>
-    </select>
+    <label class="checkbox"
+      ><input
+        id="playback-controls"
+        v-model="settings.everyoneCanControl"
+        type="checkbox"
+      />{{ t('settings.controls') }}</label
+    >
+    <label class="checkbox"
+      ><input
+        id="media-controls"
+        v-model="settings.everyoneCanSelectMedia"
+        type="checkbox"
+      />{{ t('settings.mediaControls') }}</label
+    >
     <label class="checkbox"
       ><input v-model="settings.waitForAll" type="checkbox" />{{
         t('settings.wait')

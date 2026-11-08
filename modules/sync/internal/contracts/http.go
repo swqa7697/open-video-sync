@@ -47,7 +47,7 @@ func CanonicalDigest(value []any) string {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
 	e.SetEscapeHTML(false)
-	_ = e.Encode(value) // Only validated strings, integers, booleans, and arrays enter here.
+	_ = e.Encode(value) // Only validated strings, finite numbers, booleans, and arrays enter here.
 	raw := bytes.TrimSuffix(b.Bytes(), []byte{'\n'})
 	// encoding/json escapes U+2028/U+2029 even with HTML escaping disabled.
 	// Decode only those actual escapes, preserving literal backslash-u text.
@@ -72,14 +72,14 @@ func CanonicalDigest(value []any) string {
 	return Hash(canonical)
 }
 
-// SettingsArray defines the version-2 digest order.
+// SettingsArray defines the version-1 digest order.
 func SettingsArray(s RoomSettings) []any {
-	return []any{s.Controllers, s.WaitForAll}
+	return []any{s.EveryoneCanControl, s.EveryoneCanSelectMedia, s.WaitForAll}
 }
 
 // DefaultSettings constructs the initial host preferences.
 func DefaultSettings() RoomSettings {
-	return RoomSettings{"host", true}
+	return RoomSettings{EveryoneCanControl: false, EveryoneCanSelectMedia: false, WaitForAll: true}
 }
 
 // NormalizeCode applies only the specified ASCII Crockford aliases/separators.

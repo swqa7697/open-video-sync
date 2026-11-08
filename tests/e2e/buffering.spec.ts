@@ -32,7 +32,7 @@ test('a playing MediaSource seek pauses at the target and stays paused when data
     { name: 'streamed.webm', mimeType: 'video/webm', buffer: file },
     'Streamed seek',
   );
-  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const roomPath = `/api/v1${new URL(page.url()).pathname}`;
   const snapshot = async () => {
     const response = await page.request.get(roomPath);
     expect(response.ok()).toBe(true);

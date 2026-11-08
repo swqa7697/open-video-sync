@@ -1,13 +1,21 @@
-// Version-2 value boundaries. These do not authorize actions or implement routes.
+// Version-1 value boundaries. These do not authorize actions or implement routes.
 // Server wire rules and response/envelope shapes: specs/WIRE.md.
 export interface ProfilePatch {
   displayName: string;
 }
 
 export interface RoomSettings {
-  controllers: 'host' | 'everyone';
+  everyoneCanControl: boolean;
+  everyoneCanSelectMedia: boolean;
   waitForAll: boolean;
 }
+
+export const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+
+export type PlaybackCommand =
+  | { action: 'play' | 'pause' | 'replay' }
+  | { action: 'seek'; positionMs: number }
+  | { action: 'rate'; rate: number };
 
 export type MediaDescriptor =
   | {
@@ -89,6 +97,28 @@ function choice<T extends string>(value: unknown, options: readonly T[]): T {
   return invalid();
 }
 
+export function decodePlaybackRate(value: unknown): number {
+  if (!playbackRates.some((rate) => rate === value)) return invalid();
+  return value as number;
+}
+
+export function decodePlaybackCommand(value: unknown): PlaybackCommand {
+  const input = object(value);
+  if (input.action === 'rate') {
+    shape(input, ['action', 'rate']);
+    return { action: 'rate', rate: decodePlaybackRate(input.rate) };
+  }
+  if (input.action === 'seek') {
+    shape(input, ['action', 'positionMs']);
+    return {
+      action: 'seek',
+      positionMs: integer(input.positionMs, 0, maxDurationMs),
+    };
+  }
+  shape(input, ['action']);
+  return { action: choice(input.action, ['play', 'pause', 'replay']) };
+}
+
 export function decodeProfilePatch(value: unknown): ProfilePatch {
   const input = object(value);
   shape(input, ['displayName']);
@@ -97,10 +127,16 @@ export function decodeProfilePatch(value: unknown): ProfilePatch {
 
 export function decodeRoomSettings(value: unknown): RoomSettings {
   const input = object(value);
-  shape(input, ['controllers', 'waitForAll']);
-  if (typeof input.waitForAll !== 'boolean') return invalid();
+  shape(input, ['everyoneCanControl', 'everyoneCanSelectMedia', 'waitForAll']);
+  if (
+    typeof input.everyoneCanControl !== 'boolean' ||
+    typeof input.everyoneCanSelectMedia !== 'boolean' ||
+    typeof input.waitForAll !== 'boolean'
+  )
+    return invalid();
   const settings: RoomSettings = {
-    controllers: choice(input.controllers, ['host', 'everyone']),
+    everyoneCanControl: input.everyoneCanControl,
+    everyoneCanSelectMedia: input.everyoneCanSelectMedia,
     waitForAll: input.waitForAll,
   };
   return settings;

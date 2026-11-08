@@ -110,7 +110,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	defer server.Close()
 	sockets := ws.NewHandler(server.URL, identities, service)
 	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), sockets)
-	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v2/rooms/" + snap.RoomID
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v1/rooms/" + snap.RoomID
 	dial := func(token, origin string) (*websocket.Conn, *http.Response, error) {
 		t.Helper()
 		return websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"ovs_session=" + token}}})
@@ -141,7 +141,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	}
 	hp, gp := connect(hostToken), connect(guestToken)
 	makeCommand := func(typ string, payload any) map[string]any {
-		return map[string]any{"v": 2, "type": typ, "commandId": testKey(), "epoch": snap.Epoch, "mediaGeneration": snap.MediaGeneration, "expectedRevision": snap.Revision, "payload": payload}
+		return map[string]any{"v": 1, "type": typ, "commandId": testKey(), "epoch": snap.Epoch, "mediaGeneration": snap.MediaGeneration, "expectedRevision": snap.Revision, "payload": payload}
 	}
 	media := contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 100, DurationMs: 60000}
 	selected := makeCommand("media.select", map[string]any{"media": media})
@@ -181,7 +181,7 @@ func TestAuthenticatedTimelineNetworkRetriesTakeoverAndRestart(t *testing.T) {
 	httpStatus := 0
 	go func() {
 		defer wg.Done()
-		req, _ := http.NewRequest("PATCH", server.URL+"/api/v2/rooms/"+snap.RoomID+"/settings", strings.NewReader(string(body)))
+		req, _ := http.NewRequest("PATCH", server.URL+"/api/v1/rooms/"+snap.RoomID+"/settings", strings.NewReader(string(body)))
 		req.Header.Set("Origin", server.URL)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-OVS-CSRF", host.CSRF)
@@ -266,7 +266,7 @@ func TestHeartbeatsArriveWellInsideTheClientLivenessWindow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	defer server.Close()
 	handler = transport.NewHandler(strings.TrimPrefix(server.URL, "http://"), store.Ready, http.NotFoundHandler(), transport.NewAPI(server.URL, identities).WithRooms(service), ws.NewHandler(server.URL, identities, service))
-	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v2/rooms/" + created.Snapshot.RoomID
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/v1/rooms/" + created.Snapshot.RoomID
 	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {server.URL}, "Cookie": {"ovs_session=" + token}}})
 	if err != nil {
 		t.Fatal(err)

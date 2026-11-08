@@ -93,13 +93,14 @@ type RosterMember struct {
 
 // Playback anchors the authoritative timeline in this process clock domain.
 type Playback struct {
-	Phase          string `json:"phase"`
-	PositionMs     int64  `json:"positionMs"`
-	AnchorServerMs int64  `json:"anchorServerMs"`
-	DesiredPlaying bool   `json:"desiredPlaying"`
+	Phase          string  `json:"phase"`
+	Rate           float64 `json:"rate"`
+	PositionMs     int64   `json:"positionMs"`
+	AnchorServerMs int64   `json:"anchorServerMs"`
+	DesiredPlaying bool    `json:"desiredPlaying"`
 }
 
-// Snapshot is a credential-free, caller-specific v2 room snapshot.
+// Snapshot is a credential-free, caller-specific v1 room snapshot.
 type Snapshot struct {
 	RoomID          string                     `json:"roomId"`
 	Title           string                     `json:"title"`
@@ -158,7 +159,7 @@ func authorize(r Room, p identity.Session, host bool) error {
 	return nil
 }
 func snapshot(r Room, epoch string, now int64, identityID string) Snapshot {
-	s := Snapshot{RoomID: r.ID, Title: r.Title, Epoch: epoch, Revision: r.Revision, Settings: r.Settings, Playback: Playback{Phase: "empty"}, Members: make([]RosterMember, 0, len(r.Members)), ServerNowMs: now}
+	s := Snapshot{RoomID: r.ID, Title: r.Title, Epoch: epoch, Revision: r.Revision, Settings: r.Settings, Playback: Playback{Phase: "empty", Rate: 1}, Members: make([]RosterMember, 0, len(r.Members)), ServerNowMs: now}
 	for _, m := range r.Members {
 		if m.IdentityID == identityID {
 			s.SelfMemberID = m.ID

@@ -6,6 +6,26 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-08]
+
+### Added
+
+- Keep the latest 100 Bilibili videos watched by each anonymous identity, including the exact episode or part. Search and reuse history from home selection, video replacement, or Quick actions, with explicit confirmation and room permissions. Delete entries, clear history, or pause recording. Exclude local videos, room details, and playback progress.
+- Apply pending database schema changes automatically during deployment using a migration ledger. Stop OVS before migrating with the candidate image, preserve existing data, and start the replacement only after success. New databases use the latest schema directly; ordinary startup and restart do not migrate.
+- Add shared playback speed from 0.5× to 2× in the player. Apply room control permissions, synchronize all participants, and preserve playback position and play/pause state when changing speed. Reset to 1× when selecting another video or recreating the room runtime.
+- Add an independent room permission for changing videos and episodes, defaulting to the host. Hosts can allow everyone to replace videos through the player, Quick actions, or imports and switch episodes for the room. Members without permission can browse the sidebar episode list but cannot select an episode, and see no episode button in the player.
+
+### Changed
+
+- Use three checkboxes for room preferences: allow everyone to control playback, allow everyone to change videos and episodes, and wait for everyone. Keep the two permissions off and waiting on by default.
+- Align player controls with compact buttons and clearer hover, press, and keyboard feedback. Give playback a distinct circular button, use a slim volume bar without a thumb, and improve time readability. Match playback controls, volume, and danmaku sliders to the selected accent. Use matching translucent danmaku, quality, playback-speed, and episode menus anchored above the control bar. Separate the click-operated danmaku visibility and settings buttons, identify settings with a chat-and-gear icon, and remove hover and long-press activation. Show the player episode menu only for multiple episodes when video selection is permitted, with current-episode marking. Center controls between the progress bar and player bottom, including fullscreen. Keep mouse controls compact on narrow players and preserve larger touch targets. Match the visible width and height of the four right-side icons including the settings gear.
+
+### Fixed
+
+- Restore the application protocol to `v1` across HTTP routes, WebSocket messages, and shared contract fixtures. Update the frontend and backend together; reload open pages after updating.
+- Clarify Simplified Chinese episode names, statistics information, and notification positions. Distinguish menu names from shortcut actions, and correct playback-wait and file-matching hints.
+- Preserve Bilibili's top navigation when the helper starts before the page finishes initializing. Requires the updated helper.
+
 ## [2026-11-05]
 
 ### Fixed

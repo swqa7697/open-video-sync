@@ -17,6 +17,7 @@ export const roomFixture = {
     phase: 'empty',
     positionMs: 0,
     anchorServerMs: 0,
+    rate: 1,
     desiredPlaying: false,
   },
   members: [
@@ -53,7 +54,7 @@ export class FakeSocket {
   frame(type: string, payload: unknown, epoch = roomFixture.epoch): void {
     this.onmessage?.({
       data: JSON.stringify({
-        v: 2,
+        v: 1,
         type,
         epoch,
         eventSeq: ++this.sequence,

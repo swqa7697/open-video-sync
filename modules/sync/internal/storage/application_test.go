@@ -41,7 +41,8 @@ func TestApplicationRollbackAndSecretExclusion(t *testing.T) {
 	failure := contracts.Failure("invalid_input")
 	err = store.Transact(ctx, func(tx rooms.Tx) error {
 		settings := contracts.DefaultSettings()
-		settings.Controllers = "everyone"
+		settings.EveryoneCanControl = true
+		settings.EveryoneCanSelectMedia = true
 		if err := tx.UpdateSettings(created.Snapshot.RoomID, settings); err != nil {
 			return err
 		}
@@ -51,11 +52,11 @@ func TestApplicationRollbackAndSecretExclusion(t *testing.T) {
 		t.Fatal("rollback failure", err)
 	}
 	fresh, err := service.Snapshot(ctx, host, created.Snapshot.RoomID)
-	if err != nil || fresh.Revision != 1 || fresh.Settings.Controllers != "host" {
+	if err != nil || fresh.Revision != 1 || fresh.Settings.EveryoneCanControl || fresh.Settings.EveryoneCanSelectMedia {
 		t.Fatal("partial mutation survived rollback", err)
 	}
 	records, err := store.LoadRooms(ctx)
-	if err != nil || len(records) != 1 || records[0].Settings.Controllers != "host" {
+	if err != nil || len(records) != 1 || records[0].Settings.EveryoneCanControl || records[0].Settings.EveryoneCanSelectMedia {
 		t.Fatal("partial durable change survived rollback", err)
 	}
 
@@ -78,6 +79,75 @@ func TestApplicationRollbackAndSecretExclusion(t *testing.T) {
 		}
 	}
 }
+
+// The persisted settings format can advance without changing SQLite tables or
+// weakening the complete public settings contract.
+func TestStoredRoomSettingsVersions(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	identities := &identity.Service{Repository: store, Now: time.Now, Random: rand.Reader}
+	host, _, _, err := identities.Bootstrap(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := rooms.NewService(store, time.Now, rand.Reader, rooms.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(ctx, host, recoveryKey(t), "Settings compatibility", contracts.DefaultSettings())
+	service.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, raw string
+		want      contracts.RoomSettings
+		valid     bool
+	}{
+		{"v2 shared playback restricted media", `{"v":2,"value":{"controllers":"everyone","waitForAll":false}}`, contracts.RoomSettings{EveryoneCanControl: true}, true},
+		{"v2 host defaults", `{"v":2,"value":{"controllers":"host","waitForAll":true}}`, contracts.DefaultSettings(), true},
+		{"v3 independent media permission", `{"v":3,"value":{"controllers":"host","mediaControllers":"everyone","waitForAll":true}}`, contracts.RoomSettings{EveryoneCanSelectMedia: true, WaitForAll: true}, true},
+		{"v3 independent playback permission", `{"v":3,"value":{"controllers":"everyone","mediaControllers":"host","waitForAll":false}}`, contracts.RoomSettings{EveryoneCanControl: true}, true},
+		{"v4 shared permissions", `{"v":4,"value":{"everyoneCanControl":true,"everyoneCanSelectMedia":true,"waitForAll":false}}`, contracts.RoomSettings{EveryoneCanControl: true, EveryoneCanSelectMedia: true}, true},
+		{"current missing permission", `{"v":4,"value":{"everyoneCanControl":false,"waitForAll":true}}`, contracts.RoomSettings{}, false},
+		{"legacy missing permission", `{"v":3,"value":{"controllers":"host","waitForAll":true}}`, contracts.RoomSettings{}, false},
+		{"legacy extra permission", `{"v":2,"value":{"controllers":"host","mediaControllers":"everyone","waitForAll":true}}`, contracts.RoomSettings{}, false},
+		{"unknown version", `{"v":5,"value":{"everyoneCanControl":false,"everyoneCanSelectMedia":false,"waitForAll":true}}`, contracts.RoomSettings{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := store.db.ExecContext(ctx, `UPDATE rooms SET settings=? WHERE id=?`, tc.raw, created.Snapshot.RoomID); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			store, err = Open(ctx, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records, err := store.LoadRooms(ctx)
+			if !tc.valid {
+				if err == nil {
+					t.Fatal("invalid stored settings were accepted")
+				}
+				return
+			}
+			if err != nil || len(records) != 1 || records[0].Settings != tc.want {
+				t.Fatal("stored settings did not survive reopening", records, err)
+			}
+			var raw string
+			if err := store.db.QueryRowContext(ctx, `SELECT settings FROM rooms WHERE id=?`, created.Snapshot.RoomID).Scan(&raw); err != nil || raw != tc.raw {
+				t.Fatal("loading settings rewrote stored data", err)
+			}
+		})
+	}
+}
+
 func TestWriterSaturationCancellationAndFailureReadiness(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir())

@@ -1,6 +1,7 @@
 import { LocalizedError, message, type Message } from '../i18n';
 import {
   decodeMedia,
+  decodePlaybackRate,
   decodeProfilePatch,
   decodeRoomSettings,
   type MediaDescriptor,
@@ -34,6 +35,7 @@ export interface Snapshot {
     phase: 'empty' | 'paused' | 'waiting' | 'playing' | 'ended';
     positionMs: number;
     anchorServerMs: number;
+    rate: number;
     desiredPlaying: boolean;
   };
   barrier: {
@@ -150,7 +152,13 @@ export function decodeSnapshot(value: unknown): Snapshot {
   )
     throw new Error('Invalid server response.');
   const playback = object(v.playback);
-  shape(playback, ['phase', 'positionMs', 'anchorServerMs', 'desiredPlaying']);
+  shape(playback, [
+    'phase',
+    'positionMs',
+    'anchorServerMs',
+    'rate',
+    'desiredPlaying',
+  ]);
   const media = v.media === null ? null : decodeMedia(v.media);
   const generation = integer(v.mediaGeneration);
   if (
@@ -161,13 +169,15 @@ export function decodeSnapshot(value: unknown): Snapshot {
   )
     throw new Error('Invalid playback.');
   const positionMs = integer(playback.positionMs),
-    anchorServerMs = integer(playback.anchorServerMs);
+    anchorServerMs = integer(playback.anchorServerMs),
+    rate = decodePlaybackRate(playback.rate);
   if (
     (!media &&
       (playback.phase !== 'empty' ||
         generation !== 0 ||
         positionMs !== 0 ||
-        playback.desiredPlaying)) ||
+        playback.desiredPlaying ||
+        rate !== 1)) ||
     (media &&
       (generation < 1 ||
         playback.phase === 'empty' ||
@@ -250,6 +260,7 @@ export function decodeSnapshot(value: unknown): Snapshot {
       phase: playback.phase as Snapshot['playback']['phase'],
       positionMs,
       anchorServerMs,
+      rate,
       desiredPlaying: playback.desiredPlaying,
     },
     serverNowMs: integer(v.serverNowMs),
@@ -366,6 +377,7 @@ export async function request(
   signal: AbortSignal,
   key?: string,
   replayOnly = false,
+  responseLimit = 65536,
 ): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
@@ -376,7 +388,7 @@ export async function request(
   if (replayOnly) headers['Idempotency-Replay-Only'] = 'true';
   let response: Response;
   try {
-    response = await fetch(`/api/v2${path}`, {
+    response = await fetch(`/api/v1${path}`, {
       method,
       headers,
       credentials: 'same-origin',
@@ -398,7 +410,7 @@ export async function request(
       const chunk = await reader.read();
       if (chunk.done) break;
       length += chunk.value.byteLength;
-      if (length > 65536) throw new ResponseError();
+      if (length > responseLimit) throw new ResponseError();
       chunks.push(chunk.value);
     }
   } catch (error) {
@@ -442,7 +454,8 @@ export function requestKey(): string {
 }
 export function defaultSettings(): RoomSettings {
   return {
-    controllers: 'host',
+    everyoneCanControl: false,
+    everyoneCanSelectMedia: false,
     waitForAll: true,
   };
 }

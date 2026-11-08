@@ -271,7 +271,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 	if !result.SecureCookie {
 		return errors.New("HTTPS origin did not set a Secure HttpOnly session cookie")
 	}
-	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
+	value, err := host.Call(ctx, "POST", "/rooms", map[string]any{"title": "Proxy smoke", "settings": map[string]any{"everyoneCanControl": true, "everyoneCanSelectMedia": false, "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func checkReconnect(ctx context.Context, httpClient *http.Client, caddy string, 
 // client and ignored both the spoofed hops and the untrusted direct peer's header.
 func checkAddresses(ctx context.Context, httpClient *http.Client, directPort string, result *summary) error {
 	probe := func(client *http.Client, base, spoofed string) (int, error) {
-		r, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v2/session", strings.NewReader("{}"))
+		r, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/session", strings.NewReader("{}"))
 		if err != nil {
 			return 0, err
 		}

@@ -1,7 +1,10 @@
+import { resolve } from 'node:path';
+
 import release from '../../modules/helper/dist/release.json';
 import {
   appContext,
   expect,
+  mockRepository,
   test,
 } from '../../modules/web/playwright-fixtures';
 import {
@@ -10,10 +13,12 @@ import {
   expectFittedPlayer,
   invitationLink,
   observePageKeyboard,
+  openAppPanel,
   openPlayerMenu,
   openQuickActions,
   runQuickAction,
   seekTo,
+  setPlaybackSpeed,
   settings,
 } from './flows';
 import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
@@ -34,8 +39,8 @@ const syntheticVideos = [
 test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
   page,
   browser,
-}) => {
-  test.setTimeout(90000);
+}, testInfo) => {
+  test.setTimeout(120000);
   const tracks = await generatedDASHMedia(browser);
   const fixturePage = await browser.newPage();
   const sheets = await fixturePage.evaluate(() =>
@@ -59,7 +64,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await fixturePage.close();
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   const script = await response.text();
-  await page.addInitScript({
+  const helperBootstrap = {
     content: `(() => {
     sessionStorage.setItem('hold-thumbnails', '1');
     sessionStorage.setItem('thumbnail-requests', '0');
@@ -217,7 +222,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     };
     ${script}
   })();`,
-  });
+  };
+  await page.addInitScript(helperBootstrap);
   await page.goto('/');
   await page
     .getByLabel('Video URL or identifier')
@@ -239,6 +245,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   });
   while (await notifications.count()) await notifications.first().click();
   await expect(page.getByRole('tab', { name: /Episodes/ })).toHaveCount(0);
+  await expect(page.locator('.episode-trigger')).toHaveCount(0);
   const stage = page.locator('.video-stage');
   const playerMenu = page.getByRole('menu', { name: 'Player menu' });
   const statistics = page.getByRole('region', {
@@ -278,6 +285,47 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('.video-description h3')).toContainText(
     syntheticVideos[1].title,
   );
+  // Live accent changes reach the player without replacing or interrupting media.
+  const accents = [];
+  for (const name of ['Soft iris', 'Quiet teal', 'Dusty rose']) {
+    await openAppPanel(page, 'Appearance');
+    await page.getByRole('radio', { name, exact: true }).check();
+    await page.keyboard.press('Escape');
+    await page.locator('.danmaku-settings-trigger').press('ArrowDown');
+    await expect(page.locator('.danmaku-menu')).toBeVisible();
+    const colors = await page.evaluate(() => {
+      const button = document.querySelector('.playback-toggle')!;
+      const style = getComputedStyle(button);
+      return {
+        playback: style.color,
+        icon: getComputedStyle(button.querySelector('path')!).fill,
+        surface: style.backgroundColor,
+        border: style.borderColor,
+        volume: getComputedStyle(document.querySelector('.volume-slider')!)
+          .color,
+        danmaku: Array.from(
+          document.querySelectorAll('.danmaku-menu input[type="range"]'),
+          (input) => getComputedStyle(input).accentColor,
+        ),
+      };
+    });
+    expect(colors.icon).toBe(colors.playback);
+    expect(colors.volume).toBe(colors.playback);
+    expect(colors.danmaku).toHaveLength(3);
+    for (const color of colors.danmaku) expect(color).toBe(colors.playback);
+    accents.push(colors);
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await page.keyboard.press('Escape');
+  }
+  for (const field of ['playback', 'surface', 'border', 'volume'] as const)
+    expect(new Set(accents.map((colors) => colors[field])).size).toBe(3);
+  await openAppPanel(page, 'Appearance');
+  await page.getByRole('radio', { name: 'Slate blue', exact: true }).check();
+  await page.keyboard.press('Escape');
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1966, height: 654 },
@@ -290,6 +338,55 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
+    // The right controls share one row; every popover clears that row at the same height.
+    const controls = await page
+      .locator('.control-end button[aria-haspopup], .display-controls button')
+      .all();
+    const heights: number[] = [];
+    const centers = await Promise.all(
+      controls.map(async (control) => {
+        const box = (await control.boundingBox())!;
+        heights.push(box.height);
+        return box.y + box.height / 2;
+      }),
+    );
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+    expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(1);
+    const bottoms: number[] = [];
+    for (const [trigger, popup] of [
+      ['.danmaku-settings-trigger', '.danmaku-menu'],
+      ['.playback-rate', '.rate-menu'],
+      ['.quality-trigger', '.quality-menu'],
+    ]) {
+      await page.locator(trigger!).press('ArrowDown');
+      const menu = page.locator(popup!);
+      await expect(menu).toBeVisible();
+      const box = (await menu.boundingBox())!;
+      const surface = (await stage.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(surface.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(surface.x + surface.width);
+      expect(box.y).toBeGreaterThanOrEqual(surface.y);
+      bottoms.push(box.y + box.height);
+      if (popup === '.rate-menu') {
+        await page.keyboard.press('End');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '2×', exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press('Home');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '0.5×', exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '0.75×', exact: true }),
+        ).toBeFocused();
+      }
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(page.locator(trigger!)).toBeFocused();
+      await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    }
+    expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThan(1);
     await openPlayerMenu(page);
     const original = playerMenu.getByRole('menuitem', {
       name: 'Open on Bilibili',
@@ -352,6 +449,14 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
   }
   await page.setViewportSize({ width: 1280, height: 720 });
+  await stage.hover({ position: { x: 16, y: 8 } });
+  const playbackSpeed = page.getByRole('button', {
+    name: 'Playback speed',
+    exact: true,
+  });
+  await setPlaybackSpeed(page, 1.5);
+  await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1.5);
+  await expect(page.locator('video')).toHaveJSProperty('paused', true);
   await openPlayerMenu(page);
   const danmakuRequests = await page.evaluate(() =>
     Number(sessionStorage.getItem('danmaku-requests')),
@@ -448,6 +553,16 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('.seek-preview')).toHaveCount(0);
   await clickPlayerControl(page, 'Play together');
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await expect(playbackSpeed).toHaveText('1.5×');
+  await expect
+    .poll(() =>
+      page
+        .locator('video')
+        .evaluate((video: HTMLVideoElement) =>
+          Math.abs(video.playbackRate - 1.5),
+        ),
+    )
+    .toBeLessThanOrEqual(0.076);
   await page.evaluate(() => sessionStorage.setItem('hold-seek', '1'));
   // A larger forward reserve can contain this entire synthetic clip. Ensure
   // the held seek needs real media delivery by evicting its target first.
@@ -472,7 +587,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     )
     .toBe(false);
   await seekTo(page, 20);
-  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const roomPath = `/api/v1${new URL(page.url()).pathname}`;
   await expect
     .poll(
       async () =>
@@ -547,11 +662,106 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         (await (await page.request.get(roomPath)).json()).media.episodeId,
     )
     .toBe('9000000000011');
+  await expect(playbackSpeed).toHaveText('1×');
+  await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1);
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(
     'data-state',
     'ready',
   );
+  const episodeTrigger = page.locator('.episode-trigger');
+  const checkControls = async (mode: string, width: number, target = page) => {
+    await target.locator('.video-stage').hover({ position: { x: 100, y: 20 } });
+    await target.locator('.quality-trigger').hover();
+    await target.screenshot({
+      path: testInfo.outputPath(`control-bar-${mode}-${width}.png`),
+      animations: 'disabled',
+    });
+    const geometry = await target
+      .locator('.video-stage')
+      .evaluate((surface) => {
+        const bar = surface
+          .querySelector('.control-bar')!
+          .getBoundingClientRect();
+        const seek = surface
+          .querySelector('.seek-track')!
+          .getBoundingClientRect();
+        return {
+          coarse: matchMedia('(pointer: coarse)').matches,
+          above: bar.top - (seek.top + seek.height / 2),
+          below: surface.getBoundingClientRect().bottom - bar.bottom,
+          buttons: Array.from(
+            surface.querySelectorAll('.control-end button'),
+            (button) => {
+              const bounds = button.getBoundingClientRect();
+              return {
+                width: bounds.width,
+                height: bounds.height,
+                icon: button.classList.contains('icon-button'),
+              };
+            },
+          ),
+        };
+      });
+    await testInfo.attach(`control-geometry-${mode}-${width}`, {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+    expect(geometry.coarse).toBe(mode === 'touch');
+    expect(Math.abs(geometry.above - geometry.below)).toBeLessThanOrEqual(1);
+    for (const button of geometry.buttons) {
+      if (geometry.coarse) {
+        expect(button.width).toBeGreaterThanOrEqual(44);
+        expect(button.height).toBeGreaterThanOrEqual(44);
+      } else {
+        expect(button.height).toBeLessThanOrEqual(32);
+        expect(button.width).toBeGreaterThanOrEqual(button.height);
+      }
+      if (button.icon)
+        expect(Math.abs(button.width - button.height)).toBeLessThan(1);
+    }
+  };
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectFittedPlayer(page);
+    await checkControls('embedded', viewport.width);
+    await clickPlayerControl(page, 'Episodes');
+    const menu = page.getByRole('menu', { name: 'Episodes', exact: true });
+    await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(
+      menu.getByRole('menuitemradio', { checked: true }),
+    ).toContainText('Opening');
+    const bounds = (await menu.boundingBox())!;
+    const surface = (await page.locator('.video-stage').boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(surface.x);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+      surface.x + surface.width,
+    );
+    expect(bounds.y).toBeGreaterThanOrEqual(surface.y);
+    await page.keyboard.press('End');
+    await expect(menu.getByRole('menuitemradio').last()).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(episodeTrigger).toBeFocused();
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await clickPlayerControl(page, 'Browser-window fullscreen');
+  await checkControls('window', 1440);
+  await clickPlayerControl(page, 'Fullscreen locally');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await checkControls('native', 1440);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(false);
+  await page.keyboard.press('s');
   await page.getByRole('tab', { name: /Episodes/ }).click();
   await openQuickActions(page, '换集');
   const palette = page.locator('.command-palette'),
@@ -644,10 +854,11 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'ready',
   );
   await page.getByRole('tab', { name: /Episodes/ }).click();
-  await settings(page, 'host', false);
+  await settings(page, false, false);
   await clickPlayerControl(page, 'Play together');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
-  await page.getByRole('button', { name: /Finale/ }).click();
+  await clickPlayerControl(page, 'Episodes');
+  await page.getByRole('menuitemradio', { name: /Finale/ }).click();
   await expect
     .poll(
       async () =>
@@ -656,7 +867,242 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     .toBe('9000000000012');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await clickPlayerControl(page, 'Pause together');
+  await page
+    .getByRole('button', { name: 'Room settings', exact: true })
+    .click();
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole('dialog').getByRole('checkbox')).toHaveCount(3);
+    await expect(
+      page.getByLabel('Allow everyone to change videos and episodes', {
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await page.getByRole('dialog').evaluate(async (dialog) => {
+      await Promise.all(
+        dialog.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `media-permission-settings-${viewport.width}.png`,
+      ),
+      animations: 'disabled',
+    });
+  }
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // A separate identity receives video selection permission independently of playback.
+  const guest = await browser.newContext({ hasTouch: true });
+  await mockRepository(guest);
+  try {
+    await guest.addInitScript(helperBootstrap);
+    const other = await guest.newPage();
+    await other.goto(await invitationLink(page));
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await other.setViewportSize({ width: 1440, height: 900 });
+    await other.getByRole('tab', { name: /Episodes/ }).click();
+    await expect(other.locator('.episode-button')).toHaveCount(2);
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await expect(other.locator('.episode-trigger')).toHaveCount(0);
+    await expect(other.locator('.change-media')).toHaveCount(0);
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-denied-desktop.png'),
+      animations: 'disabled',
+    });
+    await settings(page, false, false, true);
+    await expect(other.locator('.episode-trigger')).toHaveCount(1);
+    await expect(other.locator('.episode-button').first()).toBeEnabled();
+    await checkControls('touch', 1440, other);
+    await expect(
+      other.getByRole('button', { name: 'Play together', exact: true }),
+    ).toBeDisabled();
+    await clickPlayerControl(other, 'Episodes');
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-granted-desktop.png'),
+      animations: 'disabled',
+    });
+    await other.getByRole('menuitemradio', { name: /Opening/ }).click();
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(roomPath)).json()).media.episodeId,
+      )
+      .toBe('9000000000011');
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await other
+      .getByRole('button', { name: 'Change video', exact: true })
+      .click();
+    await other.getByLabel('Video URL or identifier').fill('ep9000000000012');
+    await other
+      .getByRole('button', { name: 'Preview video', exact: true })
+      .click();
+    await other
+      .getByRole('button', { name: 'Use this video', exact: true })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(roomPath)).json()).media.episodeId,
+      )
+      .toBe('9000000000012');
+    await expect(other.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused',
+    );
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await clickPlayerControl(other, 'Episodes');
+    await settings(page, false, false, false);
+    await expect(other.locator('.episode-trigger')).toHaveCount(0);
+    await expect(other.locator('.episode-menu')).toHaveCount(0);
+    await expect(other.locator('.video-stage')).toBeFocused();
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await other.setViewportSize({ width: 390, height: 844 });
+    await checkControls('touch', 390, other);
+    await other.getByRole('button', { name: /Members and episodes/ }).click();
+    await other.getByRole('tab', { name: /Episodes/ }).click();
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-denied-mobile.png'),
+      animations: 'disabled',
+    });
+    await other
+      .getByRole('button', { name: 'Close dialog', exact: true })
+      .click();
+    await runQuickAction(other, '/history');
+    const viewerHistory = other.getByRole('dialog', {
+      name: 'Watch history',
+      exact: true,
+    });
+    await expect(viewerHistory).toBeVisible();
+    await expect(viewerHistory).toContainText(
+      'requires video selection permission',
+    );
+    await other.keyboard.press('Escape');
+  } finally {
+    await guest.close();
+  }
+  // History follows the viewer's actual online playback and outlives this room.
+  await runQuickAction(page, '/history');
+  const historyDialog = page.getByRole('dialog', {
+    name: 'Watch history',
+    exact: true,
+  });
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000011' }),
+  ).toHaveCount(1);
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000012' }),
+  ).toHaveCount(1);
+  const beforeHistory = await (await page.request.get(roomPath)).json();
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const bounds = (await historyDialog.boundingBox())!;
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    expect(
+      await historyDialog.evaluate(
+        (dialog) => dialog.scrollWidth - dialog.clientWidth,
+      ),
+    ).toBe(0);
+    await page.screenshot({
+      path: resolve(
+        testInfo.config.rootDir,
+        '../../.misc/browser/reviews/watch-history',
+        `${testInfo.project.name}-${viewport.width}.png`,
+      ),
+      animations: 'disabled',
+    });
+  }
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await replacement
+    .getByLabel('Video URL or identifier')
+    .fill(syntheticVideos[0].bvid);
+  await replacement
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(replacement.locator('.media-preview')).toContainText(
+    syntheticVideos[0].title,
+  );
+  await replacement
+    .getByRole('button', { name: 'Watch history', exact: true })
+    .click();
+  const historySearch = replacement.getByRole('searchbox');
+  await historySearch.fill('ep9000000000011');
+  await historySearch.press('Enter');
+  await expect(replacement.locator('.history-video')).toHaveCount(1);
+  await expect(
+    replacement.getByRole('button', { name: 'Use this video', exact: true }),
+  ).toBeDisabled();
+  const afterHistory = await (await page.request.get(roomPath)).json();
+  expect(afterHistory.media).toEqual(beforeHistory.media);
+  expect(afterHistory.mediaGeneration).toBe(beforeHistory.mediaGeneration);
+  expect(afterHistory.revision).toBe(beforeHistory.revision);
+  await replacement.locator('.history-video').click();
+  await expect(replacement.getByLabel('Video URL or identifier')).toHaveValue(
+    'ep9000000000011',
+  );
+  await expect(
+    replacement.getByRole('button', { name: 'Use this video', exact: true }),
+  ).toBeEnabled();
+  await replacement
+    .getByRole('button', { name: 'Use this video', exact: true })
+    .click();
+  await expect(replacement).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('9000000000011');
+  await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+    'data-state',
+    'paused',
+  );
   await closeRoom(page);
+  await page
+    .getByRole('button', { name: 'Watch history', exact: true })
+    .click();
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000012' }),
+  ).toHaveCount(1);
+  await historyDialog
+    .locator('.history-video')
+    .filter({ hasText: 'EP 9000000000012' })
+    .click();
+  await expect(historyDialog).toHaveCount(0);
+  await expect(page.getByLabel('Video URL or identifier')).toHaveValue(
+    'ep9000000000012',
+  );
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({
@@ -820,7 +1266,7 @@ test('previewing another Bilibili link preserves the active helper and room unti
     end: 2 * 1024 * 1024 - 1,
     rate: 2 * 1024 * 1024,
   };
-  const roomPath = `/api/v2${new URL(page.url()).pathname}`;
+  const roomPath = `/api/v1${new URL(page.url()).pathname}`;
   const before = await (await page.request.get(roomPath)).json();
   const originalSource = await page
     .locator('video')
@@ -1197,8 +1643,8 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     .click();
   await expect(page.getByRole('alert')).toContainText('Sign in to Bilibili');
   // Synthetic stable metadata isolates automatic entry from live provider availability.
-  const session = await (await page.request.get('/api/v2/me')).json();
-  const created = await page.request.post('/api/v2/rooms', {
+  const session = await (await page.request.get('/api/v1/me')).json();
+  const created = await page.request.post('/api/v1/rooms', {
     headers: {
       Origin: baseURL!,
       'X-OVS-CSRF': session.csrfToken,
@@ -1208,7 +1654,11 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     },
     data: {
       title: 'Bilibili helper boundaries',
-      settings: { controllers: 'host', waitForAll: true },
+      settings: {
+        everyoneCanControl: false,
+        everyoneCanSelectMedia: false,
+        waitForAll: true,
+      },
       media: {
         kind: 'bilibili',
         bvid: 'BV1TESTaaaaa',
@@ -1230,11 +1680,16 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'Platform access unavailable',
   );
   const danmaku = page.locator('.danmaku-toggle');
+  const danmakuSettings = page.locator('.danmaku-settings-trigger');
   const preferences = page.getByRole('dialog', {
     name: 'Danmaku settings',
     exact: true,
   });
   await danmaku.hover();
+  await expect(preferences).toHaveCount(0);
+  await danmakuSettings.hover();
+  await expect(preferences).toHaveCount(0);
+  await danmakuSettings.click();
   await expect(preferences).toBeVisible();
   await expect(preferences.getByRole('status')).toHaveCount(0);
   expect(
@@ -1247,8 +1702,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     .hover();
   await expect(preferences).toBeVisible();
   await page.mouse.move(0, 0);
+  await expect(preferences).toBeVisible();
+  await danmakuSettings.click();
   await expect(preferences).toHaveCount(0);
-  await danmaku.press('ArrowDown');
+  await danmakuSettings.press('ArrowDown');
   await expect(
     page.getByRole('slider', { name: 'Danmaku density', exact: true }),
   ).toBeFocused();
@@ -1296,14 +1753,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   const panelKeys = await observePageKeyboard(page);
   await page.keyboard.press('Control+k');
   await expect(page.locator('.command-palette')).toHaveCount(0);
-  // Hover can open a panel while keyboard focus remains in the player beneath it.
-  await danmaku.hover();
-  const playerVolume = page.getByRole('slider', {
-    name: 'Local volume',
-    exact: true,
-  });
-  await playerVolume.focus();
-  await expect(playerVolume).toBeFocused();
+  // The open settings panel owns shortcuts even if focus is moved underneath.
+  const playerSurface = page.locator('.video-stage');
+  await playerSurface.focus();
+  await expect(playerSurface).toBeFocused();
   const volume = await page.locator('#local-volume').inputValue();
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('m');
@@ -1311,7 +1764,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(page.locator('#local-volume')).toHaveValue(volume);
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   await page.keyboard.press('Escape');
-  await expect(danmaku).toBeFocused();
+  await expect(danmakuSettings).toBeFocused();
   await expect(preferences).toHaveCount(0);
   expect(await panelKeys.evaluate((state) => state.events)).toEqual([]);
   await panelKeys.evaluate((state) => state.stop());
@@ -1333,11 +1786,11 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(true);
-  await danmaku.press('ArrowDown');
+  await danmakuSettings.press('ArrowDown');
   await expect(preferences).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(preferences).toHaveCount(0);
-  await expect(danmaku).toBeFocused();
+  await expect(danmakuSettings).toBeFocused();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await openPlayerMenu(page, 'keyboard');
   await page
@@ -1386,7 +1839,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
     await danmaku.focus();
-    await danmaku.press('ArrowDown');
+    await danmakuSettings.press('ArrowDown');
     await expect(preferences).toBeVisible();
     await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
     await expect(density).toHaveValue('40');
@@ -1408,7 +1861,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       preferences.getByRole('button', { name: 'Reload danmaku', exact: true }),
     ).toHaveCount(0);
     await page.keyboard.press('Escape');
-    await expect(danmaku).toBeFocused();
+    await expect(danmakuSettings).toBeFocused();
     await expect(preferences).toHaveCount(0);
   }
   await danmaku.press('Enter');
@@ -1461,7 +1914,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       exact: true,
     });
     await expect(setup).toContainText('not detected');
-    const beforeInstall = await (await other.request.get('/api/v2/me')).json();
+    const beforeInstall = await (await other.request.get('/api/v1/me')).json();
     const script = await other.request.get('/userscripts/ovs-bilibili.user.js');
     expect(script.ok()).toBe(true);
     // Start the actual distributed helper on the next document, as installation does.
@@ -1491,12 +1944,12 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     await expect(
       other.getByRole('button', { name: 'Join', exact: true }),
     ).toHaveCount(0);
-    const afterInstall = await (await other.request.get('/api/v2/me')).json();
+    const afterInstall = await (await other.request.get('/api/v1/me')).json();
     expect(afterInstall.identity.identityId).toBe(
       beforeInstall.identity.identityId,
     );
     const restored = await (
-      await other.request.get(`/api/v2/rooms/${room.snapshot.roomId}`)
+      await other.request.get(`/api/v1/rooms/${room.snapshot.roomId}`)
     ).json();
     expect(restored.members).toHaveLength(2);
     expect(await invitationLink(page)).toBe(invitation);

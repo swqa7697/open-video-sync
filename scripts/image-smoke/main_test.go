@@ -15,13 +15,13 @@ func TestHTTPReleaseVersions(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, stale string
 	}{
-		{"api", "/api/v2/version", ""},
+		{"api", "/api/v1/version", ""},
 		{"web", "/", ""},
 		{"helper", "/userscripts/ovs-bilibili.user.js", ""},
-		{"old-sync", "/api/v2/version", "1.2.3"},
-		{"old-web-api", "/api/v2/version", "2.3.4"},
-		{"old-helper-api", "/api/v2/version", "3.4.5"},
-		{"old-image", "/api/v2/version", "ovs:v2026-11-02"},
+		{"old-sync", "/api/v1/version", "1.2.3"},
+		{"old-web-api", "/api/v1/version", "2.3.4"},
+		{"old-helper-api", "/api/v1/version", "3.4.5"},
+		{"old-image", "/api/v1/version", "ovs:v2026-11-02"},
 		{"old-web-html", "/", "2.3.4"},
 		{"old-userscript", "/userscripts/ovs-bilibili.user.js", "3.4.5"},
 	} {
@@ -29,7 +29,7 @@ func TestHTTPReleaseVersions(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body string
 				switch r.URL.Path {
-				case "/api/v2/version":
+				case "/api/v1/version":
 					raw, err := json.Marshal(want)
 					if err != nil {
 						t.Error(err)

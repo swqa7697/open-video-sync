@@ -1,0 +1,27 @@
+[
+  {
+    "name": "create unicode and escapes",
+    "input": [
+      "ovs-http-v1",
+      "rooms.create",
+      "Room <>& \ud83d\ude00\u2028\u2029 \\u2028 \"quoted\"",
+      [false, false, true]
+    ],
+    "digest": "add4da8e0e8b4e3658079e2ccb3b505fee6a0ebd55a302d197fb94648d08ce68"
+  },
+  {
+    "name": "redeem normalized code",
+    "input": ["ovs-http-v1", "invitations.redeem", "code", "0123456789ABCDEF"],
+    "digest": "bb8dd39964d5623f8c2080493c5e47f8f63f9f13ac5f1fd4625f3985c2d7825b"
+  },
+  {
+    "name": "redeem link",
+    "input": [
+      "ovs-http-v1",
+      "invitations.redeem",
+      "link",
+      "AAECAwQFBgcICQoLDA0ODw"
+    ],
+    "digest": "4f703f68178f3ea3a82af79abd99310955b15fcbffb3a0a6d7d9b5d0316544df"
+  }
+]

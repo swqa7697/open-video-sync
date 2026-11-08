@@ -95,7 +95,7 @@ test.each([
     expect(wrapper.get('header [role="status"]').text()).toBe(text);
     expect(document.title).toBe('Watch together · Open Video Sync');
     expect(wrapper.find('#display-name').exists()).toBe(false);
-    expect(fetch.mock.calls.some(([url]) => url === '/api/v2/rooms')).toBe(
+    expect(fetch.mock.calls.some(([url]) => url === '/api/v1/rooms')).toBe(
       false,
     );
     healthy = true;
@@ -274,7 +274,7 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     socket.frame('room.snapshot', {
       ...room,
       selfMemberId: 'f'.repeat(32),
-      settings: { ...room.settings, controllers: 'everyone' },
+      settings: { ...room.settings, everyoneCanControl: true },
       members: [
         ...room.members,
         {
@@ -294,6 +294,8 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
     expect(wrapper.get('.command-episodes-heading').text()).toContain(
       'The host chooses',
     );
+    expect(wrapper.find('.episode-trigger').exists()).toBe(false);
+    expect(wrapper.get('.episode-button').attributes('disabled')).toBeDefined();
     await input.trigger('keydown', { key: 'Enter' });
     await wrapper.get('[role="option"]').trigger('click');
     expect(
@@ -301,6 +303,47 @@ test('loaded episode metadata reaches the room sidebar through the player slot',
         .map((raw) => JSON.parse(raw))
         .filter((frame) => frame.type === 'media.select'),
     ).toHaveLength(1);
+    socket.frame('room.snapshot', {
+      ...room,
+      selfMemberId: 'f'.repeat(32),
+      settings: { ...room.settings, everyoneCanSelectMedia: true },
+      members: [
+        ...room.members,
+        {
+          memberId: 'f'.repeat(32),
+          displayName: 'Viewer',
+          role: 'participant',
+          presence: 'connected',
+          readiness: null,
+        },
+      ],
+    });
+    await flushPromises();
+    expect(wrapper.find('.episode-trigger').exists()).toBe(true);
+    expect(
+      wrapper.get('.episode-button').attributes('disabled'),
+    ).toBeUndefined();
+    await input.setValue('@2');
+    expect(
+      wrapper.get('[role="option"]').attributes('aria-disabled'),
+    ).toBeUndefined();
+    await wrapper.get('[role="option"]').trigger('click');
+    await flushPromises();
+    const permitted = socket.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'media.select');
+    expect(permitted).toHaveLength(2);
+    expect(permitted[1].payload.autoPlay).toBe(true);
+    socket.frame('command.result', {
+      commandId: permitted[1].commandId,
+      accepted: true,
+      revision: 2,
+      error: null,
+    });
+    await flushPromises();
+    expect(wrapper.find('.command-palette').exists()).toBe(false);
+    await wrapper.get('.command-trigger').trigger('click');
+    input = wrapper.get('[role="combobox"]');
     socket.frame('room.snapshot', {
       ...room,
       mediaGeneration: 2,
@@ -468,7 +511,7 @@ test('distinguishes input, response, proxy, and unavailable-room failures in the
       if (url.startsWith('/health'))
         return Promise.resolve(new Response(null, { status: 204 }));
       if (url.endsWith('/session')) return Promise.resolve(json(identity));
-      if (url.startsWith(`/api/v2/rooms/${snapshot.roomId}`))
+      if (url.startsWith(`/api/v1/rooms/${snapshot.roomId}`))
         return Promise.resolve(
           new Response(JSON.stringify({ code: 'not_found' }), { status: 404 }),
         );

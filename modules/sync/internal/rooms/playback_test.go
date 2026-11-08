@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -116,12 +117,78 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err := service.Handle(ctx, bound, play); err != nil {
 		t.Fatal(err)
 	}
+	refresh := func() {
+		t.Helper()
+		snap, err = service.Snapshot(ctx, host, snap.RoomID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	send := func(frame contracts.ClientFrame) contracts.ClientFrame {
+		t.Helper()
+		refresh()
+		frame.Type = "playback.command"
+		frame.CommandID = key(t)
+		frame.Epoch = snap.Epoch
+		frame.ExpectedRevision = snap.Revision
+		frame.MediaGeneration = snap.MediaGeneration
+		if err := service.Handle(ctx, bound, frame); err != nil {
+			t.Fatal(err)
+		}
+		refresh()
+		return frame
+	}
+	durableWrites := repository.rejections.Load()
+	monotonic.Store(1000)
+	rate := send(contracts.ClientFrame{Action: "rate", Rate: 1.5})
+	if snap.Playback.Rate != 1.5 || snap.Playback.PositionMs != 1000 || snap.Playback.AnchorServerMs != 1000 || snap.Playback.Phase != "playing" || !snap.Playback.DesiredPlaying {
+		t.Fatal("speed change lost the playing timeline", snap.Playback)
+	}
+	if err := service.Handle(ctx, bound, rate); err != nil {
+		t.Fatal("identical speed retry failed", err)
+	}
+	revision := snap.Revision
+	refresh()
+	if snap.Revision != revision {
+		t.Fatal("speed retry changed the room twice")
+	}
+	changedRate := rate
+	changedRate.Rate = 2
+	expectCode(t, service.Handle(ctx, bound, changedRate), "invalid_command")
+	for _, invalid := range []float64{0, 1.1, 2.25, math.NaN(), math.Inf(1)} {
+		frame := rate
+		frame.CommandID = key(t)
+		frame.ExpectedRevision = snap.Revision
+		frame.Rate = invalid
+		expectCode(t, service.Handle(ctx, bound, frame), "invalid_command")
+	}
+	monotonic.Store(3000)
+	send(contracts.ClientFrame{Action: "pause"})
+	if snap.Playback.PositionMs != 4000 || snap.Playback.Rate != 1.5 {
+		t.Fatal("pause did not project the selected speed", snap.Playback)
+	}
+	monotonic.Store(4000)
+	send(contracts.ClientFrame{Action: "rate", Rate: 0.5})
+	if snap.Playback.PositionMs != 4000 || snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying {
+		t.Fatal("paused speed change moved or resumed playback", snap.Playback)
+	}
+	send(contracts.ClientFrame{Action: "replay"})
+	if snap.Playback.PositionMs != 0 || snap.Playback.Rate != 0.5 || snap.Playback.Phase != "playing" {
+		t.Fatal("replay did not preserve the selected speed", snap.Playback)
+	}
+	if repository.rejections.Load() != durableWrites {
+		t.Fatal("playback speed crossed the persistence boundary")
+	}
 	monotonic.Store(5000)
 	replacement, err := service.Connect(ctx, host, snap.RoomID, &sink{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = replacement
+	refresh()
+	if snap.Playback.Rate != 0.5 {
+		t.Fatal("reconnected member did not receive the selected speed")
+	}
 
 	err = service.Handle(ctx, bound, play)
 	expectCode(t, err, "forbidden")
@@ -135,7 +202,7 @@ func TestTimelineDurableRollbackMemoryControlsAndReplacedConnection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 0 || restored.Epoch == snap.Epoch || restored.Revision != 1 || restored.Media == nil || *restored.Media != command.Media {
+	if restored.Playback.Phase != "paused" || restored.Playback.PositionMs != 0 || restored.Playback.Rate != 1 || restored.Epoch == snap.Epoch || restored.Revision != 1 || restored.Media == nil || *restored.Media != command.Media {
 		t.Fatal("selected media did not restart paused at zero", restored)
 	}
 }
@@ -191,17 +258,47 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 		}
 		return err
 	}
-	if err := send(h, contracts.ClientFrame{Type: "media.select", AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
+	selection := contracts.ClientFrame{Type: "media.select", AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "9000000000001", Part: 1, DurationMs: 60000, EpisodeID: "9000000000011"}}
+	expectCode(t, send(g, selection), "forbidden")
+	grant := mutation(snap, "settings")
+	grant.Settings = snap.Settings
+	grant.Settings.EveryoneCanControl = true
+	granted, _, err := service.Mutate(ctx, host, snap.RoomID, grant)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Barrier == nil || len(snap.Barrier.RequiredMemberIDs) != 2 {
+	snap = granted.Snapshot
+	// Playback authority alone must never grant media replacement.
+	expectCode(t, send(g, selection), "forbidden")
+	grant = mutation(snap, "settings")
+	grant.Settings = snap.Settings
+	grant.Settings.EveryoneCanControl = false
+	grant.Settings.EveryoneCanSelectMedia = true
+	granted, _, err = service.Mutate(ctx, host, snap.RoomID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap = granted.Snapshot
+	// A media controller can start the selected episode through the ordinary wait
+	// policy, while subsequent playback commands still require playback authority.
+	if err := send(g, selection); err != nil {
+		t.Fatal(err)
+	}
+	if snap.Media == nil || *snap.Media != selection.Media || snap.MediaGeneration != 1 || snap.Barrier == nil || len(snap.Barrier.RequiredMemberIDs) != 2 {
 		t.Fatal("play did not freeze cohort")
 	}
 	oldBarrier := snap.Barrier.BarrierID
+	expectCode(t, send(g, contracts.ClientFrame{Type: "playback.command", Action: "rate", Rate: 1.5}), "forbidden")
+	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "rate", Rate: 1.5}); err != nil {
+		t.Fatal(err)
+	}
+	if snap.Barrier == nil || snap.Barrier.BarrierID != oldBarrier || snap.Barrier.TargetPositionMs != 0 || snap.Playback.Phase != "waiting" || !snap.Playback.DesiredPlaying || snap.Playback.Rate != 1.5 {
+		t.Fatal("waiting speed change replaced the barrier or play intent")
+	}
 	if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 10000}); err != nil {
 		t.Fatal(err)
 	}
-	if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != 10000 {
+	if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != 10000 || snap.Playback.Rate != 1.5 {
 		t.Fatal("waiting seek did not cancel play intent")
 	}
 	position, duration := int64(10000), int64(60000)
@@ -239,7 +336,8 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	}
 	change := mutation(snap, "settings")
 	change.Settings = snap.Settings
-	change.Settings.Controllers = "everyone"
+	change.Settings.EveryoneCanControl = true
+	change.Settings.EveryoneCanSelectMedia = false
 
 	updated, _, err := service.Mutate(ctx, host, snap.RoomID, change)
 	if err != nil {
@@ -248,6 +346,15 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	snap = updated.Snapshot
 	if snap.Playback.Phase != "playing" {
 		t.Fatal("non-waiting settings paused playback")
+	}
+	beforeRejected := snap
+	expectCode(t, send(g, selection), "forbidden")
+	refresh()
+	if snap.Media == nil || snap.Revision != beforeRejected.Revision || snap.MediaGeneration != beforeRejected.MediaGeneration || snap.Playback.Phase != "playing" || *snap.Media != *beforeRejected.Media {
+		t.Fatal("revoked media controller changed the room")
+	}
+	if err := send(g, contracts.ClientFrame{Type: "playback.command", Action: "rate", Rate: 2}); err != nil {
+		t.Fatal("everyone controls did not permit a speed change", err)
 	}
 	change = mutation(snap, "settings")
 	change.Settings = snap.Settings
@@ -267,7 +374,7 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 		if err := send(h, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: position}); err != nil {
 			t.Fatal(err)
 		}
-		if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != position {
+		if snap.Playback.Phase != "paused" || snap.Playback.DesiredPlaying || snap.Barrier != nil || snap.Playback.PositionMs != position || snap.Playback.Rate != 2 {
 			t.Fatal("playing or paused seek did not stop at the requested position", snap.Playback)
 		}
 	}
@@ -283,6 +390,9 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	}
 	if err := send(h, contracts.ClientFrame{Type: "media.select", Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("b", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
 		t.Fatal(err)
+	}
+	if snap.Playback.Rate != 1 {
+		t.Fatal("new media retained the previous playback speed")
 	}
 
 	// Removing a required member must revoke its socket and return a coherent barrier snapshot.
@@ -473,7 +583,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				}
 				service.Disconnect(hostConn) // An old owner's eventual close cannot drop the replacement.
 				before, _ := service.Snapshot(ctx, guest, id)
-				if before.Settings.Controllers != "host" || before.Epoch != snap.Epoch {
+				if before.Settings.EveryoneCanControl || before.Epoch != snap.Epoch {
 					t.Fatal("reconnect prematurely changed ownership")
 				}
 				service.Disconnect(returned)
@@ -495,7 +605,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 					if notices > 0 {
 						break
 					}
-				} else if snap.Settings.Controllers == "everyone" {
+				} else if snap.Settings.EveryoneCanControl {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -507,7 +617,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				t.Fatal("host departure interrupted playback")
 			}
 			if mode == "failed-write" {
-				if snap.Settings.Controllers != "host" {
+				if snap.Settings.EveryoneCanControl {
 					t.Fatal("failed write granted playback permission")
 				}
 				writes := repository.rejections.Load()
@@ -530,7 +640,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				t.Fatal(err)
 			}
 			latest, _ = service.Snapshot(ctx, host, id)
-			if latest.Settings.Controllers != "everyone" {
+			if !latest.Settings.EveryoneCanControl {
 				t.Fatal("host return revoked participant controls")
 			}
 			_, _, err = service.Mutate(ctx, host, id, mutation(latest, "leave"))

@@ -25,20 +25,47 @@ type Store struct {
 
 // Open acquires exclusive ownership, configures SQLite, and initializes the schema.
 func Open(ctx context.Context, directory string) (_ *Store, err error) {
+	db, lock, err := openDatabase(ctx, directory)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, db.Close(), lock.Unlock())
+		}
+	}()
+	if err := initializeSchema(ctx, db, schema.Definition); err != nil {
+		return nil, err
+	}
+	return &Store{db: db, lock: lock, writer: newWriter(db)}, nil
+}
+
+// Migrate applies pending schema upgrades as an explicit deployment operation.
+// Empty databases use the current schema directly; no application services start.
+func Migrate(ctx context.Context, directory string) (err error) {
+	db, lock, err := openDatabase(ctx, directory)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close(), lock.Unlock()) }()
+	return prepareSchema(ctx, db, schema.Definition, schema.Migrations(), true)
+}
+
+func openDatabase(ctx context.Context, directory string) (_ *sql.DB, _ *flock.Flock, err error) {
 	directory, err = filepath.Abs(directory)
 	if err != nil {
-		return nil, fmt.Errorf("resolve data directory: %w", err)
+		return nil, nil, fmt.Errorf("resolve data directory: %w", err)
 	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return nil, fmt.Errorf("create data directory: %w", err)
+		return nil, nil, fmt.Errorf("create data directory: %w", err)
 	}
 	lock := flock.New(filepath.Join(directory, "ovs.lock"))
 	locked, err := lock.TryLock()
 	if err != nil {
-		return nil, fmt.Errorf("lock data directory: %w", err)
+		return nil, nil, fmt.Errorf("lock data directory: %w", err)
 	}
 	if !locked {
-		return nil, errors.New("data directory is already owned by another OVS process")
+		return nil, nil, errors.New("data directory is already owned by another OVS process")
 	}
 	defer func() {
 		if err != nil {
@@ -54,7 +81,7 @@ func Open(ctx context.Context, directory string) (_ *Store, err error) {
 	dsn.RawQuery = query.Encode()
 	db, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
-		return nil, fmt.Errorf("open SQLite: %w", err)
+		return nil, nil, fmt.Errorf("open SQLite: %w", err)
 	}
 	// A single connection bounds database concurrency until application queues exist.
 	db.SetMaxOpenConns(1)
@@ -65,12 +92,9 @@ func Open(ctx context.Context, directory string) (_ *Store, err error) {
 		}
 	}()
 	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("connect SQLite: %w", err)
+		return nil, nil, fmt.Errorf("connect SQLite: %w", err)
 	}
-	if err := initializeSchema(ctx, db, schema.Definition); err != nil {
-		return nil, err
-	}
-	return &Store{db: db, lock: lock, writer: newWriter(db)}, nil
+	return db, lock, nil
 }
 
 // Ready checks the database connection without exposing application metadata.

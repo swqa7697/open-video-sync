@@ -38,11 +38,11 @@ func (s *Store) LoadRooms(ctx context.Context) ([]rooms.Room, error) {
 			V     int             `json:"v"`
 			Value json.RawMessage `json:"value"`
 		}
-		if err := json.Unmarshal([]byte(raw), &wrapper); err != nil || wrapper.V != 2 {
+		if err := json.Unmarshal([]byte(raw), &wrapper); err != nil || (wrapper.V != 2 && wrapper.V != 3 && wrapper.V != 4) {
 			rows.Close()
 			return nil, fmt.Errorf("invalid stored settings version")
 		}
-		r.Settings, err = contracts.DecodeRoomSettings(wrapper.Value)
+		r.Settings, err = decodeStoredSettings(wrapper.V, wrapper.Value)
 		if err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("invalid stored settings")
@@ -103,6 +103,33 @@ func (s *Store) LoadRooms(ctx context.Context) ([]rooms.Room, error) {
 	}
 	return result, nil
 }
+
+func decodeStoredSettings(version int, data []byte) (contracts.RoomSettings, error) {
+	if version == 4 {
+		return contracts.DecodeRoomSettings(data)
+	}
+	// Legacy versions used host/everyone enums. Convert only their exact shapes
+	// in memory; startup never rewrites existing records.
+	legacy, err := contracts.DecodeObject(data)
+	fieldCount := 2
+	if version == 3 {
+		fieldCount = 3
+	}
+	if err != nil || len(legacy) != fieldCount {
+		return contracts.RoomSettings{}, contracts.ErrInvalidInput
+	}
+	controllers, c := legacy["controllers"].(string)
+	wait, w := legacy["waitForAll"].(bool)
+	mediaControllers, m := "host", true
+	if version == 3 {
+		mediaControllers, m = legacy["mediaControllers"].(string)
+	}
+	if !c || !m || !w || (controllers != "host" && controllers != "everyone") || (mediaControllers != "host" && mediaControllers != "everyone") {
+		return contracts.RoomSettings{}, contracts.ErrInvalidInput
+	}
+	return contracts.RoomSettings{EveryoneCanControl: controllers == "everyone", EveryoneCanSelectMedia: mediaControllers == "everyone", WaitForAll: wait}, nil
+}
+
 func validRoom(r rooms.Room) error {
 	if !contracts.ValidID(r.ID) || !contracts.ValidID(r.HostIdentityID) || !contracts.ValidTitle(r.Title) || len(r.Members) < 1 || len(r.Members) > 32 {
 		return fmt.Errorf("invalid stored room")
@@ -132,7 +159,7 @@ func settingsJSON(settings contracts.RoomSettings) string {
 	b, _ := json.Marshal(struct {
 		V     int                    `json:"v"`
 		Value contracts.RoomSettings `json:"value"`
-	}{2, settings})
+	}{4, settings})
 	return string(b)
 }
 func (t roomTx) InsertRoom(r rooms.Room) error {

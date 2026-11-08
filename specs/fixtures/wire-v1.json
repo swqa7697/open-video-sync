@@ -326,11 +326,12 @@
     }
   },
   {
-    "name": "two room preferences",
+    "name": "host room preferences",
     "contract": "settings",
     "valid": true,
     "input": {
-      "controllers": "host",
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": false,
       "waitForAll": true
     }
   },
@@ -339,8 +340,57 @@
     "contract": "settings",
     "valid": true,
     "input": {
-      "controllers": "everyone",
+      "everyoneCanControl": true,
+      "everyoneCanSelectMedia": true,
       "waitForAll": false
+    }
+  },
+  {
+    "name": "independent media control",
+    "contract": "settings",
+    "valid": true,
+    "input": {
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": true,
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject missing media control permission",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "everyoneCanControl": false,
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject missing playback control permission",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "everyoneCanSelectMedia": false,
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject string media permission",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": "everyone",
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject nonboolean media permission",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": 1,
+      "waitForAll": true
     }
   },
   {
@@ -348,7 +398,9 @@
     "contract": "settings",
     "valid": false,
     "input": {
-      "controllers": "host",
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": false,
+      "waitForAll": true,
       "syncMode": "adaptive",
       "waitMode": "all",
       "waitOnBuffering": true,
@@ -363,7 +415,8 @@
     "contract": "settings",
     "valid": false,
     "input": {
-      "controllers": "host"
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": false
     }
   },
   {
@@ -371,16 +424,38 @@
     "contract": "settings",
     "valid": false,
     "input": {
-      "controllers": "host",
+      "everyoneCanControl": false,
+      "everyoneCanSelectMedia": false,
       "waitForAll": "true"
     }
   },
   {
-    "name": "reject unknown controller",
+    "name": "reject string playback permission",
     "contract": "settings",
     "valid": false,
     "input": {
-      "controllers": "guest",
+      "everyoneCanControl": "everyone",
+      "everyoneCanSelectMedia": false,
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject nonboolean playback permission",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "everyoneCanControl": null,
+      "everyoneCanSelectMedia": false,
+      "waitForAll": true
+    }
+  },
+  {
+    "name": "reject legacy enum preferences",
+    "contract": "settings",
+    "valid": false,
+    "input": {
+      "controllers": "everyone",
+      "mediaControllers": "everyone",
       "waitForAll": true
     }
   },

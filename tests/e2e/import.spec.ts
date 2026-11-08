@@ -77,7 +77,7 @@ test('video imports create rooms and replace media through the existing tab with
   page.on('pageerror', (error) => errors.push(error.message));
   let cutResult = false;
   const commands: string[] = [];
-  await page.routeWebSocket('**/ws/v2/rooms/*', (socket) => {
+  await page.routeWebSocket('**/ws/v1/rooms/*', (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((data) => {
       if (typeof data === 'string') {
@@ -148,7 +148,7 @@ test('video imports create rooms and replace media through the existing tab with
   await expect(page).toHaveURL(/\/rooms\/[a-f0-9]{32}$/);
   const roomId = new URL(page.url()).pathname.split('/').at(-1)!;
   const readRoom = async (target = page) =>
-    (await target.request.get(`/api/v2/rooms/${roomId}`)).json() as Promise<{
+    (await target.request.get(`/api/v1/rooms/${roomId}`)).json() as Promise<{
       epoch: string;
       revision: number;
       mediaGeneration: number;
@@ -199,7 +199,7 @@ test('video imports create rooms and replace media through the existing tab with
     await importer.getByLabel('Your room', { exact: true }).selectOption('');
     await expect(replaceButton).toBeDisabled();
     const idleBounds = await actionBounds();
-    const roomPath = `**/api/v2/rooms/${roomId}`;
+    const roomPath = `**/api/v1/rooms/${roomId}`;
     let releaseRoom!: () => void;
     const roomResponse = new Promise<void>(
       (resolve) => (releaseRoom = resolve),
@@ -225,7 +225,7 @@ test('video imports create rooms and replace media through the existing tab with
       releaseRoom();
       await importer.unroute(roomPath);
     }
-    const roomsPath = '**/api/v2/rooms?limit=*';
+    const roomsPath = '**/api/v1/rooms?limit=*';
     await importer.route(roomsPath, async (route) => {
       const response = await route.fetch();
       const listing = (await response.json()) as object;

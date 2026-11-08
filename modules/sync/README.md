@@ -2,7 +2,7 @@
 
 The Go module owns the OVS server, SQLite persistence, and HTTP and WebSocket transports.
 `sql/schema.sql` always defines the complete, current database schema; `sql/embed.go` embeds that definition.
-`sql/migrations/` records changes between versions for historical reference only and is not executed at startup.
+`sql/migrations/` contains immutable deployment migrations, ordered by IDs that are independent of the release-level schema version. A schema release can include multiple migrations. The deployment-only `ovs migrate` command applies missing ledger entries before OVS starts; ordinary startup never runs migration SQL. New databases initialize from the latest complete schema directly and register its included IDs.
 Root [deploy/](../../deploy/README.md) contains the application image build and deployment examples.
 [Dockerfile](../../deploy/Dockerfile) and [Dockerfile.dockerignore](../../deploy/Dockerfile.dockerignore) build and bundle all three modules using the repository root as their context.
 

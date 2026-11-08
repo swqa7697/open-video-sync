@@ -99,8 +99,7 @@ async function list(more = false): Promise<void> {
       await api(`/rooms?limit=20${cursor ? `&cursor=${cursor}` : ''}`),
     );
     if (lifecycle.signal.aborted) return;
-    const hosts = value.rooms.filter((room) => room.role === 'host');
-    rooms.value = more ? [...rooms.value, ...hosts] : hosts;
+    rooms.value = more ? [...rooms.value, ...value.rooms] : value.rooms;
     nextCursor.value = value.nextCursor;
     if (!more) {
       if (!rooms.value.some((room) => room.roomId === selectedRoom.value))
@@ -131,7 +130,10 @@ async function loadRoom(): Promise<void> {
       await api(`/rooms/${selectedRoom.value}`, signal),
     );
     if (signal.aborted) return;
-    if (value.selfMemberId !== value.hostMemberId)
+    if (
+      value.selfMemberId !== value.hostMemberId &&
+      !value.settings.everyoneCanSelectMedia
+    )
       roomError.value = message('api.forbidden');
     else snapshot.value = value;
   } catch (reason) {

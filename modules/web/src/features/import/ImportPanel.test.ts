@@ -11,7 +11,7 @@ import { defineComponent, h } from 'vue';
 
 import { i18n } from '../../i18n';
 import { roomFixture } from '../../test-support/room';
-import type { Snapshot } from '../../transport/api';
+import { decodeSnapshot, type Snapshot } from '../../transport/api';
 import type { MediaDescriptor } from '../../transport/contracts';
 import ImportPanel from './ImportPanel.vue';
 import type { ImportOutcome } from './types';
@@ -25,6 +25,24 @@ const media: MediaDescriptor = {
 };
 const initialImport = { selection: { bvid: 'BV1TESTaaaaa', part: 2 } };
 const snapshot = { ...roomFixture, title: 'Family room' };
+const participantRoom = (everyoneCanSelectMedia: boolean): Snapshot =>
+  decodeSnapshot({
+    ...snapshot,
+    roomId: 'f'.repeat(32),
+    title: 'Other host room',
+    selfMemberId: 'e'.repeat(32),
+    settings: { ...snapshot.settings, everyoneCanSelectMedia },
+    members: [
+      ...snapshot.members,
+      {
+        memberId: 'e'.repeat(32),
+        displayName: 'Participant',
+        role: 'participant',
+        presence: 'offline',
+        readiness: null,
+      },
+    ],
+  });
 const json = (value: unknown) =>
   new Response(JSON.stringify(value), {
     headers: { 'Content-Type': 'application/json' },
@@ -67,7 +85,9 @@ function panel(
     media: MediaDescriptor,
   ) => Promise<ImportOutcome> = async () => ({ status: 'accepted' }),
   disabled = false,
+  everyoneCanSelectMedia = false,
 ) {
+  const participant = participantRoom(everyoneCanSelectMedia);
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) =>
@@ -81,14 +101,16 @@ function panel(
                   role: 'host',
                 },
                 {
-                  roomId: 'f'.repeat(32),
-                  title: 'Other host room',
+                  roomId: participant.roomId,
+                  title: participant.title,
                   role: 'participant',
                 },
               ],
               nextCursor: null,
             }
-          : snapshot,
+          : url.endsWith(participant.roomId)
+            ? participant
+            : snapshot,
       ),
     ),
   );
@@ -114,11 +136,14 @@ function panel(
     },
   });
 }
-async function chooseRoom(wrapper: VueWrapper): Promise<void> {
+async function chooseRoom(
+  wrapper: VueWrapper,
+  roomId = snapshot.roomId,
+): Promise<void> {
   await flushPromises();
   await findButton(wrapper, 'Preview and continue').trigger('click');
   await flushPromises();
-  await wrapper.get('#import-room').setValue(snapshot.roomId);
+  await wrapper.get('#import-room').setValue(roomId);
   await flushPromises();
 }
 async function submitReplacement(wrapper: VueWrapper): Promise<void> {
@@ -148,26 +173,46 @@ test('prefills after identity bootstrap enables the picker without overwriting l
   expect(selectBilibili).toHaveBeenCalledTimes(1);
 });
 
-test('previews before mutation, limits selection to hosted rooms, and confirms replacement', async () => {
-  const replace = vi.fn(async () => ({ status: 'accepted' as const }));
-  const wrapper = panel(replace);
-  await chooseRoom(wrapper);
-  expect(wrapper.get('#import-room').text()).toContain('Family room');
-  expect(wrapper.get('#import-room').text()).not.toContain('Other host room');
-  expect(wrapper.text()).toContain('Selected video title');
-  expect(replace).not.toHaveBeenCalled();
-  await findButton(wrapper, 'Replace video').trigger('click');
-  expect(wrapper.get('[role="dialog"]').text()).toContain(
-    'starts paused at zero',
-  );
-  await findButton(wrapper.find('[role="dialog"]'), 'Replace video').trigger(
-    'click',
-  );
-  await flushPromises();
-  expect(wrapper.text()).toContain('Video replaced.');
-  expect(wrapper.find('#import-room').exists()).toBe(false);
-  expect(replace).toHaveBeenCalledWith(snapshot, media);
-});
+test.each([false, true])(
+  'previews before mutation, enforces %s media permission, and confirms replacement',
+  async (everyoneCanSelectMedia) => {
+    const replace = vi.fn(async () => ({ status: 'accepted' as const }));
+    const wrapper = panel(replace, undefined, false, everyoneCanSelectMedia);
+    const participant = participantRoom(everyoneCanSelectMedia);
+    await chooseRoom(wrapper, participant.roomId);
+    expect(wrapper.get('#import-room').text()).toContain('Family room');
+    expect(wrapper.get('#import-room').text()).toContain('Other host room');
+    if (!everyoneCanSelectMedia) {
+      expect(wrapper.get('[role="alert"]').text()).toContain(
+        'You do not have permission for this action.',
+      );
+      expect(
+        findButton(wrapper, 'Replace video').attributes('disabled'),
+      ).toBeDefined();
+      await findButton(wrapper, 'Replace video').trigger('click');
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(replace).not.toHaveBeenCalled();
+      await wrapper.get('#import-room').setValue(snapshot.roomId);
+      await flushPromises();
+    }
+    expect(wrapper.text()).toContain('Selected video title');
+    expect(replace).not.toHaveBeenCalled();
+    await findButton(wrapper, 'Replace video').trigger('click');
+    expect(wrapper.get('[role="dialog"]').text()).toContain(
+      'starts paused at zero',
+    );
+    await findButton(wrapper.find('[role="dialog"]'), 'Replace video').trigger(
+      'click',
+    );
+    await flushPromises();
+    expect(wrapper.text()).toContain('Video replaced.');
+    expect(wrapper.find('#import-room').exists()).toBe(false);
+    expect(replace).toHaveBeenCalledWith(
+      !everyoneCanSelectMedia ? snapshot : participant,
+      media,
+    );
+  },
+);
 
 test('missing active tab requires explicit takeover and preserves the confirmed snapshot', async () => {
   const openRoom = vi.fn(async () => ({ status: 'accepted' as const }));

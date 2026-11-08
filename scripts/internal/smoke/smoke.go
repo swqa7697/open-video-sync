@@ -1,4 +1,4 @@
-// Package smoke holds container smoke-check helpers for the version-2 API and room socket.
+// Package smoke holds container smoke-check helpers for the version-1 API and room socket.
 // Clients carry isolated test credentials only; callers must not print them.
 package smoke
 
@@ -61,7 +61,7 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("application %s %s returned %d %s", e.Method, e.Path, e.Status, e.Code)
 }
 
-// Client calls the version-2 API as one browser profile. Base selects the dialed scheme
+// Client calls the version-1 API as one browser profile. Base selects the dialed scheme
 // and address; Host and Origin carry the public origin that the server validates.
 type Client struct {
 	HTTP         *http.Client
@@ -84,7 +84,7 @@ func (c *Client) Call(ctx context.Context, method, path string, payload any) (ma
 		}
 		body = strings.NewReader(string(b))
 	}
-	r, err := http.NewRequestWithContext(ctx, method, c.Base+"/api/v2"+path, body)
+	r, err := http.NewRequestWithContext(ctx, method, c.Base+"/api/v1"+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (c *Client) Snapshot(ctx context.Context, roomID string) (Snapshot, error) 
 
 // Dial opens the room socket with the session cookie and exact Origin.
 func (c *Client) Dial(ctx context.Context, roomID string) (*websocket.Conn, error) {
-	address := strings.Replace(c.Base, "http", "ws", 1) + "/ws/v2/rooms/" + roomID
+	address := strings.Replace(c.Base, "http", "ws", 1) + "/ws/v1/rooms/" + roomID
 	conn, _, err := websocket.Dial(ctx, address, &websocket.DialOptions{HTTPClient: c.HTTP, Host: c.Host, HTTPHeader: http.Header{"Origin": {c.Origin}, "Cookie": {"ovs_session=" + c.Token}}})
 	return conn, err
 }
@@ -202,7 +202,7 @@ func Next(ctx context.Context, conn *websocket.Conn) (Frame, error) {
 			return Frame{}, errors.New("invalid socket frame")
 		}
 		if f.Type == "heartbeat" {
-			reply, _ := json.Marshal(map[string]any{"v": 2, "type": "heartbeat", "requestId": f.RequestID, "payload": map[string]bool{"reply": true}})
+			reply, _ := json.Marshal(map[string]any{"v": 1, "type": "heartbeat", "requestId": f.RequestID, "payload": map[string]bool{"reply": true}})
 			if err := conn.Write(ctx, websocket.MessageText, reply); err != nil {
 				return Frame{}, err
 			}
@@ -233,7 +233,7 @@ func Command(ctx context.Context, conn *websocket.Conn, snap Snapshot, kind stri
 		return result, err
 	}
 	id := hex.EncodeToString(key)
-	frame, _ := json.Marshal(map[string]any{"v": 2, "type": kind, "commandId": id, "epoch": snap.Epoch, "expectedRevision": snap.Revision, "mediaGeneration": snap.MediaGeneration, "payload": payload})
+	frame, _ := json.Marshal(map[string]any{"v": 1, "type": kind, "commandId": id, "epoch": snap.Epoch, "expectedRevision": snap.Revision, "mediaGeneration": snap.MediaGeneration, "payload": payload})
 	if err := conn.Write(ctx, websocket.MessageText, frame); err != nil {
 		return result, err
 	}

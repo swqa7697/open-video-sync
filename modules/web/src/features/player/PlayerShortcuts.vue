@@ -69,7 +69,7 @@ onMounted(() => closeButton.value?.focus({ preventScroll: true }));
       </div>
       <div>
         <dt><kbd>Shift + F10</kbd></dt>
-        <dd>{{ t('player.contextMenu') }}</dd>
+        <dd>{{ t('player.shortcutContextMenu') }}</dd>
       </div>
       <div>
         <dt><kbd>Ctrl / ⌘ + K</kbd></dt>

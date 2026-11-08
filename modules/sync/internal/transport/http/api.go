@@ -31,10 +31,10 @@ type API struct {
 // NewAPI constructs the identity routes. Room routes are installed by WithRooms.
 func NewAPI(origin string, service *identity.Service) *API {
 	a := &API{Origin: origin, Identity: service, mux: http.NewServeMux(), limits: &limiter{buckets: make(map[string]bucket), now: service.Now}}
-	a.mux.HandleFunc("POST /api/v2/session", a.bootstrap)
-	a.mux.HandleFunc("GET /api/v2/me", a.me)
-	a.mux.HandleFunc("PATCH /api/v2/me", a.profile)
-	a.mux.HandleFunc("DELETE /api/v2/session", a.forget)
+	a.mux.HandleFunc("POST /api/v1/session", a.bootstrap)
+	a.mux.HandleFunc("GET /api/v1/me", a.me)
+	a.mux.HandleFunc("PATCH /api/v1/me", a.profile)
+	a.mux.HandleFunc("DELETE /api/v1/session", a.forget)
 	a.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fail(w, contracts.Failure("not_found")) })
 	return a
 }
@@ -54,7 +54,7 @@ type Versions struct {
 // WithVersions exposes the running service and its embedded release metadata.
 // Install this route before serving. Release metadata needs no identity or storage access.
 func (a *API) WithVersions(versions Versions) {
-	a.mux.HandleFunc("GET /api/v2/version", func(w http.ResponseWriter, r *http.Request) {
+	a.mux.HandleFunc("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, versions)
 	})
 }

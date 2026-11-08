@@ -105,7 +105,10 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 	expectCode(t, err, "not_found")
 	settings := mutation(joined.Snapshot, "settings")
 	settings.Settings = contracts.DefaultSettings()
-	settings.Settings.Controllers = "everyone"
+	settings.Settings.EveryoneCanControl = true
+	settings.Settings.EveryoneCanSelectMedia = true
+	_, _, err = service.Mutate(ctx, guest, id, settings)
+	expectCode(t, err, "forbidden")
 	updated, _, err := service.Mutate(ctx, host, id, settings)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +160,7 @@ func TestPrivateRoomLifecycleRetriesAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh, err := service.Snapshot(ctx, host, id)
-	if err != nil || fresh.Epoch == oldEpoch || fresh.Revision != 1 || fresh.Settings.Controllers != "everyone" {
+	if err != nil || fresh.Epoch == oldEpoch || fresh.Revision != 1 || !fresh.Settings.EveryoneCanControl || !fresh.Settings.EveryoneCanSelectMedia {
 		t.Fatal("restart lost state", err)
 	}
 	_, err = service.RecoverCreate(ctx, host, createKey, "Private <room>", contracts.DefaultSettings())
@@ -266,7 +269,7 @@ func TestCapacityExpiryLeaveAndSerializedSettings(t *testing.T) {
 	// HTTP settings and a service-level coordinator command race from the same revision.
 	m := mutation(snap, "settings")
 	m.Settings = contracts.DefaultSettings()
-	m.Settings.Controllers = "everyone"
+	m.Settings.EveryoneCanControl = true
 	errs = make([]error, 2)
 	for i := range errs {
 		wg.Add(1)

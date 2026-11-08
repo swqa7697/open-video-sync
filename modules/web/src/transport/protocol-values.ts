@@ -126,7 +126,7 @@ export function parseFrame(raw: string): Record<string, unknown> {
     }
     throw new Error('Invalid JSON.');
   };
-  const visit = (depth: number): void => {
+  const visit = (depth: number, fractional = false): void => {
     space();
     const c = raw[at];
     if (c === '{' || c === '[') {
@@ -140,15 +140,16 @@ export function parseFrame(raw: string): Record<string, unknown> {
         return;
       }
       for (;;) {
+        let key: string | undefined;
         if (c === '{') {
           if (raw[at] !== '"') throw new Error('Invalid key.');
-          const key = string();
+          key = string();
           if (keys.has(key)) throw new Error('Duplicate key.');
           keys.add(key);
           space();
           if (raw[at++] !== ':') throw new Error('Invalid object.');
         }
-        visit(depth + 1);
+        visit(depth + 1, key === 'rate');
         space();
         const next = raw[at++];
         if (next === end) break;
@@ -157,9 +158,12 @@ export function parseFrame(raw: string): Record<string, unknown> {
       }
     } else if (c === '"') string();
     else {
-      const token = /^(?:true|false|null|0|[1-9][0-9]*)/.exec(
-        raw.slice(at),
-      )?.[0];
+      // Only playback rates admit fractional JSON numbers. All other numeric
+      // fields retain canonical integer literals; their allowlists validate bounds.
+      const pattern = fractional
+        ? /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/
+        : /^(?:true|false|null|0|[1-9][0-9]*)/;
+      const token = pattern.exec(raw.slice(at))?.[0];
       if (!token) throw new Error('Invalid value.');
       at += token.length;
     }

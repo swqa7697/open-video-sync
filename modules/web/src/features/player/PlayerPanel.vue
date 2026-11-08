@@ -15,7 +15,6 @@ import Modal from '../../components/Modal.vue';
 import {
   dismissKeyboardOverlay,
   hasKeyboardOverlay,
-  vKeyboardBoundary,
 } from '../../components/overlay-keyboard';
 import {
   errorMessage,
@@ -41,9 +40,14 @@ import {
 } from '../../player/preferences';
 import type { PlayerStatistics as StatisticsSnapshot } from '../../player/statistics';
 import { nextSyncQuality, type SyncQualityState } from '../../sync/clock';
-import { reportedReadiness, SyncController } from '../../sync/controller';
+import {
+  reportedReadiness,
+  supportsPlaybackRate,
+  SyncController,
+} from '../../sync/controller';
 import { APIError, request, type Snapshot } from '../../transport/api';
-import type { MediaDescriptor } from '../../transport/contracts';
+import { playbackRates, type MediaDescriptor } from '../../transport/contracts';
+import type { HistoryVideo } from '../../transport/history';
 import type {
   Readiness,
   ReadinessStatus,
@@ -68,6 +72,7 @@ import MediaPicker from '../media/MediaPicker.vue';
 import { phaseText, readinessText } from '../status-text';
 import DanmakuControl from './DanmakuControl.vue';
 import type { PlayerMenuItem } from './player-menu';
+import PlayerChoiceMenu from './PlayerChoiceMenu.vue';
 import PlayerContextMenu from './PlayerContextMenu.vue';
 import PlayerShortcuts from './PlayerShortcuts.vue';
 import PlayerStatistics from './PlayerStatistics.vue';
@@ -83,6 +88,7 @@ const emit = defineEmits<{
   episodeSelected: [];
   recheck: [];
   ended: [reason: EndReason];
+  watched: [video: HistoryVideo];
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
@@ -192,6 +198,8 @@ const position = ref(0),
   seekPointerDown = ref(false),
   danmakuMenu = ref(false),
   qualityMenu = ref(false),
+  rateMenu = ref(false),
+  episodeMenu = ref(false),
   replaceOpen = ref(false),
   hoveredTime = ref<number>(),
   seekPointerOffset = ref(0),
@@ -215,8 +223,10 @@ function closeContextMenu(restoreFocus = true): void {
   if (restoreFocus) focusPlayerSilently();
 }
 function showContextMenu(x: number, y: number): void {
+  episodeMenu.value = false;
   danmakuMenu.value = false;
-  closeQuality();
+  qualityMenu.value = false;
+  rateMenu.value = false;
   shortcutsOpen.value = false;
   clearSeekPreview();
   suppressSurfaceClick = false;
@@ -317,8 +327,6 @@ function selectContextItem(id: string): void {
   else if (id === 'statistics') toggleStatistics();
   else if (id === 'shortcuts') openShortcuts();
 }
-const qualityTrigger = ref<HTMLButtonElement>(),
-  qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
 const previewCanvas = ref<HTMLCanvasElement>();
 const thumbnailVisible = ref(false);
@@ -396,6 +404,8 @@ const controlsPinned = computed(
     controlsHovered.value ||
     danmakuMenu.value ||
     qualityMenu.value ||
+    rateMenu.value ||
+    episodeMenu.value ||
     dragging.value ||
     seekPointerDown.value,
 );
@@ -526,7 +536,10 @@ const host = computed(
   () => current.value.selfMemberId === current.value.hostMemberId,
 );
 const permitted = computed(
-  () => host.value || current.value.settings.controllers === 'everyone',
+  () => host.value || current.value.settings.everyoneCanControl,
+);
+const mediaPermitted = computed(
+  () => host.value || current.value.settings.everyoneCanSelectMedia,
 );
 let commandDelayTimer: ReturnType<typeof setTimeout> | undefined;
 const commandRecovery = ref<HTMLButtonElement>();
@@ -556,12 +569,36 @@ const canPlay = computed(
 const canControl = computed(() => controls.value && !!current.value.media);
 const canReplace = computed(
   () =>
-    host.value &&
+    mediaPermitted.value &&
     !loading.value &&
     connected.value &&
     active.value &&
     !pendingCommand.value,
 );
+const mediaNote = computed(() => {
+  if (replaced.value) return t('player.controlReplaced');
+  if (!connected.value || !active.value) return t('player.controlReconnecting');
+  if (pendingCommand.value) return t('player.controlPending');
+  if (!mediaPermitted.value) return t('episodes.viewerHint');
+  if (loading.value) return t('common.preparingVideo');
+  return '';
+});
+watch(mediaPermitted, async (allowed) => {
+  if (allowed) return;
+  const focused = document.activeElement;
+  const restoreFocus =
+    focused instanceof Element &&
+    !!focused.closest(
+      '.episode-menu, .episode-trigger, .change-media, .change-media-dialog',
+    );
+  episodeMenu.value = false;
+  replaceOpen.value = false;
+  if (restoreFocus) {
+    await nextTick();
+    if (!disposed && !mediaPermitted.value)
+      stage.value?.focus({ preventScroll: true });
+  }
+});
 const shownStatus = computed<ReadinessStatus>(() =>
   loading.value ? 'loading' : mediaStatus.value,
 );
@@ -630,6 +667,8 @@ let timer: ReturnType<typeof setInterval> | undefined,
 let lastReport = '',
   lastReportAt = 0,
   disposed = false;
+// Quality reloads and deletion of an entry must not record this selection again.
+let lastWatchedSelection = '';
 let probedBarrier = '',
   probingBarrier = '';
 const sync = new SyncController();
@@ -694,11 +733,11 @@ const transport = new RoomSocket(
           clearMedia();
         publishing = false;
       }
-      if (snapshot.settings.controllers === 'host') hostNotice.value = false;
+      if (!snapshot.settings.everyoneCanControl) hostNotice.value = false;
       const previousHost = current.value.members.find((m) => m.role === 'host');
       if (
-        current.value.settings.controllers === 'host' &&
-        snapshot.settings.controllers === 'everyone' &&
+        !current.value.settings.everyoneCanControl &&
+        snapshot.settings.everyoneCanControl &&
         previousHost &&
         snapshot.members.find((m) => m.memberId === previousHost.memberId)
           ?.presence !== 'connected'
@@ -804,7 +843,7 @@ function importMedia(request: ImportRequest): Promise<ImportResult> {
   if (previous && importedCommand?.waiting) return importedCommand.waiting;
   if (!previous) {
     const s = current.value;
-    if (!host.value || !transport.active || !transport.connected)
+    if (!mediaPermitted.value || !transport.active || !transport.connected)
       return Promise.resolve({ status: 'unavailable' });
     if (pendingCommand.value) return Promise.resolve({ status: 'busy' });
     if (
@@ -849,7 +888,7 @@ function importMedia(request: ImportRequest): Promise<ImportResult> {
 }
 const importHandoff = new ImportHandoff({
   room: () =>
-    host.value && transport.active && transport.connected
+    mediaPermitted.value && transport.active && transport.connected
       ? {
           roomId: current.value.roomId,
           epoch: current.value.epoch,
@@ -865,9 +904,11 @@ function clearMedia(): void {
   clearSeekPreview();
   endSeek();
   danmakuMenu.value = false;
-  if (qualityOptions.value?.contains(document.activeElement))
+  if (stage.value?.querySelector('.player-menu:focus-within'))
     stage.value?.focus({ preventScroll: true });
   qualityMenu.value = false;
+  rateMenu.value = false;
+  episodeMenu.value = false;
   selection.abort();
   selection = new AbortController();
   selectionGeneration++;
@@ -941,68 +982,19 @@ function clickSurface(event: MouseEvent): void {
     return;
   }
   stage.value?.focus({ preventScroll: true });
-  if (danmakuMenu.value || qualityMenu.value) {
+  if (
+    danmakuMenu.value ||
+    qualityMenu.value ||
+    rateMenu.value ||
+    episodeMenu.value
+  ) {
     danmakuMenu.value = false;
     qualityMenu.value = false;
+    rateMenu.value = false;
+    episodeMenu.value = false;
     return;
   }
   togglePlayback();
-}
-async function openQuality(): Promise<void> {
-  qualityMenu.value = !qualityMenu.value;
-  danmakuMenu.value = false;
-  if (qualityMenu.value) {
-    await nextTick();
-    qualityOptions.value
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
-      ?.focus();
-  }
-}
-function closeQuality(restoreFocus = false): void {
-  qualityMenu.value = false;
-  if (restoreFocus) qualityTrigger.value?.focus();
-}
-function qualityKeyboard(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeQuality(true);
-    return;
-  }
-  const items = Array.from(
-    qualityOptions.value?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-  );
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  let next: number;
-  switch (event.key) {
-    case 'ArrowDown':
-      next = (index + 1) % items.length;
-      break;
-    case 'ArrowUp':
-      next = (index + items.length - 1) % items.length;
-      break;
-    case 'Home':
-      next = 0;
-      break;
-    case 'End':
-      next = items.length - 1;
-      break;
-    case 'Tab':
-      closeQuality(true);
-      return;
-    default:
-      return;
-  }
-  event.preventDefault();
-  items[next]?.focus();
-}
-function outsideQuality(event: PointerEvent): void {
-  if (event.target === video.value || event.target === stage.value) return;
-  if (
-    event.target instanceof Node &&
-    !qualityOptions.value?.contains(event.target) &&
-    !qualityTrigger.value?.contains(event.target)
-  )
-    closeQuality();
 }
 async function fullscreen(): Promise<void> {
   try {
@@ -1123,6 +1115,12 @@ async function chooseBilibili(
       selected.episodeId,
     );
     if (signal.aborted || generation !== selectionGeneration) return;
+    if (publishMedia && !mediaPermitted.value) {
+      autoAttempt = '';
+      clearMedia();
+      void autoLoad();
+      return;
+    }
     streamInfo.value = local.mediaInfo;
     playlist.value =
       local.mediaInfo?.playlist ?? (autoPlay ? playlist.value : undefined);
@@ -1131,7 +1129,7 @@ async function chooseBilibili(
     subscription = local.subscribe(() => {
       void sample();
     });
-    if (publishMedia && host.value) {
+    if (publishMedia && mediaPermitted.value) {
       publishing = true;
       transport.command({ media, ...(autoPlay ? { autoPlay: true } : {}) });
     }
@@ -1184,6 +1182,12 @@ async function loadLocal(
       local.load(file, signal),
     ]);
     if (signal.aborted || generation !== selectionGeneration) return;
+    if (publishMedia && !mediaPermitted.value) {
+      autoAttempt = '';
+      clearMedia();
+      void autoLoad();
+      return;
+    }
     descriptor.value = {
       kind: 'local',
       fingerprintVersion: 1,
@@ -1195,7 +1199,7 @@ async function loadLocal(
       void sample();
     });
     sync.invalidate();
-    if (publishMedia && host.value) {
+    if (publishMedia && mediaPermitted.value) {
       const media = descriptor.value;
       publishing = true;
       transport.command({ media });
@@ -1255,7 +1259,7 @@ async function retryMedia(): Promise<void> {
 async function replaceMedia(): Promise<void> {
   if (!canReplace.value) return;
   const selected = await mediaPicker.value?.prepare();
-  if (!selected) return;
+  if (!selected || !canReplace.value) return;
   replaceOpen.value = false;
   if (selected.media.kind === 'local' && selected.file)
     await loadLocal(selected.file, selected.media, true);
@@ -1299,8 +1303,17 @@ async function openMedia(selection?: VideoSelection): Promise<void> {
   await nextTick();
   await mediaPicker.value?.selectBilibili(selection);
 }
+async function selectHistory(selection: HistoryVideo): Promise<void> {
+  if (
+    current.value.media?.kind === 'bilibili' &&
+    sameEpisode(current.value.media, selection)
+  )
+    return;
+  await openMedia(selection);
+  if (canReplace.value) await mediaPicker.value?.prepare();
+}
 const commands = computed<QuickCommand[]>(() => [
-  ...(host.value
+  ...(mediaPermitted.value
     ? [
         {
           id: 'video',
@@ -1310,9 +1323,7 @@ const commands = computed<QuickCommand[]>(() => [
           shortcut: '/video',
           aliases: 'replace change video bilibili link 更换 替换 视频 链接',
           disabled: !canReplace.value,
-          detail: !canReplace.value
-            ? controlNote.value || t('common.preparingVideo')
-            : t('commands.videoHint'),
+          detail: !canReplace.value ? mediaNote.value : t('commands.videoHint'),
           run: (selection?: VideoSelection) => {
             void openMedia(selection);
           },
@@ -1457,10 +1468,7 @@ const episodeActions = computed<EpisodeActions>(() => {
         ? { ...media, title: videoTitle.value }
         : undefined,
     canSelect: canReplace.value,
-    note: !host.value
-      ? t('episodes.viewerHint')
-      : controlNote.value ||
-        (loading.value ? t('common.preparingVideo') : t('episodes.hostHint')),
+    note: mediaNote.value || t('episodes.hostHint'),
     unavailable: !media
       ? t('episodes.noMedia')
       : media.kind === 'local'
@@ -1485,6 +1493,7 @@ defineExpose({
   selectEpisode,
   episodeActions,
   importMedia,
+  selectHistory,
 });
 async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
@@ -1494,7 +1503,6 @@ async function changeQuality(quality: number): Promise<void> {
     loading.value
   )
     return;
-  closeQuality(true);
   preferredQuality.value = quality;
   if (streamInfo.value.quality === quality) return;
   await chooseBilibili(selected, false, quality);
@@ -1670,6 +1678,7 @@ async function sample(): Promise<void> {
     return;
   }
   const matched = mediaMatches(snapshot.media, descriptor.value);
+  const rateSupported = supportsPlaybackRate(local, snapshot.playback.rate);
   if (!matched && descriptor.value) {
     mediaStatus.value = 'mismatch';
     sync.invalidate();
@@ -1688,6 +1697,7 @@ async function sample(): Promise<void> {
         matched &&
         active.value &&
         transport.connected &&
+        rateSupported &&
         barrier &&
         local.getState().status === 'ready' &&
         !local.getState().seeking &&
@@ -1715,7 +1725,7 @@ async function sample(): Promise<void> {
         showError(message('player.applyFailed'));
     }
     if (adapter !== local || disposed) return;
-    mediaStatus.value = local.getState().status;
+    mediaStatus.value = rateSupported ? local.getState().status : 'unsupported';
   }
   if (adapter !== local || disposed) return;
   if (
@@ -1724,6 +1734,32 @@ async function sample(): Promise<void> {
   )
     return;
   const observation = local.getState();
+  const media = snapshot.media;
+  const watchedSelection = `${snapshot.epoch}:${snapshot.mediaGeneration}`;
+  if (
+    media?.kind === 'bilibili' &&
+    matched &&
+    snapshot.playback.phase === 'playing' &&
+    active.value &&
+    transport.connected &&
+    observation.status === 'ready' &&
+    !observation.paused &&
+    !observation.seeking &&
+    watchedSelection !== lastWatchedSelection
+  ) {
+    lastWatchedSelection = watchedSelection;
+    emit('watched', {
+      kind: 'bilibili',
+      bvid: media.bvid,
+      cid: media.cid,
+      part: media.part,
+      ...(media.episodeId ? { episodeId: media.episodeId } : {}),
+      title: videoTitle.value,
+      episodeTitle:
+        playlist.value?.episodes.find((episode) => sameEpisode(media, episode))
+          ?.title ?? '',
+    });
+  }
   // Failed/disposed players can lose native metadata. Unknown timing must stay null on the wire.
   const timed =
     matched &&
@@ -1781,6 +1817,12 @@ function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
       : { action },
   );
 }
+function changePlaybackRate(rate: number): void {
+  if (!canControl.value || rate === current.value.playback.rate) return;
+  showError('');
+  roomError.value = '';
+  transport.command({ action: 'rate', rate });
+}
 async function enable(): Promise<void> {
   const local = adapter,
     generation = selectionGeneration;
@@ -1834,7 +1876,6 @@ onMounted(() => {
   window.addEventListener('blur', rememberWindowFocus);
   document.addEventListener('keydown', keyboard);
   document.addEventListener('fullscreenchange', fullscreenChanged);
-  document.addEventListener('pointerdown', outsideQuality);
   document.addEventListener('pointerdown', outsideContextMenu, true);
   document.addEventListener('pointerup', endSeek);
   document.addEventListener('pointercancel', endSeek);
@@ -1855,7 +1896,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', keyboard);
   document.removeEventListener('fullscreenchange', fullscreenChanged);
   releaseFullscreenKeyboard();
-  document.removeEventListener('pointerdown', outsideQuality);
   document.removeEventListener('pointerdown', outsideContextMenu, true);
   document.removeEventListener('pointerup', endSeek);
   document.removeEventListener('pointercancel', endSeek);
@@ -2119,7 +2159,7 @@ onUnmounted(() => {
           <div class="control-bar">
             <div class="control-start">
               <button
-                class="icon-button"
+                class="icon-button playback-toggle"
                 :aria-label="
                   isPlaying
                     ? t('player.pauseTogether')
@@ -2143,41 +2183,52 @@ onUnmounted(() => {
                 <Icon
                   :name="
                     isPlaying
-                      ? 'pause'
+                      ? 'pause-filled'
                       : current.playback.phase === 'ended'
                         ? 'replay'
-                        : 'play'
+                        : 'play-filled'
                   "
                 />
               </button>
-              <button
-                class="icon-button"
-                :aria-label="muted ? t('player.unmute') : t('player.mute')"
-                :aria-pressed="muted"
-                @click="muted = !muted"
+              <div
+                class="volume-control"
+                :class="{ 'is-muted': muted || !volume }"
               >
-                <Icon :name="muted || !volume ? 'mute' : 'volume'" />
-              </button>
-              <input
-                id="local-volume"
-                v-model.number="volume"
-                class="volume-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                @input="muted = false"
-                :aria-label="t('player.localVolume')"
-                :aria-valuetext="
-                  t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
-                    volume: Math.round(volume * 100),
-                  })
-                "
-              />
-              <span class="player-time"
-                >{{ formatTime(dragging ? seekSeconds : position)
-                }}<span>/ {{ formatTime(totalSeconds) }}</span></span
-              >
+                <button
+                  class="icon-button"
+                  :aria-label="muted ? t('player.unmute') : t('player.mute')"
+                  :aria-pressed="muted"
+                  @click="muted = !muted"
+                >
+                  <Icon :name="muted || !volume ? 'mute' : 'volume'" />
+                </button>
+                <input
+                  id="local-volume"
+                  v-model.number="volume"
+                  class="volume-slider"
+                  :style="{ '--volume-level': `${volume * 100}%` }"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  @input="muted = false"
+                  :aria-label="t('player.localVolume')"
+                  :aria-valuetext="
+                    t(muted ? 'player.mutedVolume' : 'player.volumeValue', {
+                      volume: Math.round(volume * 100),
+                    })
+                  "
+                />
+              </div>
+              <span class="player-time">
+                <span class="player-time-current">{{
+                  formatTime(dragging ? seekSeconds : position)
+                }}</span>
+                <span class="player-time-separator">/</span>
+                <span class="player-time-duration">{{
+                  formatTime(totalSeconds)
+                }}</span>
+              </span>
             </div>
             <div class="control-end">
               <DanmakuControl
@@ -2192,7 +2243,11 @@ onUnmounted(() => {
                 @update:open="
                   (value) => {
                     danmakuMenu = value;
-                    if (value) closeQuality();
+                    if (value) {
+                      qualityMenu = false;
+                      rateMenu = false;
+                      episodeMenu = false;
+                    }
                   }
                 "
                 @toggle="toggleDanmaku"
@@ -2221,77 +2276,142 @@ onUnmounted(() => {
                   }
                 "
               />
-              <button
+              <PlayerChoiceMenu
+                v-if="
+                  mediaPermitted &&
+                  current.media?.kind === 'bilibili' &&
+                  playlist &&
+                  playlist.episodes.length > 1
+                "
+                :open="episodeMenu"
+                trigger-class="episode-trigger"
+                menu-class="episode-menu"
+                :menu-width="320"
+                :label="t('episodes.title')"
+                :text="t('episodes.title')"
+                :note="episodeActions.note"
+                :value="
+                  playlist.episodes.findIndex(
+                    (episode) =>
+                      current.media?.kind === 'bilibili' &&
+                      sameEpisode(current.media, episode),
+                  )
+                "
+                :options="
+                  playlist.episodes.map((episode, index) => ({
+                    value: index,
+                    label: `${index + 1}. ${episode.title}`,
+                    disabled:
+                      !canReplace ||
+                      (current.media?.kind === 'bilibili' &&
+                        sameEpisode(current.media, episode)),
+                  }))
+                "
+                :stage="stage"
+                @update:open="
+                  (value) => {
+                    episodeMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      qualityMenu = false;
+                      rateMenu = false;
+                    }
+                  }
+                "
+                @select="
+                  (value) => {
+                    const episode = playlist?.episodes[value];
+                    if (episode) void selectEpisode(episode);
+                  }
+                "
+              />
+              <PlayerChoiceMenu
+                :open="rateMenu"
+                trigger-class="playback-rate"
+                :label="t('player.playbackSpeed')"
+                :text="`${current.playback.rate}×`"
+                :value="current.playback.rate"
+                :options="
+                  playbackRates.map((value) => ({ value, label: `${value}×` }))
+                "
+                :stage="stage"
+                :title="controlNote || t('player.playbackSpeedShared')"
+                :disabled="!canControl && !pendingCommand"
+                :unavailable="!canControl"
+                :describedby="controlNote ? 'control-note' : undefined"
+                @update:open="
+                  (value) => {
+                    rateMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      qualityMenu = false;
+                      episodeMenu = false;
+                    }
+                  }
+                "
+                @select="changePlaybackRate"
+              />
+              <PlayerChoiceMenu
                 v-if="current.media?.kind === 'bilibili'"
-                ref="qualityTrigger"
-                class="quality-trigger quiet"
-                :aria-label="t('player.videoQuality')"
-                aria-haspopup="menu"
-                aria-controls="video-quality"
-                :disabled="!streamInfo || loading"
-                :aria-expanded="qualityMenu"
-                @click="openQuality"
-                @keydown.down.prevent="!qualityMenu && openQuality()"
-              >
-                {{
+                :open="qualityMenu"
+                trigger-class="quality-trigger"
+                :label="t('player.videoQuality')"
+                :text="
                   streamInfo
                     ? qualityName(streamInfo.quality)
                     : t('player.quality')
-                }}<Icon name="chevron" :size="14" />
-              </button>
-              <button
-                class="icon-button"
-                :aria-label="
-                  t(
-                    windowFullscreen
-                      ? 'player.exitWindowFullscreen'
-                      : 'player.windowFullscreen',
-                  )
                 "
-                :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
-                :aria-pressed="windowFullscreen"
-                aria-keyshortcuts="s"
-                @click="toggleWindowFullscreen"
-              >
-                <Icon
-                  :name="
-                    windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                :value="streamInfo?.quality ?? 0"
+                :options="
+                  [...(streamInfo?.qualities ?? [])]
+                    .sort((a, b) => b - a)
+                    .map((value) => ({ value, label: qualityName(value) }))
+                "
+                :stage="stage"
+                :disabled="!streamInfo || loading"
+                @update:open="
+                  (value) => {
+                    qualityMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      rateMenu = false;
+                      episodeMenu = false;
+                    }
+                  }
+                "
+                @select="changeQuality"
+              />
+              <div class="display-controls">
+                <button
+                  class="icon-button"
+                  :aria-label="
+                    t(
+                      windowFullscreen
+                        ? 'player.exitWindowFullscreen'
+                        : 'player.windowFullscreen',
+                    )
                   "
-                />
-              </button>
-              <button
-                class="icon-button"
-                :aria-label="t('player.fullscreen')"
-                @click="fullscreen"
-              >
-                <Icon name="fullscreen" />
-              </button>
+                  :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
+                  :aria-pressed="windowFullscreen"
+                  aria-keyshortcuts="s"
+                  @click="toggleWindowFullscreen"
+                >
+                  <Icon
+                    :name="
+                      windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                    "
+                  />
+                </button>
+                <button
+                  class="icon-button"
+                  :aria-label="t('player.fullscreen')"
+                  @click="fullscreen"
+                >
+                  <Icon name="fullscreen" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        <div
-          v-if="qualityMenu && streamInfo"
-          id="video-quality"
-          ref="qualityOptions"
-          v-keyboard-boundary="() => closeQuality(true)"
-          class="player-menu quality-menu"
-          role="menu"
-          :aria-label="t('player.videoQuality')"
-          @keydown.stop="qualityKeyboard"
-        >
-          <button
-            v-for="q in [...streamInfo.qualities].sort((a, b) => b - a)"
-            :key="q"
-            type="button"
-            role="menuitemradio"
-            class="quiet"
-            tabindex="-1"
-            :aria-checked="streamInfo.quality === q"
-            @click="changeQuality(q)"
-          >
-            <span>{{ qualityName(q) }}</span
-            ><Icon v-if="streamInfo.quality === q" name="check" :size="16" />
-          </button>
         </div>
       </div>
     </div>
@@ -2339,7 +2459,7 @@ onUnmounted(() => {
           </p>
         </div>
         <button
-          v-if="host"
+          v-if="mediaPermitted"
           class="quiet change-media"
           :disabled="!canReplace && !pendingCommand"
           :aria-disabled="!canReplace"
@@ -2380,6 +2500,7 @@ onUnmounted(() => {
     </div>
     <Modal
       v-if="replaceOpen"
+      class="change-media-dialog"
       :title="t('player.changeTitle')"
       @close="replaceOpen = false"
       @keydown.enter="confirmMedia"
@@ -2388,9 +2509,13 @@ onUnmounted(() => {
           ref="mediaPicker"
           :room-id="current.roomId"
           :disabled="loading"
+          history-enabled
+          inline-history
+          :current-media="current.media"
+          @current="replaceOpen = false"
         />
         <p class="hint">{{ t('player.changeHint') }}</p>
-        <button :disabled="loading">
+        <button :disabled="loading || mediaPicker?.historyOpen">
           {{ t('player.useVideo') }}
         </button>
       </form></Modal

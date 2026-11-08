@@ -19,7 +19,7 @@ func TestRoutingReadinessAndHostBoundary(t *testing.T) {
 		code int
 	}{
 		{"/", 200}, {"/join", 200}, {"/health/live", 204}, {"/health/ready", 204},
-		{"/api/v1/session", 409}, {"/ws/v1/rooms/old", 409}, {"/api", 404}, {"/api/v2/session", 404}, {"/api/v2/rooms/test/ws", 404}, {"/health/missing", 404}, {"/ws", 404}, {"/ws/missing", 404},
+		{"/api/v2/session", 409}, {"/ws/v2/rooms/test", 409}, {"/api", 404}, {"/api/v1/session", 404}, {"/api/v1/rooms/test/ws", 404}, {"/health/missing", 404}, {"/ws", 404}, {"/ws/missing", 404},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://watch.example.com"+tc.path, nil)
 		w := httptest.NewRecorder()

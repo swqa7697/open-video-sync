@@ -8,7 +8,7 @@ import { decodeSnapshot } from '../../transport/api';
 import RoomSidebar from './RoomSidebar.vue';
 
 // This new surface owns tab navigation, current-episode marking, and read-only viewing.
-test('episode tabs preserve keyboard access and allow only available host selections', async () => {
+test('episode tabs preserve keyboard access and allow only permitted selections', async () => {
   const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'Opening' },
     second = {
       bvid: 'BV1TESTaaaab',
@@ -60,6 +60,13 @@ test('episode tabs preserve keyboard access and allow only available host select
     expect(wrapper.text()).toContain('The host chooses');
     await buttons[1]!.trigger('click');
     expect(sidebar.emitted('selectEpisode')).toHaveLength(1);
+    expect(buttons[1]!.attributes('disabled')).toBeDefined();
+    state.room.settings.everyoneCanSelectMedia = true;
+    state.canSelectEpisode = true;
+    await nextTick();
+    expect(wrapper.text()).toContain('Choose an episode for everyone.');
+    await buttons[1]!.trigger('click');
+    expect(sidebar.emitted('selectEpisode')).toHaveLength(2);
     await wrapper.get('#episodes-tab').trigger('keydown', { key: 'Home' });
     expect(document.activeElement).toBe(wrapper.get('#members-tab').element);
     await wrapper.get('#members-tab').trigger('keydown', { key: 'End' });

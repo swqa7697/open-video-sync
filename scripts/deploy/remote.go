@@ -645,6 +645,10 @@ func (r *remote) activate(c, previous settings) error {
 			}
 		}
 	}
+	r.progress("Prepare the database with the verified release image.")
+	if _, err := r.docker("run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--no-healthcheck", "--mount", "type=volume,src="+dataVolume+",dst=/data", "--entrypoint", "/ovs", c.ImageID, "migrate"); err != nil {
+		return fmt.Errorf("database migration failed; attempted release recorded in active.json, data preserved and OVS not started: %w", err)
+	}
 	r.progress("Start release containers and wait for health (up to 90s).")
 	if _, err := r.composeRun(c, "up", "-d", "--wait", "--wait-timeout", "90", "--no-build", "--pull", "never", "--remove-orphans"); err != nil {
 		return fmt.Errorf("container startup failed; attempted release recorded in active.json, data preserved: %w", err)

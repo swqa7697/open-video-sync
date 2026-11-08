@@ -35,10 +35,12 @@ export function memberState(member: Member, mediaGeneration: number): string {
 }
 export function settingsSummary(settings: Snapshot['settings']): string {
   return t('settings.summary', {
-    controllers:
-      settings.controllers === 'host'
-        ? t('settings.hostSummary')
-        : t('settings.everyoneSummary'),
+    everyoneCanControl: settings.everyoneCanControl
+      ? t('settings.everyoneSummary')
+      : t('settings.hostSummary'),
+    everyoneCanSelectMedia: settings.everyoneCanSelectMedia
+      ? t('settings.everyoneMediaSummary')
+      : t('settings.hostMediaSummary'),
     waiting: settings.waitForAll
       ? t('settings.waitSummary')
       : t('settings.noWaitSummary'),

@@ -58,6 +58,15 @@ export async function clickPlayerControl(
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page.getByRole('button', { name, exact: true }).click();
 }
+export async function setPlaybackSpeed(
+  page: Page,
+  rate: number,
+): Promise<void> {
+  await clickPlayerControl(page, 'Playback speed');
+  await page
+    .getByRole('menuitemradio', { name: `${rate}×`, exact: true })
+    .click();
+}
 export async function openPlayerMenu(
   page: Page,
   input: 'pointer' | 'keyboard' = 'pointer',
@@ -123,15 +132,22 @@ export async function invitationLink(page: Page): Promise<string> {
 }
 export async function settings(
   page: Page,
-  controllers: 'host' | 'everyone',
+  everyoneCanControl: boolean,
   wait = true,
+  everyoneCanSelectMedia?: boolean,
 ): Promise<void> {
   await page
     .getByRole('button', { name: 'Room settings', exact: true })
     .click();
   await page
-    .getByLabel('Playback controls', { exact: true })
-    .selectOption(controllers);
+    .getByLabel('Allow everyone to control playback', { exact: true })
+    .setChecked(everyoneCanControl);
+  if (everyoneCanSelectMedia !== undefined)
+    await page
+      .getByLabel('Allow everyone to change videos and episodes', {
+        exact: true,
+      })
+      .setChecked(everyoneCanSelectMedia);
   await page.getByLabel('Wait for everyone', { exact: true }).setChecked(wait);
   await page
     .getByRole('button', { name: 'Save preferences', exact: true })

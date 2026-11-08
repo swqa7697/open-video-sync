@@ -14,10 +14,10 @@ import (
 func NewHandler(publicHost string, ready func(context.Context) error, frontend http.Handler, api ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	if len(api) > 0 {
-		mux.Handle("/api/v2/", api[0])
+		mux.Handle("/api/v1/", api[0])
 	}
 	if len(api) > 1 {
-		mux.Handle("GET /ws/v2/rooms/{roomId}", api[1])
+		mux.Handle("GET /ws/v1/rooms/{roomId}", api[1])
 	}
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -33,7 +33,7 @@ func NewHandler(publicHost string, ready func(context.Context) error, frontend h
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	for _, prefix := range []string{"/api/v1/", "/ws/v1/"} {
+	for _, prefix := range []string{"/api/v2/", "/ws/v2/"} {
 		mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) { fail(w, contracts.Failure("upgrade_required")) })
 	}
 	// Reserve all service namespaces so absent routes never receive SPA HTML.

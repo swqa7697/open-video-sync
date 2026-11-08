@@ -133,7 +133,13 @@ defineExpose({ showMembers });
     >
       <div class="episodes-heading">
         <h3>{{ playlist.title || t('episodes.title') }}</h3>
-        <p>{{ host ? t('episodes.hostHint') : t('episodes.viewerHint') }}</p>
+        <p>
+          {{
+            host || room.settings.everyoneCanSelectMedia
+              ? t('episodes.hostHint')
+              : t('episodes.viewerHint')
+          }}
+        </p>
       </div>
       <ol class="episode-list">
         <li
@@ -142,6 +148,7 @@ defineExpose({ showMembers });
         >
           <button
             class="quiet episode-button"
+            :disabled="!canSelectEpisode"
             :aria-current="current(episode) ? 'true' : undefined"
             :aria-disabled="!canSelectEpisode || current(episode)"
             @click="

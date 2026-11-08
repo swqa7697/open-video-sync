@@ -2,7 +2,7 @@
 
 This document defines the initial release's HTTP and WebSocket contracts.
 [DESIGN](DESIGN.md) defines memory ownership and persistence. Serve the matching frontend and backend together.
-The application protocol identifier is 2. The browser-local helper protocol and local fingerprint encoding each use identifier 1.
+The application protocol, browser-local helper protocol, and local fingerprint encoding each use identifier 1.
 These identifiers describe independent encodings, not published application releases.
 
 ## Encoding and common values
@@ -15,8 +15,8 @@ Normalize only ASCII spaces/hyphens, case, and `O→0`, `I/L→1` for codes. Use
 Display names allow up to 48 Unicode scalar values and 192 UTF-8 bytes. Titles require 1–120 scalar values and at most 480 UTF-8 bytes.
 Durations range from 1 ms to seven days. Local file sizes range from 1 byte to 16 TiB. Shared validators enforce descriptor fields and bounds.
 
-`RoomSettings` is exactly `{controllers:"host"|"everyone", waitForAll:boolean}`.
-Defaults are `host` and `true`. Reject unknown settings fields.
+`RoomSettings` is exactly `{everyoneCanControl:boolean, everyoneCanSelectMedia:boolean, waitForAll:boolean}`.
+Defaults are `false`, `false`, and `true`. Reject missing, unknown, or non-Boolean settings fields. `everyoneCanControl` governs playback; `everyoneCanSelectMedia` independently governs video and episode replacement. False restricts that action to the host; true allows all current members. The host always retains both permissions and exclusively manages room settings.
 Local descriptors are `{kind:"local",fingerprintVersion:1,digest,sizeBytes,durationMs,label?}`.
 Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs,episodeId?}`. Bangumi includes `episodeId`, a positive decimal string of at most 15 digits without leading zeros, and uses `part:1`. Resolve season inputs to one concrete episode in the browser before sending a descriptor. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
 
@@ -27,7 +27,7 @@ No non-application API or socket route falls through to SPA HTML.
 
 ## HTTP
 
-Use `/api/v2`, health endpoints under `/health`, and the helper distribution URL `/userscripts/ovs-bilibili.user.js`.
+Use `/api/v1`, health endpoints under `/health`, and the helper distribution URL `/userscripts/ovs-bilibili.user.js`.
 Bootstrap and authenticated mutations require the configured exact origin. Authenticated mutations also require the session-bound CSRF token.
 Use the host-only HttpOnly session cookie. Keep API responses uncached. Validate expiry and authorization against application memory.
 
@@ -80,7 +80,7 @@ Use the following exact shape. `ID` denotes the common ID format; nullable field
   media: MediaDescriptor | null,
   playback: {
     phase: "empty" | "paused" | "waiting" | "playing" | "ended",
-    positionMs, anchorServerMs, desiredPlaying: boolean
+    positionMs, anchorServerMs, rate, desiredPlaying: boolean
   },
   barrier: {
     barrierId, requiredMemberIds: ID[], reason: "play" | "buffering",
@@ -99,7 +99,7 @@ Revision is an in-memory counter, starting at 1 for each new epoch.
 Media generation starts at 0 without media or 1 with restored selected media, and advances on replacement within that epoch.
 Do not compare these counters across epochs or store them in SQLite.
 Only `playing` advances the timeline. Only `waiting` has a barrier. Restart has position zero, no barrier, and no desired play.
-A loaded descriptor restarts paused; absent media restarts empty. Base playback rate is always 1.0 and needs no wire field.
+A loaded descriptor restarts paused; absent media restarts empty. `rate` is a number from 0.5 to 2 inclusive in steps of 0.25, defaulting to 1.0. The playing timeline advances by elapsed monotonic time multiplied by `rate`. Rate is memory-only and resets to 1.0 on media replacement and runtime recreation.
 Only ready local players apply a playing timeline. A late joiner loads, permits playback, and catches up without enlarging an existing barrier.
 
 `Readiness` is `{status,mediaGeneration,barrierId,sampledAtClientMs,positionMs,durationMs,capabilities}`.
@@ -111,21 +111,21 @@ Send readiness changes and current-barrier confirmations; do not send a separate
 
 ## WebSocket
 
-Use `/ws/v2/rooms/{roomId}` with cookie, exact Origin, membership, and resource checks before admission.
+Use `/ws/v1/rooms/{roomId}` with cookie, exact Origin, membership, and resource checks before admission.
 Clock/heartbeat traffic and real-time commands never query SQLite.
 The latest authenticated connection owns playback for its membership. Replacement closes the older connection and invalidates all its pending work.
 The replaced page pauses and does not reconnect until explicitly reloaded or reopened.
 
-Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
+Mutation envelopes are `{v:1,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
-- `playback.command`: `{action:"play"|"pause"|"replay"}` or `{action:"seek",positionMs}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent.
-- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Host only; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
+- `playback.command`: `{action:"play"|"pause"|"replay"}`, `{action:"seek",positionMs}`, or `{action:"rate",rate}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent. Rate uses the snapshot bounds, reanchors the current position, and preserves phase, waiting, and play intent. Controller permissions apply to every action.
+- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Allow the host, or any current member when `everyoneCanSelectMedia` is true; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
-Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.
-Clock and heartbeat use `{v:2,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.
+Readiness uses `{v:1,type:"member.readiness",epoch,payload:Readiness}`.
+Clock and heartbeat use `{v:1,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.
 Reject unsupported message types. No frame can override its authenticated room, identity, or connection.
 
-Server room envelopes are `{v:2,type,epoch,eventSeq,payload}`. Sequence is per connection, starts at 1, and is never persisted.
+Server room envelopes are `{v:1,type,epoch,eventSeq,payload}`. Sequence is per connection, starts at 1, and is never persisted.
 
 | Type               | Payload                                                                            |
 | ------------------ | ---------------------------------------------------------------------------------- |

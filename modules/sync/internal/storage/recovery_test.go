@@ -64,7 +64,7 @@ func TestPersistentFailureLeavesMemoryAndExistingPlaybackAvailable(t *testing.T)
 	defer service.Close()
 	settings := contracts.DefaultSettings()
 	settings.WaitForAll = false
-	settings.Controllers = "everyone"
+	settings.EveryoneCanControl = true
 	created, err := service.Create(ctx, host, recoveryKey(t), "Write recovery", settings)
 	if err != nil {
 		t.Fatal(err)
@@ -125,11 +125,15 @@ func TestPersistentFailureLeavesMemoryAndExistingPlaybackAvailable(t *testing.T)
 			t.Fatal(err)
 		}
 	}
+	var beforeStored string
+	if err := store.db.QueryRow(`SELECT settings FROM rooms WHERE id=?`, snap.RoomID).Scan(&beforeStored); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.db.Exec(`CREATE TRIGGER reject_settings BEFORE UPDATE ON rooms BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	changed := settings
-	changed.Controllers = "host"
+	changed.EveryoneCanControl = false
 	_, _, err = service.Mutate(ctx, host, snap.RoomID, rooms.Mutation{Operation: "settings", Epoch: snap.Epoch, ExpectedRevision: snap.Revision, Settings: changed})
 	if err == nil {
 		t.Fatal("failed durable settings acknowledged")
@@ -157,7 +161,7 @@ func TestPersistentFailureLeavesMemoryAndExistingPlaybackAvailable(t *testing.T)
 	if err := store.db.QueryRow(`SELECT settings FROM rooms WHERE id=?`, snap.RoomID).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stored, `"everyone"`) {
+	if stored != beforeStored {
 		t.Fatal("failed settings persisted")
 	}
 	if err := send(g, contracts.ClientFrame{Type: "playback.command", Action: "seek", PositionMs: 12000}); err != nil {

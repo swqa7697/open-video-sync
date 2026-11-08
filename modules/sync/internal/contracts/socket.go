@@ -29,6 +29,7 @@ type Readiness struct {
 type ClientFrame struct {
 	Type, CommandID, RequestID, Epoch, Action                   string
 	MediaGeneration, ExpectedRevision, PositionMs, ClientSendMs int64
+	Rate                                                        float64
 	Media                                                       MediaDescriptor
 	Report                                                      Readiness
 	Reply, AutoPlay                                             bool
@@ -41,7 +42,7 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 	if err != nil {
 		return f, err
 	}
-	if v, ok := integer(o["v"], 2, 2); !ok || v != 2 {
+	if v, ok := integer(o["v"], 1, 1); !ok || v != 1 {
 		return f, Failure("upgrade_required")
 	}
 	f.Type, _ = o["type"].(string)
@@ -79,6 +80,11 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 				var ok bool
 				f.PositionMs, ok = integer(p["positionMs"], 0, MaxDurationMs)
 				valid = valid && ok && shape(p, "action", "positionMs")
+			} else if f.Action == "rate" {
+				number, ok := p["rate"].(json.Number)
+				var err error
+				f.Rate, err = number.Float64()
+				valid = valid && ok && err == nil && ValidPlaybackRate(f.Rate) && shape(p, "action", "rate")
 			} else {
 				_, ok := choice(f.Action, "play", "pause", "replay")
 				valid = valid && ok && shape(p, "action")
@@ -102,6 +108,17 @@ func DecodeClientFrame(data []byte) (ClientFrame, error) {
 	}
 	return f, nil
 }
+
+// ValidPlaybackRate accepts the shared playback speeds exposed by the player.
+func ValidPlaybackRate(rate float64) bool {
+	switch rate {
+	case 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2:
+		return true
+	default:
+		return false
+	}
+}
+
 func decodeReadiness(p map[string]any) (Readiness, error) {
 	var r Readiness
 	fields := []string{"status", "mediaGeneration", "sampledAtClientMs", "positionMs", "durationMs", "capabilities"}
@@ -159,12 +176,14 @@ func decodeReadiness(p map[string]any) (Readiness, error) {
 
 // CommandDigest hashes the canonical validated intent, including its original preconditions.
 func CommandDigest(f ClientFrame) string {
-	a := []any{"ovs-command-v2", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
+	a := []any{"ovs-command-v1", f.Type, f.Epoch, f.MediaGeneration, f.ExpectedRevision}
 	switch f.Type {
 	case "playback.command":
 		var p any
 		if f.Action == "seek" {
 			p = f.PositionMs
+		} else if f.Action == "rate" {
+			p = f.Rate
 		}
 		a = append(a, f.Action, p)
 	case "media.select":
