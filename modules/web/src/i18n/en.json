@@ -116,7 +116,7 @@
     "roomPlaceholder": "e.g. Friday movie night",
     "hostControls": "Host controls",
     "everyoneControls": "Everyone controls",
-    "joinWhenReady": "Join when ready",
+    "joinWhenReady": "Does not wait",
     "preparingRoom": "Preparing room…",
     "createRoom": "Create room",
     "haveInvitation": "Already have an invitation?",
@@ -361,7 +361,7 @@
     "matchingVideo": "Choose matching video",
     "filePrivate": "Your file stays on your device.",
     "differentVideo": "A different video",
-    "mismatchHint": "This video does not match the room. Choose the same file as the host.",
+    "mismatchHint": "This file does not match the room video. Choose a matching file.",
     "connectHelper": "Connect your playback helper",
     "helperHint": "Set up the OVS helper to load this video automatically.",
     "again": "One more time?",
@@ -443,7 +443,8 @@
     "shortcutFullscreen": "Enter or exit fullscreen",
     "shortcutWindowFullscreen": "Enter or exit browser-window fullscreen",
     "shortcutClose": "Close an overlay, then exit fullscreen",
-    "shortcutQuickActions": "Quick actions"
+    "shortcutQuickActions": "Open Quick actions",
+    "shortcutContextMenu": "Open player menu"
   },
   "local": {
     "matchTimeout": "Local matching timed out. Select the file again.",
