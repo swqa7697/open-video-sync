@@ -13,6 +13,7 @@ import {
   openPlayerMenu,
   openQuickActions,
   seekTo,
+  setPlaybackSpeed,
   settings,
 } from './flows';
 import { decodedFrame, generatedVideo } from './media';
@@ -80,7 +81,7 @@ test('two independent local players match, play, change speed, seek, pause, reco
       other.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
     await expect(
-      other.getByRole('combobox', { name: 'Playback speed', exact: true }),
+      other.getByRole('button', { name: 'Playback speed', exact: true }),
     ).toBeDisabled();
     await settings(page, 'everyone');
     await expect(
@@ -123,11 +124,11 @@ test('two independent local players match, play, change speed, seek, pause, reco
       'ready',
     );
     const speed = (player: typeof page) =>
-      player.getByRole('combobox', { name: 'Playback speed', exact: true });
+      player.getByRole('button', { name: 'Playback speed', exact: true });
     await page.locator('.video-stage').hover({ position: { x: 16, y: 8 } });
-    await speed(page).selectOption('1.5');
+    await setPlaybackSpeed(page, 1.5);
     for (const player of [page, other]) {
-      await expect(speed(player)).toHaveValue('1.5');
+      await expect(speed(player)).toHaveText('1.5×');
       await expect(player.locator('video')).toHaveJSProperty('paused', true);
       await expect(player.locator('video')).toHaveJSProperty(
         'playbackRate',
@@ -253,9 +254,9 @@ test('two independent local players match, play, change speed, seek, pause, reco
     await expect(page.locator('.playback-indicator')).toHaveCount(0);
     // Everyone controls changes both actual players without pausing playback.
     await other.locator('.video-stage').hover({ position: { x: 16, y: 8 } });
-    await speed(other).selectOption('2');
+    await setPlaybackSpeed(other, 2);
     for (const player of [page, other]) {
-      await expect(speed(player)).toHaveValue('2');
+      await expect(speed(player)).toHaveText('2×');
       await expect(player.locator('video')).toHaveJSProperty('paused', false);
       await expect
         .poll(() =>
@@ -321,9 +322,9 @@ test('two independent local players match, play, change speed, seek, pause, reco
     expect(await background.evaluate((state) => state.pauses)).toBe(0);
     await background.dispose();
     await seekTo(page, Number('10'));
-    await speed(page).selectOption('0.75');
+    await setPlaybackSpeed(page, 0.75);
     for (const player of [page, other]) {
-      await expect(speed(player)).toHaveValue('0.75');
+      await expect(speed(player)).toHaveText('0.75×');
       await expect(player.locator('video')).toHaveJSProperty(
         'playbackRate',
         0.75,
@@ -388,7 +389,7 @@ test('two independent local players match, play, change speed, seek, pause, reco
       timeout: 20000,
     });
     await clickPlayerControl(page, 'Play together');
-    await expect(speed(other)).toHaveValue('0.75');
+    await expect(speed(other)).toHaveText('0.75×');
     await expect
       .poll(() =>
         other.locator('video').evaluate((v) => !(v as HTMLVideoElement).paused),

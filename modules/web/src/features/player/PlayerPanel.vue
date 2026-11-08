@@ -15,7 +15,6 @@ import Modal from '../../components/Modal.vue';
 import {
   dismissKeyboardOverlay,
   hasKeyboardOverlay,
-  vKeyboardBoundary,
 } from '../../components/overlay-keyboard';
 import {
   errorMessage,
@@ -72,6 +71,7 @@ import MediaPicker from '../media/MediaPicker.vue';
 import { phaseText, readinessText } from '../status-text';
 import DanmakuControl from './DanmakuControl.vue';
 import type { PlayerMenuItem } from './player-menu';
+import PlayerChoiceMenu from './PlayerChoiceMenu.vue';
 import PlayerContextMenu from './PlayerContextMenu.vue';
 import PlayerShortcuts from './PlayerShortcuts.vue';
 import PlayerStatistics from './PlayerStatistics.vue';
@@ -196,6 +196,7 @@ const position = ref(0),
   seekPointerDown = ref(false),
   danmakuMenu = ref(false),
   qualityMenu = ref(false),
+  rateMenu = ref(false),
   replaceOpen = ref(false),
   hoveredTime = ref<number>(),
   seekPointerOffset = ref(0),
@@ -220,7 +221,8 @@ function closeContextMenu(restoreFocus = true): void {
 }
 function showContextMenu(x: number, y: number): void {
   danmakuMenu.value = false;
-  closeQuality();
+  qualityMenu.value = false;
+  rateMenu.value = false;
   shortcutsOpen.value = false;
   clearSeekPreview();
   suppressSurfaceClick = false;
@@ -321,8 +323,6 @@ function selectContextItem(id: string): void {
   else if (id === 'statistics') toggleStatistics();
   else if (id === 'shortcuts') openShortcuts();
 }
-const qualityTrigger = ref<HTMLButtonElement>(),
-  qualityOptions = ref<HTMLElement>();
 const streamInfo = shallowRef<MediaInfo>();
 const previewCanvas = ref<HTMLCanvasElement>();
 const thumbnailVisible = ref(false);
@@ -400,6 +400,7 @@ const controlsPinned = computed(
     controlsHovered.value ||
     danmakuMenu.value ||
     qualityMenu.value ||
+    rateMenu.value ||
     dragging.value ||
     seekPointerDown.value,
 );
@@ -869,9 +870,10 @@ function clearMedia(): void {
   clearSeekPreview();
   endSeek();
   danmakuMenu.value = false;
-  if (qualityOptions.value?.contains(document.activeElement))
+  if (stage.value?.querySelector('.player-menu:focus-within'))
     stage.value?.focus({ preventScroll: true });
   qualityMenu.value = false;
+  rateMenu.value = false;
   selection.abort();
   selection = new AbortController();
   selectionGeneration++;
@@ -945,68 +947,13 @@ function clickSurface(event: MouseEvent): void {
     return;
   }
   stage.value?.focus({ preventScroll: true });
-  if (danmakuMenu.value || qualityMenu.value) {
+  if (danmakuMenu.value || qualityMenu.value || rateMenu.value) {
     danmakuMenu.value = false;
     qualityMenu.value = false;
+    rateMenu.value = false;
     return;
   }
   togglePlayback();
-}
-async function openQuality(): Promise<void> {
-  qualityMenu.value = !qualityMenu.value;
-  danmakuMenu.value = false;
-  if (qualityMenu.value) {
-    await nextTick();
-    qualityOptions.value
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
-      ?.focus();
-  }
-}
-function closeQuality(restoreFocus = false): void {
-  qualityMenu.value = false;
-  if (restoreFocus) qualityTrigger.value?.focus();
-}
-function qualityKeyboard(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeQuality(true);
-    return;
-  }
-  const items = Array.from(
-    qualityOptions.value?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-  );
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  let next: number;
-  switch (event.key) {
-    case 'ArrowDown':
-      next = (index + 1) % items.length;
-      break;
-    case 'ArrowUp':
-      next = (index + items.length - 1) % items.length;
-      break;
-    case 'Home':
-      next = 0;
-      break;
-    case 'End':
-      next = items.length - 1;
-      break;
-    case 'Tab':
-      closeQuality(true);
-      return;
-    default:
-      return;
-  }
-  event.preventDefault();
-  items[next]?.focus();
-}
-function outsideQuality(event: PointerEvent): void {
-  if (event.target === video.value || event.target === stage.value) return;
-  if (
-    event.target instanceof Node &&
-    !qualityOptions.value?.contains(event.target) &&
-    !qualityTrigger.value?.contains(event.target)
-  )
-    closeQuality();
 }
 async function fullscreen(): Promise<void> {
   try {
@@ -1498,7 +1445,6 @@ async function changeQuality(quality: number): Promise<void> {
     loading.value
   )
     return;
-  closeQuality(true);
   preferredQuality.value = quality;
   if (streamInfo.value.quality === quality) return;
   await chooseBilibili(selected, false, quality);
@@ -1787,11 +1733,7 @@ function command(action: 'play' | 'pause' | 'replay' | 'seek'): void {
       : { action },
   );
 }
-function changePlaybackRate(event: Event): void {
-  const select = event.target as HTMLSelectElement;
-  const rate = Number(select.value);
-  // Display the authoritative choice until the server accepts this command.
-  select.value = String(current.value.playback.rate);
+function changePlaybackRate(rate: number): void {
   if (!canControl.value || rate === current.value.playback.rate) return;
   showError('');
   roomError.value = '';
@@ -1850,7 +1792,6 @@ onMounted(() => {
   window.addEventListener('blur', rememberWindowFocus);
   document.addEventListener('keydown', keyboard);
   document.addEventListener('fullscreenchange', fullscreenChanged);
-  document.addEventListener('pointerdown', outsideQuality);
   document.addEventListener('pointerdown', outsideContextMenu, true);
   document.addEventListener('pointerup', endSeek);
   document.addEventListener('pointercancel', endSeek);
@@ -1871,7 +1812,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', keyboard);
   document.removeEventListener('fullscreenchange', fullscreenChanged);
   releaseFullscreenKeyboard();
-  document.removeEventListener('pointerdown', outsideQuality);
   document.removeEventListener('pointerdown', outsideContextMenu, true);
   document.removeEventListener('pointerup', endSeek);
   document.removeEventListener('pointercancel', endSeek);
@@ -2196,20 +2136,6 @@ onUnmounted(() => {
               >
             </div>
             <div class="control-end">
-              <select
-                class="playback-rate"
-                :value="current.playback.rate"
-                :aria-label="t('player.playbackSpeed')"
-                :title="controlNote || t('player.playbackSpeedShared')"
-                :disabled="!canControl && !pendingCommand"
-                :aria-disabled="!canControl"
-                :aria-describedby="controlNote ? 'control-note' : undefined"
-                @change="changePlaybackRate"
-              >
-                <option v-for="rate in playbackRates" :key="rate" :value="rate">
-                  {{ rate }}×
-                </option>
-              </select>
               <DanmakuControl
                 v-if="current.media?.kind === 'bilibili'"
                 :open="danmakuMenu"
@@ -2222,7 +2148,10 @@ onUnmounted(() => {
                 @update:open="
                   (value) => {
                     danmakuMenu = value;
-                    if (value) closeQuality();
+                    if (value) {
+                      qualityMenu = false;
+                      rateMenu = false;
+                    }
                   }
                 "
                 @toggle="toggleDanmaku"
@@ -2251,77 +2180,91 @@ onUnmounted(() => {
                   }
                 "
               />
-              <button
+              <PlayerChoiceMenu
+                :open="rateMenu"
+                trigger-class="playback-rate"
+                :label="t('player.playbackSpeed')"
+                :text="`${current.playback.rate}×`"
+                :value="current.playback.rate"
+                :options="
+                  playbackRates.map((value) => ({ value, label: `${value}×` }))
+                "
+                :stage="stage"
+                :title="controlNote || t('player.playbackSpeedShared')"
+                :disabled="!canControl && !pendingCommand"
+                :unavailable="!canControl"
+                :describedby="controlNote ? 'control-note' : undefined"
+                @update:open="
+                  (value) => {
+                    rateMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      qualityMenu = false;
+                    }
+                  }
+                "
+                @select="changePlaybackRate"
+              />
+              <PlayerChoiceMenu
                 v-if="current.media?.kind === 'bilibili'"
-                ref="qualityTrigger"
-                class="quality-trigger quiet"
-                :aria-label="t('player.videoQuality')"
-                aria-haspopup="menu"
-                aria-controls="video-quality"
-                :disabled="!streamInfo || loading"
-                :aria-expanded="qualityMenu"
-                @click="openQuality"
-                @keydown.down.prevent="!qualityMenu && openQuality()"
-              >
-                {{
+                :open="qualityMenu"
+                trigger-class="quality-trigger"
+                :label="t('player.videoQuality')"
+                :text="
                   streamInfo
                     ? qualityName(streamInfo.quality)
                     : t('player.quality')
-                }}<Icon name="chevron" :size="14" />
-              </button>
-              <button
-                class="icon-button"
-                :aria-label="
-                  t(
-                    windowFullscreen
-                      ? 'player.exitWindowFullscreen'
-                      : 'player.windowFullscreen',
-                  )
                 "
-                :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
-                :aria-pressed="windowFullscreen"
-                aria-keyshortcuts="s"
-                @click="toggleWindowFullscreen"
-              >
-                <Icon
-                  :name="
-                    windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                :value="streamInfo?.quality ?? 0"
+                :options="
+                  [...(streamInfo?.qualities ?? [])]
+                    .sort((a, b) => b - a)
+                    .map((value) => ({ value, label: qualityName(value) }))
+                "
+                :stage="stage"
+                :disabled="!streamInfo || loading"
+                @update:open="
+                  (value) => {
+                    qualityMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      rateMenu = false;
+                    }
+                  }
+                "
+                @select="changeQuality"
+              />
+              <div class="display-controls">
+                <button
+                  class="icon-button"
+                  :aria-label="
+                    t(
+                      windowFullscreen
+                        ? 'player.exitWindowFullscreen'
+                        : 'player.windowFullscreen',
+                    )
                   "
-                />
-              </button>
-              <button
-                class="icon-button"
-                :aria-label="t('player.fullscreen')"
-                @click="fullscreen"
-              >
-                <Icon name="fullscreen" />
-              </button>
+                  :title="`${t(windowFullscreen ? 'player.exitWindowFullscreen' : 'player.windowFullscreen')} (S)`"
+                  :aria-pressed="windowFullscreen"
+                  aria-keyshortcuts="s"
+                  @click="toggleWindowFullscreen"
+                >
+                  <Icon
+                    :name="
+                      windowFullscreen ? 'window-restore' : 'window-fullscreen'
+                    "
+                  />
+                </button>
+                <button
+                  class="icon-button"
+                  :aria-label="t('player.fullscreen')"
+                  @click="fullscreen"
+                >
+                  <Icon name="fullscreen" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        <div
-          v-if="qualityMenu && streamInfo"
-          id="video-quality"
-          ref="qualityOptions"
-          v-keyboard-boundary="() => closeQuality(true)"
-          class="player-menu quality-menu"
-          role="menu"
-          :aria-label="t('player.videoQuality')"
-          @keydown.stop="qualityKeyboard"
-        >
-          <button
-            v-for="q in [...streamInfo.qualities].sort((a, b) => b - a)"
-            :key="q"
-            type="button"
-            role="menuitemradio"
-            class="quiet"
-            tabindex="-1"
-            :aria-checked="streamInfo.quality === q"
-            @click="changeQuality(q)"
-          >
-            <span>{{ qualityName(q) }}</span
-            ><Icon v-if="streamInfo.quality === q" name="check" :size="16" />
-          </button>
         </div>
       </div>
     </div>

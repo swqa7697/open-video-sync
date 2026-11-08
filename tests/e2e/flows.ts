@@ -58,6 +58,15 @@ export async function clickPlayerControl(
   await page.locator('.video-stage').hover({ position: { x: 100, y: 100 } });
   await page.getByRole('button', { name, exact: true }).click();
 }
+export async function setPlaybackSpeed(
+  page: Page,
+  rate: number,
+): Promise<void> {
+  await clickPlayerControl(page, 'Playback speed');
+  await page
+    .getByRole('menuitemradio', { name: `${rate}×`, exact: true })
+    .click();
+}
 export async function openPlayerMenu(
   page: Page,
   input: 'pointer' | 'keyboard' = 'pointer',

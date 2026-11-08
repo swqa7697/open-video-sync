@@ -4,6 +4,7 @@ import { nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue';
 import Icon from '../../components/Icon.vue';
 import { vKeyboardBoundary } from '../../components/overlay-keyboard';
 import { t } from '../../i18n';
+import { positionPlayerPopover } from './player-popover';
 
 const props = defineProps<{
   open: boolean;
@@ -138,16 +139,8 @@ watch(
   async (value) => {
     if (!value) return;
     await nextTick();
-    const bounds = props.stage?.getBoundingClientRect(),
-      anchor = trigger.value?.getBoundingClientRect();
-    if (!bounds || !anchor || !panel.value) return;
-    const width = Math.min(285, bounds.width - 24);
-    Object.assign(panel.value.style, {
-      width: `${width}px`,
-      left: `${Math.max(12, Math.min(bounds.width - width - 12, anchor.right - bounds.left - width))}px`,
-      bottom: `${bounds.bottom - anchor.top + 8}px`,
-      maxHeight: `${Math.max(0, anchor.top - bounds.top - 20)}px`,
-    });
+    if (panel.value && trigger.value && props.stage)
+      positionPlayerPopover(panel.value, trigger.value, props.stage, 272);
   },
 );
 onMounted(() => {

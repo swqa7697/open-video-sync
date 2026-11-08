@@ -965,16 +965,20 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
     await vi.advanceTimersByTimeAsync(2);
     expect(wrapper.find('.command-recovery').exists()).toBe(false);
     expect(play.attributes('aria-disabled')).toBe('false');
-    const rate = wrapper.get<HTMLSelectElement>('.playback-rate');
+    const rate = wrapper.get<HTMLButtonElement>('.playback-rate');
     rate.element.focus();
-    await rate.setValue('2');
+    await rate.trigger('click');
+    await flushPromises();
+    await wrapper.get('.rate-menu button:last-child').trigger('click');
     expect(commands().at(-1)?.payload).toEqual({ action: 'rate', rate: 2 });
-    expect(rate.element.value).toBe('1');
+    expect(rate.text()).toBe('1×');
     expect(rate.attributes('aria-disabled')).toBe('true');
     expect(rate.attributes('disabled')).toBeUndefined();
     expect(document.activeElement).toBe(rate.element);
     const sent = commands().length;
-    await rate.setValue('0.5');
+    await rate.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.rate-menu').exists()).toBe(false);
     expect(commands()).toHaveLength(sent);
     receipt('9'.repeat(32));
     socket.frame(
@@ -988,7 +992,7 @@ test('command recovery waits three seconds for a receipt and ignores media loadi
       '9'.repeat(32),
     );
     await flushPromises();
-    expect(rate.element.value).toBe('2');
+    expect(rate.text()).toBe('2×');
     expect(rate.attributes('aria-disabled')).toBe('false');
     expect(document.activeElement).toBe(rate.element);
   } finally {

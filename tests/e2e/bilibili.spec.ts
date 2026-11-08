@@ -14,6 +14,7 @@ import {
   openQuickActions,
   runQuickAction,
   seekTo,
+  setPlaybackSpeed,
   settings,
 } from './flows';
 import { decodedFrame, generatedDASHMedia, generatedVideo } from './media';
@@ -290,6 +291,55 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
+    // The right controls share one row; every popover clears that row at the same height.
+    const controls = await page
+      .locator('.control-end button[aria-haspopup], .display-controls button')
+      .all();
+    const heights: number[] = [];
+    const centers = await Promise.all(
+      controls.map(async (control) => {
+        const box = (await control.boundingBox())!;
+        heights.push(box.height);
+        return box.y + box.height / 2;
+      }),
+    );
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+    expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(1);
+    const bottoms: number[] = [];
+    for (const [trigger, popup] of [
+      ['.danmaku-toggle', '.danmaku-menu'],
+      ['.playback-rate', '.rate-menu'],
+      ['.quality-trigger', '.quality-menu'],
+    ]) {
+      await page.locator(trigger!).press('ArrowDown');
+      const menu = page.locator(popup!);
+      await expect(menu).toBeVisible();
+      const box = (await menu.boundingBox())!;
+      const surface = (await stage.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(surface.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(surface.x + surface.width);
+      expect(box.y).toBeGreaterThanOrEqual(surface.y);
+      bottoms.push(box.y + box.height);
+      if (popup === '.rate-menu') {
+        await page.keyboard.press('End');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '2×', exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press('Home');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '0.5×', exact: true }),
+        ).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(
+          menu.getByRole('menuitemradio', { name: '0.75×', exact: true }),
+        ).toBeFocused();
+      }
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(page.locator(trigger!)).toBeFocused();
+      await expect(page.locator('video')).toHaveJSProperty('paused', true);
+    }
+    expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThan(1);
     await openPlayerMenu(page);
     const original = playerMenu.getByRole('menuitem', {
       name: 'Open on Bilibili',
@@ -353,11 +403,11 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await stage.hover({ position: { x: 16, y: 8 } });
-  const playbackSpeed = page.getByRole('combobox', {
+  const playbackSpeed = page.getByRole('button', {
     name: 'Playback speed',
     exact: true,
   });
-  await playbackSpeed.selectOption('1.5');
+  await setPlaybackSpeed(page, 1.5);
   await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1.5);
   await expect(page.locator('video')).toHaveJSProperty('paused', true);
   await openPlayerMenu(page);
@@ -456,7 +506,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await expect(page.locator('.seek-preview')).toHaveCount(0);
   await clickPlayerControl(page, 'Play together');
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
-  await expect(playbackSpeed).toHaveValue('1.5');
+  await expect(playbackSpeed).toHaveText('1.5×');
   await expect
     .poll(() =>
       page
@@ -565,7 +615,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
         (await (await page.request.get(roomPath)).json()).media.episodeId,
     )
     .toBe('9000000000011');
-  await expect(playbackSpeed).toHaveValue('1');
+  await expect(playbackSpeed).toHaveText('1×');
   await expect(page.locator('video')).toHaveJSProperty('playbackRate', 1);
   await page.reload();
   await expect(page.getByTestId('media-status')).toHaveAttribute(

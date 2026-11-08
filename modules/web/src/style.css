@@ -1449,7 +1449,7 @@ fieldset select {
   right: 0;
   z-index: 4;
   padding: 32px 18px 10px;
-  background: linear-gradient(transparent, #000b);
+  background: linear-gradient(transparent, #060a1080);
   color: var(--text);
   opacity: 1;
 }
@@ -1467,23 +1467,31 @@ fieldset select {
 .control-end {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
+}
+.display-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid #ffffff24;
 }
 .player-controls button {
   background: transparent;
   color: var(--text);
   min-height: 40px;
   height: 40px;
-  padding: 0.5rem;
-  border-radius: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  line-height: 1;
 }
 .player-controls button.icon-button {
-  width: 38px;
+  width: 40px;
+  padding: 0;
 }
-.control-start > .icon-button > svg,
-.control-end > .icon-button > svg,
-.danmaku-toggle > svg {
+.control-bar .icon-button > svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -1491,24 +1499,65 @@ fieldset select {
 .player-controls button:disabled {
   opacity: 0.4;
 }
-.playback-rate {
-  width: auto;
-  min-width: 64px;
-  min-height: 44px;
-  border: 0;
-  border-radius: 6px;
-  background-color: transparent;
-  color: var(--text);
+.player-choice,
+.danmaku-control {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.player-controls .player-choice-trigger {
+  gap: 5px;
   font-size: 0.8rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  padding: 0.5rem 0.25rem;
+  white-space: nowrap;
 }
-.playback-rate option {
-  background: var(--surface);
-  color: var(--text);
+.player-choice-trigger > svg {
+  opacity: 0.65;
 }
-.playback-rate:disabled {
-  opacity: 0.4;
+.player-controls
+  .control-end
+  :is(
+    .player-choice-trigger,
+    .danmaku-toggle,
+    .display-controls > .icon-button
+  ) {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+}
+.player-controls
+  .control-end
+  :is(.danmaku-toggle, .display-controls > .icon-button) {
+  width: 28px;
+  padding: 0;
+}
+.player-controls button[aria-expanded='true'] {
+  background: #ffffff1a;
+}
+.player-controls button:active:not(:disabled):not([aria-disabled='true']),
+.player-menu button:active:not([aria-disabled='true']) {
+  background: #ffffff26;
+  filter: none;
+}
+:root[data-input='keyboard'] .player-controls button:focus-visible,
+:root[data-input='keyboard'] .player-menu :is(button, select):focus-visible {
+  background: #ffffff24;
+  filter: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .video-stage
+    .player-controls
+    button:hover:not(:disabled):not([aria-disabled='true']) {
+    background: #ffffff18;
+    filter: none;
+  }
+  .video-stage
+    .player-controls
+    button:active:not(:disabled):not([aria-disabled='true']) {
+    background: #ffffff26;
+  }
 }
 .volume-slider {
   width: 65px;
@@ -1608,10 +1657,6 @@ fieldset select {
   display: block;
   padding: 4px 8px;
 }
-.quality-trigger {
-  font-size: 0.65rem;
-  gap: 3px !important;
-}
 .waiting-overlay {
   position: absolute;
   z-index: 3;
@@ -1630,63 +1675,84 @@ fieldset select {
 }
 .player-menu {
   position: absolute;
-  right: 18px;
-  bottom: 88px;
   z-index: 5;
-  width: min(285px, calc(100% - 36px));
-  max-height: calc(100% - 110px);
   overflow: auto;
-  border: 1px solid var(--control-border);
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 15px;
-  box-shadow: 0 10px 30px #0006;
+  overscroll-behavior: contain;
+  border: 1px solid #ffffff26;
+  background: #151a228c;
+  backdrop-filter: blur(18px) saturate(130%);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow:
+    0 12px 32px #0005,
+    inset 0 1px 0 #ffffff08;
+  color: var(--text);
   font-size: 0.8rem;
+  line-height: 1.4;
+  scrollbar-width: thin;
 }
 .player-menu .menu-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.player-menu .menu-heading strong {
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 .player-menu .menu-heading button {
-  width: 30px;
-  min-height: 30px;
-  padding: 3px;
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
 }
 .player-menu label {
-  margin-top: 12px;
+  margin: 12px 0 4px;
 }
 .player-menu input[type='range'] {
   display: block;
   width: 100%;
-  height: 20px;
+  height: 24px;
   margin: 0;
+  accent-color: #dbe5f2;
 }
-.quality-menu {
-  width: min(190px, calc(100% - 36px));
+.player-controls .player-choice-menu {
   padding: 6px;
-  right: 100px;
 }
-.quality-menu button {
+.player-menu .menu-title {
+  padding: 8px 10px 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.player-choice-menu button {
   width: 100%;
+  min-height: 36px;
+  height: 36px;
   justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
-.quality-menu button[aria-checked='true'] {
+.player-choice-menu button[aria-checked='true'] {
+  color: #f4f7fc;
+  background: #ffffff14;
+  font-weight: 600;
+}
+.player-choice-menu button[aria-checked='true'] > svg {
   color: var(--primary);
-  background: var(--notice);
-}
-.danmaku-control {
-  display: flex;
-  align-items: center;
-}
-.danmaku-menu {
-  right: auto;
 }
 .danmaku-menu label {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+  font-size: 0.75rem;
 }
 .danmaku-menu output {
   color: var(--muted);
@@ -1694,9 +1760,21 @@ fieldset select {
 }
 .danmaku-menu select {
   margin-top: 6px;
-  min-height: 36px;
-  padding: 0.4rem 0.6rem;
-  font-size: inherit;
+  min-height: 34px;
+  padding: 0.35rem 0.6rem;
+  border-color: #ffffff26;
+  background: #ffffff0c;
+  font-size: 0.75rem;
+}
+.danmaku-menu option {
+  background: var(--surface);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .player-menu {
+    background: #1a1f26;
+    border-color: var(--control-border);
+    backdrop-filter: none;
+  }
 }
 .danmaku-toggle[aria-pressed='false'] {
   color: var(--muted);
@@ -2110,9 +2188,7 @@ fieldset select {
   .control-end {
     gap: 0;
   }
-  .control-start > .icon-button > svg,
-  .control-end > .icon-button > svg,
-  .danmaku-toggle > svg {
+  .control-bar .icon-button > svg {
     width: 18px;
     height: 18px;
   }
@@ -2128,18 +2204,23 @@ fieldset select {
   .player-time span {
     margin-left: 3px;
   }
-  .quality-trigger {
-    display: inline-flex;
+  .player-controls .player-choice-trigger {
     min-height: 44px;
-    font-size: 0.7rem;
+    height: 44px;
+    padding-inline: 8px;
+    font-size: 0.75rem;
+  }
+  .player-choice-menu button {
+    min-height: 44px;
+    height: 44px;
+  }
+  .display-controls {
+    gap: 0;
+    margin-left: 4px;
+    padding-left: 4px;
   }
   .video-stage:has(.quality-trigger) .player-state {
     padding-bottom: 132px;
-  }
-  .player-menu {
-    bottom: 78px;
-    right: 10px;
-    max-height: calc(100% - 90px);
   }
 }
 @media (max-width: 360px) {
@@ -2470,13 +2551,22 @@ fieldset select {
 }
 @media (prefers-reduced-motion: no-preference) {
   :root[data-input='pointer']
-    :is(.create-submit, .room-actions button, .modal button, .appearance-tile) {
+    :is(
+      .create-submit,
+      .room-actions button,
+      .modal button,
+      .appearance-tile,
+      .control-bar button
+    ) {
     transition: transform var(--motion-press) var(--ease-out);
   }
   :root[data-input='pointer']
     :is(.create-submit, .room-actions button, .modal button):active:not(
       :disabled
     ),
+  :root[data-input='pointer']
+    .control-bar
+    button:active:not(:disabled):not([aria-disabled='true']),
   :root[data-input='pointer'] .appearance-choice:active .appearance-tile {
     transform: scale(0.98);
   }
