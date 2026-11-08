@@ -46,7 +46,7 @@ release tags point at `HEAD`, the newest date wins.
 Set `IMAGE=my-ovs:testing` to build, transfer, and run a custom tag.
 
 Deployment shows numbered steps, completion or failure, elapsed time, and remote
-substeps through configuration validation, container replacement, and health checks.
+substeps through configuration validation, database preparation, container replacement, and health checks.
 Compose downloads and helper/Compose uploads show percentage bars when their size
 is known. The streamed image archive has no known total: its activity bar shows
 local bytes read, average throughput, and elapsed time. Transfer completion also
@@ -146,9 +146,13 @@ preparation failures leave the running application unchanged.
 The tool verifies execution configuration and layer digests after transfer, then
 records the remote image IDs. This supports both
 classic and containerd Docker image stores, whose image IDs can differ. Once
-images and configurations are valid, OVS stops before the replacement starts.
-Startup or schema initialization failures preserve the data and report an error. There is no
-automatic image downgrade, database rollback, or backup command. Rebuilding the
+images and configurations are valid, OVS stops. The verified candidate image then
+runs `/ovs migrate` once with the existing data volume, its normal non-root user,
+a read-only root filesystem, and no network access. Only a successful migration
+allows the replacement to start. The migration ledger selects pending changes;
+new databases use the latest complete schema directly, without historical migrations.
+Migration or startup failures preserve the data and report an error. There is no
+automatic image or database downgrade, and no backup command. Rebuilding the
 same tag replaces its image reference. Release configurations and recorded image
 IDs remain available for diagnosis; remove obsolete images manually only after
 checking that no deployment uses them.
@@ -161,14 +165,15 @@ problems, then use `deploy-status` or deploy again.
 
 `deploy-status` reports the release, image ID, running version, container health,
 public reachability, and certificate expiration. `deploy-logs` follows the last
-100 lines. `deploy-restart` restarts only OVS, without rebuilding. `deploy-stop`
+100 lines. `deploy-restart` restarts only OVS, without rebuilding or migrating. `deploy-stop`
 stops the managed services without deleting volumes. Deploy again to start the
 whole stack after stopping it.
 
-Manual Compose installations are not automatically migrated. Stop the old
-installation, preserve a stopped copy of its entire data directory, and explicitly
-plan the volume transfer before switching tools. Do not delete the old volume to
-silence an ownership conflict. The original manual recipes below remain supported.
+The SSH deployment tool does not automatically adopt volumes from a manual
+Compose installation. Stop the old installation, preserve a stopped copy of its
+entire data directory, and explicitly plan the volume transfer before switching
+tools. Do not delete the old volume to silence an ownership conflict. The manual
+recipes below remain supported, including the database upgrade sequence.
 
 ### Remote deployment validation
 
@@ -206,6 +211,48 @@ Compose passes `OVS_PUBLIC_ORIGIN`, `OVS_LOG_LEVEL`, and `OVS_TRUSTED_PROXIES` t
 `OVS_BIND_ADDR` is Compose-only: it selects the host address for the published port, and OVS never reads it.
 For LAN access, set `OVS_BIND_ADDR` to the host's LAN interface address. Set `OVS_PUBLIC_ORIGIN` to the matching reachable browser origin.
 Direct HTTP requires no certificate provisioning. HTTP does not provide transport confidentiality.
+
+## Database upgrades
+
+Application startup and ordinary restarts never upgrade an existing database.
+`make deploy` performs this step automatically after stopping OVS and before
+starting the candidate release. The same current schema can be deployed again:
+the migration command validates its ledger without rerunning completed changes.
+Each ledger entry records an independent migration ID, immutable SQL checksum,
+and time. The schema version identifies the release's complete schema; it does
+not identify an individual migration. One schema release can contain multiple
+migration IDs. Deployment selects pending IDs from the applied ledger prefix,
+even when the stored schema version already matches the candidate release.
+
+For a manual Compose upgrade, prepare the candidate image first, then run:
+
+```bash
+docker compose -f deploy/compose.yaml build --pull ovs
+docker compose -f deploy/compose.yaml stop ovs
+docker compose -f deploy/compose.yaml run --rm --no-deps -T ovs migrate
+docker compose -f deploy/compose.yaml up -d --wait
+```
+
+Use the same `IMAGE`, environment, project name, and Compose overlays for every
+command. If an image was already built or pulled, omit the build command.
+If migration fails, keep OVS stopped, fix the reported cause, and repeat the
+migration before starting it. Do not discard the volume or automatically select
+an older image. The pending migration batch and its ledger/schema metadata roll back
+together on failure. Unknown versions or changed migration checksums stop the
+upgrade without resetting application data.
+
+For a binary installation, stop OVS, run the candidate binary as
+`OVS_DATA_DIR=/path/to/data ./ovs migrate`, and start it only after success.
+Migration requires only the data-directory setting, not a public origin, proxy,
+listener, or TLS configuration. It takes the same directory lock as the server
+and refuses to run while another OVS process owns that directory.
+
+A fresh installation initializes directly from the latest full schema and
+registers its included migrations. It does not execute historical migration SQL.
+Existing schema-v1 databases are recognized as the supported pre-ledger baseline
+and migrated without losing identity, room, invitation, or media records. The
+runner creates the ledger before feature SQL and updates the release schema
+version only after all pending migrations succeed.
 
 ## Caddy on the host
 
@@ -275,10 +322,10 @@ If every connection in a room closed, the room pauses. Any allowed controller ca
 
 The container health check invokes `/ovs healthcheck`. Allow more than ten seconds for graceful termination; Compose allows fifteen seconds.
 Before you copy `/data`, stop OVS and follow the stopped-directory copy note in the [root README](../README.md#configuration-and-data).
-Preserve `/data` across upgrades and use a binary compatible with its schema. Playback restarts paused at zero.
+Preserve `/data` across upgrades and follow the [database upgrade sequence](#database-upgrades). Playback restarts paused at zero.
 OVS has no backup/restore command or automated downgrade workflow.
 
-`make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive ownership, clean shutdown, and container replacement with one volume.
+`make image-smoke` checks fresh non-root startup, read-only operation, route boundaries, exclusive application/migration ownership, ledger preservation, clean shutdown, and deployment migration between container replacements with one volume.
 `make proxy-smoke` runs `compose.yaml` with `compose.caddy.yaml` behind `caddy:alpine` and a local certificate authority.
 It checks HTTPS pages, the `Secure` cookie, the helper scope, trusted-proxy client addresses, a same-epoch socket reconnect after `caddy reload --force`, and a clean stop.
 Both checks retain sanitized evidence under ignored `.misc/` and remove their containers, networks, and volumes.

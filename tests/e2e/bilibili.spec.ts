@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import release from '../../modules/helper/dist/release.json';
 import {
   appContext,
@@ -981,10 +983,126 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
       path: testInfo.outputPath('media-permission-denied-mobile.png'),
       animations: 'disabled',
     });
+    await other
+      .getByRole('button', { name: 'Close dialog', exact: true })
+      .click();
+    await runQuickAction(other, '/history');
+    const viewerHistory = other.getByRole('dialog', {
+      name: 'Watch history',
+      exact: true,
+    });
+    await expect(viewerHistory).toBeVisible();
+    await expect(viewerHistory).toContainText(
+      'requires video selection permission',
+    );
+    await other.keyboard.press('Escape');
   } finally {
     await guest.close();
   }
+  // History follows the viewer's actual online playback and outlives this room.
+  await runQuickAction(page, '/history');
+  const historyDialog = page.getByRole('dialog', {
+    name: 'Watch history',
+    exact: true,
+  });
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000011' }),
+  ).toHaveCount(1);
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000012' }),
+  ).toHaveCount(1);
+  const beforeHistory = await (await page.request.get(roomPath)).json();
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const bounds = (await historyDialog.boundingBox())!;
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    expect(
+      await historyDialog.evaluate(
+        (dialog) => dialog.scrollWidth - dialog.clientWidth,
+      ),
+    ).toBe(0);
+    await page.screenshot({
+      path: resolve(
+        testInfo.config.rootDir,
+        '../../.misc/browser/reviews/watch-history',
+        `${testInfo.project.name}-${viewport.width}.png`,
+      ),
+      animations: 'disabled',
+    });
+  }
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: 'Change video', exact: true }).click();
+  await replacement
+    .getByLabel('Video URL or identifier')
+    .fill(syntheticVideos[0].bvid);
+  await replacement
+    .getByRole('button', { name: 'Preview video', exact: true })
+    .click();
+  await expect(replacement.locator('.media-preview')).toContainText(
+    syntheticVideos[0].title,
+  );
+  await replacement
+    .getByRole('button', { name: 'Watch history', exact: true })
+    .click();
+  const historySearch = replacement.getByRole('searchbox');
+  await historySearch.fill('ep9000000000011');
+  await historySearch.press('Enter');
+  await expect(replacement.locator('.history-video')).toHaveCount(1);
+  await expect(
+    replacement.getByRole('button', { name: 'Use this video', exact: true }),
+  ).toBeDisabled();
+  const afterHistory = await (await page.request.get(roomPath)).json();
+  expect(afterHistory.media).toEqual(beforeHistory.media);
+  expect(afterHistory.mediaGeneration).toBe(beforeHistory.mediaGeneration);
+  expect(afterHistory.revision).toBe(beforeHistory.revision);
+  await replacement.locator('.history-video').click();
+  await expect(replacement.getByLabel('Video URL or identifier')).toHaveValue(
+    'ep9000000000011',
+  );
+  await expect(
+    replacement.getByRole('button', { name: 'Use this video', exact: true }),
+  ).toBeEnabled();
+  await replacement
+    .getByRole('button', { name: 'Use this video', exact: true })
+    .click();
+  await expect(replacement).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(roomPath)).json()).media.episodeId,
+    )
+    .toBe('9000000000011');
+  await expect(page.getByTestId('playback-phase')).toHaveAttribute(
+    'data-state',
+    'paused',
+  );
   await closeRoom(page);
+  await page
+    .getByRole('button', { name: 'Watch history', exact: true })
+    .click();
+  await expect(
+    historyDialog
+      .locator('.history-video')
+      .filter({ hasText: 'EP 9000000000012' }),
+  ).toHaveCount(1);
+  await historyDialog
+    .locator('.history-video')
+    .filter({ hasText: 'EP 9000000000012' })
+    .click();
+  await expect(historyDialog).toHaveCount(0);
+  await expect(page.getByLabel('Video URL or identifier')).toHaveValue(
+    'ep9000000000012',
+  );
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('previewing another Bilibili link preserves the active helper and room until confirmation', async ({

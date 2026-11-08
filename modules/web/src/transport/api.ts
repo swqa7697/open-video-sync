@@ -377,6 +377,7 @@ export async function request(
   signal: AbortSignal,
   key?: string,
   replayOnly = false,
+  responseLimit = 65536,
 ): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') {
@@ -409,7 +410,7 @@ export async function request(
       const chunk = await reader.read();
       if (chunk.done) break;
       length += chunk.value.byteLength;
-      if (length > 65536) throw new ResponseError();
+      if (length > responseLimit) throw new ResponseError();
       chunks.push(chunk.value);
     }
   } catch (error) {

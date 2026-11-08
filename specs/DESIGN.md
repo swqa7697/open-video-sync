@@ -41,10 +41,10 @@ An optional reverse proxy sits before Go. There is no server-to-platform media p
 
 ### 2.1 Backend ownership
 
-Organize identity, rooms, transport, contracts, storage, and process composition in separate packages.
+Organize identity, rooms, personal history, transport, contracts, storage, and process composition in separate packages.
 Use small consumer-owned interfaces at actual I/O boundaries. Do not add generic caches, repositories, event buses, or empty architecture layers.
 
-The process loads persistent identities, unexpired sessions, rooms, settings, memberships, invitations, and selected-media descriptors into memory before readiness.
+The process loads persistent identities, unexpired sessions, rooms, settings, memberships, invitations, selected-media descriptors, and personal history and recording preferences into memory before readiness.
 The application owns that state for its lifetime. There is no database polling or read-through lookup on ordinary application requests.
 Lists, snapshots, authorization, invitation lookup, and connected-session expiry checks read application memory.
 Keep server-side expiry checks and immediate revocation; moving data into memory does not weaken authorization.
@@ -75,19 +75,20 @@ Seek previews remain browser-local and never issue playback commands or readines
 
 ## 3. Trust boundaries and data ownership
 
-| Data                                                          | Browser                                 | OVS memory / SQLite                                       |
-| ------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
-| Local video bytes, filename, path, file handle, object URL    | Local player only                       | Never                                                     |
-| Platform cookies and login tokens                             | Browser/manager session only            | Never                                                     |
-| Signed media URLs and provider responses                      | Helper memory only                      | Never                                                     |
-| Media bytes and danmaku payloads                              | Browser-local delivery and rendering    | Never                                                     |
-| Local fingerprint, size, duration                             | Matching metadata                       | Memory; selected descriptor may persist                   |
-| Bilibili BV ID, CID, part, optional episode ID, duration      | Matching metadata                       | Memory; selected descriptor may persist                   |
-| Identity, display name, room settings and membership          | Authorized views                        | Persistent; also loaded in memory                         |
-| OVS session bearer token                                      | HttpOnly cookie                         | Hash and session metadata only                            |
-| Invitation link secret and code                               | Host sharing and participant redemption | Private persistent invitation record; host-only retrieval |
-| Playback position, phase, waiting, presence, command receipts | Current room                            | Memory only                                               |
-| Volume, mute, quality, danmaku preferences                    | Local preference                        | Never                                                     |
+| Data                                                                      | Browser                                 | OVS memory / SQLite                                       |
+| ------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------- |
+| Local video bytes, filename, path, file handle, object URL                | Local player only                       | Never                                                     |
+| Platform cookies and login tokens                                         | Browser/manager session only            | Never                                                     |
+| Signed media URLs and provider responses                                  | Helper memory only                      | Never                                                     |
+| Media bytes and danmaku payloads                                          | Browser-local delivery and rendering    | Never                                                     |
+| Local fingerprint, size, duration                                         | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Bilibili BV ID, CID, part, optional episode ID, duration                  | Matching metadata                       | Memory; selected descriptor may persist                   |
+| Personal Bilibili history, titles, last-viewed time, recording preference | Current identity only                   | Persistent; bounded to 100 videos per identity            |
+| Identity, display name, room settings and membership                      | Authorized views                        | Persistent; also loaded in memory                         |
+| OVS session bearer token                                                  | HttpOnly cookie                         | Hash and session metadata only                            |
+| Invitation link secret and code                                           | Host sharing and participant redemption | Private persistent invitation record; host-only retrieval |
+| Playback position, phase, waiting, presence, command receipts             | Current room                            | Memory only                                               |
+| Volume, mute, quality, danmaku preferences                                | Local preference                        | Never                                                     |
 
 Invitation secrets are recoverable to support repeated sharing. Treat `/data` as private credential-bearing storage.
 OVS session bearer tokens are stored only as hashes.
@@ -362,19 +363,22 @@ A reused in-memory request ID with changed input is rejected. Never promise reco
 
 ### 10.1 Persistent data
 
-| Record         | Persisted information                                    | Write trigger                           |
-| -------------- | -------------------------------------------------------- | --------------------------------------- |
-| Schema version | SQLite `user_version`                                    | Initial database creation               |
-| Identities     | ID, optional display name                                | Create or rename                        |
-| Sessions       | Token hash, identity, CSRF metadata, expiry              | Create, daily renewal if needed, revoke |
-| Rooms          | ID, title, host, three settings                          | Create, change settings, close          |
-| Members        | Room, identity, room-scoped member ID                    | Join, leave, remove                     |
-| Invitations    | Current link/code values and indexed verification hashes | Create or explicit host reset           |
-| Selected media | Allowlisted local or Bilibili descriptor                 | Select or replace media                 |
+| Record             | Persisted information                                    | Write trigger                                                 |
+| ------------------ | -------------------------------------------------------- | ------------------------------------------------------------- |
+| Schema release     | SQLite `user_version`                                    | Creation or successful deployment migration batch             |
+| Migration ledger   | Independent migration ID, checksum, completion time      | Creation or deployment migration                              |
+| Identities         | ID, optional display name                                | Create or rename                                              |
+| Sessions           | Token hash, identity, CSRF metadata, expiry              | Create, daily renewal if needed, revoke                       |
+| Rooms              | ID, title, host, three settings                          | Create, change settings, close                                |
+| Members            | Room, identity, room-scoped member ID                    | Join, leave, remove                                           |
+| Invitations        | Current link/code values and indexed verification hashes | Create or explicit host reset                                 |
+| Selected media     | Allowlisted local or Bilibili descriptor                 | Select or replace media                                       |
+| Viewing history    | Stable Bilibili identifiers, titles, last-viewed time    | First actual playback in a viewing session; explicit deletion |
+| History preference | Whether to record personal viewing history               | Explicit preference change                                    |
 
 SQLite is not a runtime state store, queue, authorization polling mechanism, or synchronization clock.
 Do not persist playback checkpoints, command results, HTTP retry receipts, storage probes, connection state, runtime revisions, or media generations.
-Do not write activity timestamps merely because someone watches, sends a heartbeat, or requests a snapshot.
+Only personal history records a last-viewed timestamp when actual playback first begins for a video in a viewing session. Do not update it for playback samples, pauses, buffering, quality changes, heartbeats, or snapshots.
 Session expiry remains enforced; expired sessions may be removed on startup and low-frequency credential maintenance.
 Only empty-room departure cleanup is automatic; do not add invitation/identity retention policies.
 
@@ -395,9 +399,11 @@ A failed revocation must report failure; it must never appear successful while l
 Acquire the data-directory lock before opening SQLite. Only one process owns a data directory.
 Use WAL, foreign keys, a five-second busy timeout, and `synchronous=FULL` for persistent transactions.
 `modules/sync/sql/schema.sql` always defines the complete, current database schema. Update that definition whenever the schema changes.
-Create an empty database from that definition in one transaction and record the supported schema version in SQLite `user_version`.
-Reopen a database with the supported version without rerunning DDL. Reject unsupported versions and nonempty unversioned databases without altering their application data.
-Numbered SQL files in `modules/sync/sql/migrations/` record changes between versions for historical reference only. Application startup does not execute them; keep Go embedding code in `modules/sync/sql/`.
+Create an empty database from that definition in one transaction, record the supported schema version in SQLite `user_version`, and register included migrations in `schema_migrations`. Do not execute historical migration SQL for a new database.
+Reopen a current database after validating its schema release version and complete expected ledger, without rerunning DDL or rewriting the ledger. Application startup must not migrate existing databases. An older supported schema or incomplete known ledger prefix returns deployment-migration guidance. Reject future schema versions, unknown or inconsistent ledger entries, and nonempty unversioned databases without altering application data.
+Numbered SQL files in `modules/sync/sql/migrations/` are immutable deployment migrations; keep Go embedding code in `modules/sync/sql/`. Each ledger row records its independent `migration_id`, SQL checksum, and completion time. Migration IDs are an ordered sequence independent of the release-level schema version: one release can contain multiple migrations. The pending set depends on the applied ledger prefix, including when `user_version` already matches the target release.
+The separate `ovs migrate` command requires only `OVS_DATA_DIR` (default `/data`) and takes the same exclusive directory lock. It starts no application services. Deployment stops old OVS, runs this command from the verified candidate image, and starts the replacement only after success. Ordinary startup, health checks, and restart never invoke it.
+Existing schema-v1 databases have no ledger. Recognize that supported baseline and create the ledger infrastructure before executing feature migration SQL. Migration ID 1 adds viewing history for schema release 2; the two numbers have no required relationship. Validate the applied ledger prefix and recorded checksums before executing the pending IDs in order. Apply the whole pending batch and ledger updates in one transaction, and set `user_version` to the target release version only after all migrations succeed. A failure rolls back the batch and stops deployment; retry requires fixing the cause. Do not downgrade automatically.
 Never reset a database to hide schema errors. Restart always begins paused at zero.
 
 ### 10.4 Data directory
@@ -405,6 +411,16 @@ Never reset a database to hide schema errors. Restart always begins paused at ze
 Keep `/data` across container replacement. If an operator copies data, stop OVS and copy the whole directory with ownership, modes, and SQLite sidecars.
 Do not copy a live database file alone. Old copies represent old application state, including old credentials.
 OVS supplies no backup/restore or invalidation CLI and no automated downgrade workflow. Use a binary compatible with the saved schema.
+
+### 10.5 Personal viewing history
+
+Each anonymous identity owns at most 100 Bilibili history entries and an enabled-by-default recording preference. Store only stable BV/CID/part and optional EP identifiers, bounded titles and episode names, and server-generated last-viewed times. Never retain room IDs, memberships, playback progress, raw links, provider objects, or credentials in history. Deduplicate by EP when present, otherwise BV plus part, and move repeated views to the front. Upsert and trim the oldest excess entries in one transaction.
+
+Expose authenticated `GET` and `POST /api/v1/me/history`, `DELETE /api/v1/me/history/{entryId}`, `DELETE /api/v1/me/history`, and `PATCH /api/v1/me/history/preferences`. Use existing origin, CSRF, size, and strict JSON boundaries. Derive ownership from the session; do not accept a target identity. Reads use memory. Mutations commit before updating memory and returning the current list and preference. History failure must not interrupt shared playback.
+
+The frontend records once only when the current connected owner observes matching Bilibili media actually playing while the shared phase is playing. Autoplay probes, preview, waiting, gesture denial, and local files do not qualify. Suppress repeats across pause/resume, buffering, correction, and quality reloads. Deleting the current entry must not make the ongoing sample loop recreate it. Cancel or ignore obsolete identity and media work, and clear client caches after identity changes.
+
+Home selection, video replacement, and the global history Quick action share a searchable history list. Selecting an entry prefills the exact episode for fresh resolution through that participant's platform access. Home creation and room replacement remain explicit confirmation steps. All members can browse and manage their own history; only members with media-selection permission may replace the room video. Mark the current video and preserve its position when selected again. Closing a room does not remove personal history. Losing an identity makes its history inaccessible to a newly created identity.
 
 ## 11. Security and resource limits
 
@@ -461,7 +477,7 @@ Configure the process with `OVS_LISTEN_ADDR`, `OVS_DATA_DIR`, `OVS_PUBLIC_ORIGIN
 Use internal room/socket limits. Do not expose retention, synchronization, or recovery settings.
 
 Keep direct HTTP and concise host/container/existing Caddy examples. OVS does not manage certificates or alter an operator's proxy installation.
-The deployment tooling may provision a separate Caddy container over SSH. It builds and transfers images locally, prepares Compose when absent, and keeps persistent volumes stable across single-instance replacements. Public IP HTTPS uses explicitly configured short-lived ACME certificates. Public TLS verification must not fall back to internal certificates. Existing proxy installations require explicit external mode and remain operator-owned. Failed preparation leaves the running application intact; startup failures preserve data without an automatic downgrade.
+The deployment tooling may provision a separate Caddy container over SSH. It builds and transfers images locally, prepares Compose when absent, and keeps persistent volumes stable across single-instance replacements. After preparing and validating the candidate, it stops OVS, runs the candidate's database migration command without network access, and starts the replacement after migration succeeds. Public IP HTTPS uses explicitly configured short-lived ACME certificates. Public TLS verification must not fall back to internal certificates. Existing proxy installations require explicit external mode and remain operator-owned. Failed preparation leaves the running application intact; migration or startup failures preserve data without an automatic downgrade.
 Use bounded shutdown to stop admission and close sockets, workers, and SQLite. There is no playback checkpoint to save.
 Keep structured error logs and minimal liveness/readiness checks using in-memory startup, shutdown, and write-failure flags, without SQLite polling.
 Readiness may report failed persistence without stopping an already running playback loop.

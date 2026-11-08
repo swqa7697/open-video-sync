@@ -76,6 +76,20 @@ Replace the example address with your server's address. Direct HTTP works withou
 4. Each participant prepares the video. For local playback, everyone selects their own copy of the same file.
 5. Select **Play**. The host chooses whether everyone can control playback, change videos and episodes, and whether to wait for everyone.
 
+### Watch history
+
+Open **Watch history** in the home video picker, the room's **Change video**
+dialog, or Quick actions (`/history`). OVS remembers the latest 100 Bilibili videos
+actually watched by your anonymous identity, including the exact episode or part.
+Search titles or identifiers, select a video for preview, then confirm room
+creation or replacement. Room replacement requires video-selection permission.
+Browsing history leaves playback unchanged.
+
+You can delete entries, clear history, or pause recording. History excludes local
+videos, room details, and playback progress. It survives room closure and server
+restart. Forgetting your identity creates a new identity that cannot access the
+old history. Each video still uses your own Bilibili access when opened again.
+
 ### Bilibili
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.

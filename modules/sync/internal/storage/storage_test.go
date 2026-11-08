@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -20,6 +21,9 @@ func TestOpenOwnershipAndReopen(t *testing.T) {
 	if second, err := Open(ctx, dir); err == nil {
 		_ = second.Close()
 		t.Fatal("second owner was admitted")
+	}
+	if err := Migrate(ctx, dir); err == nil {
+		t.Fatal("deployment migration bypassed the active data-directory owner")
 	}
 	for name, want := range map[string]string{"foreign_keys": "1", "journal_mode": "wal", "busy_timeout": "5000", "synchronous": "2"} {
 		var got string
@@ -77,7 +81,7 @@ func TestSchemaInitializationRollsBackAndRejectsUnsupportedDatabases(t *testing.
 	if err := initializeSchema(ctx, db, schema.Definition); err != nil {
 		t.Fatal("initialized schema could not be reopened", err)
 	}
-	for _, next := range []string{"PRAGMA user_version = 2", "PRAGMA user_version = 0"} {
+	for _, next := range []string{fmt.Sprintf("PRAGMA user_version = %d", schemaVersion+1), "PRAGMA user_version = 0"} {
 		if _, err := db.ExecContext(ctx, next); err != nil {
 			t.Fatal(err)
 		}

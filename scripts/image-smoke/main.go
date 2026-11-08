@@ -97,6 +97,9 @@ func run(image string) error {
 		if _, err := docker(ctx, "exec", name, "/ovs"); err == nil || !strings.Contains(err.Error(), "already owned") {
 			return fmt.Errorf("second process did not reject ownership: %v", err)
 		}
+		if _, err := docker(ctx, "exec", name, "/ovs", "migrate"); err == nil || !strings.Contains(err.Error(), "already owned") {
+			return fmt.Errorf("migration did not reject active application ownership: %v", err)
+		}
 		if _, err := docker(ctx, "stop", "--time", "15", name); err != nil {
 			return err
 		}
@@ -122,8 +125,11 @@ func run(image string) error {
 		if _, err := docker(ctx, "rm", name); err != nil {
 			return err
 		}
+		if _, err := docker(ctx, "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--no-healthcheck", "--mount", "type=volume,src="+volume+",dst=/data", image, "migrate"); err != nil {
+			return fmt.Errorf("deployment migration: %w", err)
+		}
 	}
-	fmt.Println("Image passed: non-root/read-only startup, embedded UI and scoped helper, reserved routes, ownership, clean stop, and identity/name/room/membership persistence across replacement.")
+	fmt.Println("Image passed: non-root/read-only startup, embedded UI and scoped helper, reserved routes, exclusive application/migration ownership, clean stop, deployment migration, and identity/name/room/membership persistence across replacement.")
 	fmt.Printf("Isolated database copies: %s\n", directory)
 	return nil
 }
@@ -247,10 +253,24 @@ func inspectDatabase(ctx context.Context, path string) (string, error) {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return "", err
 	}
-	if version != 1 {
+	if version != 2 {
 		return "", fmt.Errorf("unexpected schema version: %d", version)
 	}
-	return fmt.Sprint(version), nil
+	var migration int
+	var checksum string
+	var applied int64
+	if err := db.QueryRowContext(ctx, "SELECT migration_id,checksum,applied_at_ms FROM schema_migrations").Scan(&migration, &checksum, &applied); err != nil {
+		return "", fmt.Errorf("read migration ledger: %w", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&count); err != nil {
+		return "", err
+	}
+	// The release schema version and migration IDs are independent sequences.
+	if migration != 1 || count != 1 || len(checksum) != 64 || applied <= 0 {
+		return "", errors.New("invalid migration ledger")
+	}
+	return fmt.Sprintf("%d:%d:%s:%d", version, migration, checksum, applied), nil
 }
 
 // State uses only isolated test credentials. Do not print bearer or invitation values.

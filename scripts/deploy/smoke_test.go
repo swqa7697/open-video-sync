@@ -262,6 +262,39 @@ func TestDeploymentSmoke(t *testing.T) {
 	if _, _, err := client.Me(ctx); err != nil {
 		t.Fatal("failed transfer disrupted application:", err)
 	}
+	// A ledger failure must stop activation before starting the candidate. Only
+	// this isolated fixture edits the stopped database to inject and repair it.
+	call(request{Action: "stop"})
+	volumePath, err := target.output(ctx, "docker volume inspect --format '{{.Mountpoint}}' "+shellQuote(dataVolume))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := filepath.Join(volumePath, "ovs.sqlite")
+	query := func(sql string) string {
+		t.Helper()
+		value, err := target.output(ctx, "sqlite3 "+shellQuote(database)+" "+shellQuote(sql))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	checksum := query("SELECT checksum FROM schema_migrations WHERE migration_id=1")
+	query("UPDATE schema_migrations SET checksum='" + strings.Repeat("0", 64) + "' WHERE migration_id=1")
+	c.Release = "failed-migration"
+	if _, err := s.call(request{Action: "activate", Settings: c}); err == nil || !strings.Contains(err.Error(), "database migration failed") {
+		t.Fatalf("ledger failure did not stop deployment migration: %v", err)
+	}
+	running, err := target.output(ctx, "docker ps -q --filter label=com.docker.compose.service=ovs")
+	if err != nil || running != "" {
+		t.Fatalf("candidate started after migration failure: %q %v", running, err)
+	}
+	if got := query("SELECT checksum FROM schema_migrations WHERE migration_id=1"); got != strings.Repeat("0", 64) {
+		t.Fatal("failed migration changed the rejected ledger")
+	}
+	if len(checksum) != 64 || strings.Trim(checksum, "0123456789abcdef") != "" {
+		t.Fatal("fixture migration checksum is invalid")
+	}
+	query("UPDATE schema_migrations SET checksum='" + checksum + "' WHERE migration_id=1")
 	c.Release = "second"
 	call(request{Action: "activate", Settings: c})
 	call(request{Action: "commit"})

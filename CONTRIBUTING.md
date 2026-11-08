@@ -57,8 +57,8 @@ docker build -f deploy/Dockerfile -t my-ovs:testing \
 ```
 
 `modules/sync/sql/schema.sql` always defines the complete, current database schema. Update it whenever the schema changes.
-Go embedding stays in `modules/sync/sql/embed.go`. Startup initializes an empty database transactionally from that definition and records the supported schema version with SQLite `user_version`.
-Numbered SQL files under `modules/sync/sql/migrations/` record changes between versions for historical reference only. Application startup does not execute them.
+Go embedding stays in `modules/sync/sql/embed.go`. Startup initializes an empty database transactionally from that definition and records the supported schema version with SQLite `user_version` and the included migration ledger. Startup validates an existing current database without running migration SQL.
+Add immutable, consecutively numbered SQL files under `modules/sync/sql/migrations/` for incremental changes. Migration IDs are independent of the release-level schema version: one schema release can include several migrations. Register each ID in the ordered registry; choose the schema version for the release separately. The deployment-only `ovs migrate` command takes the data-directory lock, validates the applied ledger prefix and recorded checksums, and applies all pending IDs in one transaction before recording the target schema version. `make deploy` invokes this command with the candidate image after stopping OVS and before starting the replacement. New databases use the latest complete definition directly, without running historical migrations. For a local database upgrade, stop OVS, run the candidate binary with `OVS_DATA_DIR` pointing to that directory and the `migrate` argument, then start it. No public-origin configuration is required for migration.
 
 ## Dependencies
 

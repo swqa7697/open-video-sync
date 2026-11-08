@@ -5,6 +5,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  watch,
   watchEffect,
 } from 'vue';
 
@@ -27,6 +28,7 @@ import {
   type Failure,
   type FailureContext,
 } from './features/failures';
+import HistoryPanel from './features/history/HistoryPanel.vue';
 import IdentityPanel from './features/identity/IdentityPanel.vue';
 import {
   ImportHandoff,
@@ -42,6 +44,7 @@ import RoomPanel from './features/rooms/RoomPanel.vue';
 import SettingsForm from './features/rooms/SettingsForm.vue';
 import { message as msg, t, translate, type Message } from './i18n';
 import { useConnectionStore } from './stores/connection';
+import { useHistoryStore } from './stores/history';
 import { useIdentityStore } from './stores/identity';
 import { useLanguageStore } from './stores/language';
 import { useNotificationStore } from './stores/notifications';
@@ -62,6 +65,7 @@ import {
   type MediaDescriptor,
   type RoomSettings,
 } from './transport/contracts';
+import type { HistoryVideo } from './transport/history';
 import type { EndReason } from './transport/room-socket';
 
 const props = defineProps<{
@@ -76,6 +80,12 @@ const connection = useConnectionStore(),
   identity = useIdentityStore();
 const language = useLanguageStore();
 const notifications = useNotificationStore();
+const watchHistory = useHistoryStore();
+const historyOpen = ref(false);
+watch(
+  () => identity.session?.identity.identityId,
+  () => (historyOpen.value = false),
+);
 const stopLanguage = language.listen();
 const controller = new AbortController();
 const departing = ref(false),
@@ -177,6 +187,17 @@ const commands = computed<QuickCommand[]>(() => [
       : []),
   ...(identity.session
     ? [
+        {
+          id: 'history',
+          label: t('history.title'),
+          group: 'watch' as const,
+          icon: 'history',
+          shortcut: '/history',
+          aliases: 'history watched recent 观看 历史 最近 播放',
+          run: () => {
+            historyOpen.value = true;
+          },
+        },
         {
           id: 'profile',
           label: t('app.profile'),
@@ -710,6 +731,28 @@ useOverlayKeyboard();
 function pointerInput(): void {
   document.documentElement.dataset.input = 'pointer';
 }
+async function selectHistory(video: HistoryVideo): Promise<void> {
+  const identityId = identity.session?.identity.identityId;
+  const roomId = room.value?.roomId;
+  if (roomId && !player.value?.canReplace) return;
+  historyOpen.value = false;
+  if (!roomId && importEntry.value) {
+    clearImport();
+    importEntry.value = undefined;
+    history.replaceState(null, '', '/');
+  }
+  await nextTick();
+  if (
+    identityId !== identity.session?.identity.identityId ||
+    roomId !== room.value?.roomId
+  )
+    return;
+  if (roomId) await player.value?.selectHistory(video);
+  else {
+    await picker.value?.selectBilibili(video);
+    await picker.value?.prepare();
+  }
+}
 function togglePalette(): void {
   if (!paletteOpen.value && hasKeyboardOverlay()) return;
   document.querySelector<HTMLElement>(':popover-open')?.hidePopover();
@@ -905,6 +948,7 @@ onUnmounted(() => {
             @snapshot="(value) => (room = value)"
             @connection="connectionChanged"
             @episode-selected="paletteOpen = false"
+            @watched="watchHistory.record"
             @recheck="recheck"
             @ended="
               (reason) => {
@@ -950,6 +994,8 @@ onUnmounted(() => {
                 ref="picker"
                 :room-id="creationKey"
                 :disabled="busy || !!attempt"
+                history-enabled
+                @history="historyOpen = true"
               />
               <div class="room-draft">
                 <label for="room-name"
@@ -1057,6 +1103,19 @@ onUnmounted(() => {
       :context="room?.roomId ?? ''"
       @close="paletteOpen = false"
     />
+    <Modal
+      v-if="historyOpen"
+      class="history-dialog"
+      :title="t('history.title')"
+      @close="historyOpen = false"
+    >
+      <HistoryPanel
+        :current="room?.media?.kind === 'bilibili' ? room.media : undefined"
+        :can-select="room ? !!player?.canReplace : !busy && !attempt"
+        @select="selectHistory"
+        @current="historyOpen = false"
+      />
+    </Modal>
     <Modal
       v-if="leaveConfirmation && room"
       :title="t('room.leaveTitle')"

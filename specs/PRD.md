@@ -32,6 +32,7 @@ Keep the product small: select a video, create a room, share an invitation, and 
   - Accept BV video identifiers, SS season identifiers, EP episode identifiers, and their canonical video or bangumi links. Season selection starts at the first main episode, independent of account history. Preserve the exact episode for joining and reloading members. Require each member's own platform access; reject trial-only streams as full-episode playback.
   - For multipart videos and collections, show a selectable episode list beside room members through tabs. Also offer episodes in Quick actions: `@` lists episodes, `@number` locates an item by its original list number, and `@keywords` filters titles. Keep numbers stable after filtering. Members can browse; the host or members with video selection permission select the episode for everyone. Switching episodes starts playback from zero, subject to waiting and browser autoplay permission. Keep the search available with an error after a failed switch, and close Quick actions after server confirmation.
 - Local Video Support: Let each participant select a local video file -- all participants must prepare the same video themselves (OVS does not distribute it)
+- Viewing History: Keep each anonymous identity's latest 100 watched Bilibili videos, preserving the exact episode or part. Record stable video identifiers, titles, and the last-viewed time; exclude local videos, rooms, members, playback progress, and platform credentials. Record only actual playback, not previews or autoplay probes. Merge repeat views, allow search, deletion, clearing, and pausing recording, and retain history after a room closes. Offer history in home selection, room replacement, and Quick actions. Selecting history still requires explicit creation or replacement confirmation and current room permissions.
 - Platform Credentials: Keep video-platform login credentials and session information on the participant's device (browser) -- never send them to the OVS server
 - Existing Access Rights: Participants use their own access to platform content (OVS does not grant access to restricted videos)
 
@@ -40,8 +41,8 @@ Keep the product small: select a video, create a room, share an invitation, and 
 - Backend: Go
 - Frontend: Vue 3, TypeScript, Vite, Pinia
 - Database: SQLite
-  - Schema: One complete definition that always reflects the current database structure; version-to-version revisions are historical reference only
-  - Persistence Only: Store identities, sessions, rooms, settings, memberships, invitations, and the selected media descriptor
+  - Schema: One complete definition that always reflects the current database structure. The schema version identifies a release and is independent of migration IDs; one release can include multiple migrations. Deployment applies only pending immutable migrations according to the applied ledger prefix while OVS is stopped, then records the release schema version. New databases use the latest complete schema directly. Ordinary startup and restart never migrate existing databases.
+  - Persistence Only: Store identities, sessions, rooms, settings, memberships, invitations, the selected media descriptor, and bounded personal viewing history and recording preferences
   - Runtime State: Load persistent state into application memory at startup. Handle ordinary reads, authorization, playback, synchronization, readiness, waiting, and command deduplication in memory without SQL
   - Durable Changes: Write only when persistent information changes. Do not save playback progress, runtime counters, diagnostic samples, or command history
   - Restart: Retain rooms and selected media; start paused at position zero with fresh runtime state

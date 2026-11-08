@@ -513,5 +513,27 @@
     "left": "Left",
     "center": "Center",
     "right": "Right"
+  },
+  "history": {
+    "title": "Watch history",
+    "recording": "Record watched videos",
+    "refresh": "Refresh history",
+    "clear": "Clear history",
+    "clearConfirm": "Clear all videos from your watch history?",
+    "search": "Search titles, BV or EP identifiers…",
+    "loading": "Loading watch history…",
+    "noResults": "No matching videos.",
+    "empty": "Videos you watch in OVS will appear here. Local files are excluded.",
+    "current": "Current video",
+    "original": "Open original video",
+    "remove": "Remove {title} from history",
+    "removeShort": "Remove from history",
+    "hint": "Your OVS identity keeps up to 100 videos, including the exact part or episode.",
+    "readOnly": "Changing this room’s video requires video selection permission. You can open the original video.",
+    "failed": "Watch history could not be updated. Refresh to try again.",
+    "back": "Back to video selection",
+    "copy": "Copy video link",
+    "copied": "Video link copied.",
+    "selectLink": "Link selected. Copy it with your browser."
   }
 }

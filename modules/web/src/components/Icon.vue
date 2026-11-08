@@ -34,6 +34,8 @@ const paths: Record<string, string> = {
   'pause-filled': 'M7 5h3v14H7ZM14 5h3v14h-3Z',
   loader: 'M21 12a9 9 0 1 1-9-9',
   replay: 'M3 10a9 9 0 1 1 1 8M3 4v6h6',
+  history: 'M3 10a9 9 0 1 1 1 8M3 4v6h6M12 7v5l3 2',
+  trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
   mute: 'm11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6',
   fullscreen: 'M8 2.85H2.85V8M16 2.85h5.15V8M2.85 16v5.15H8M21.15 16v5.15H16',

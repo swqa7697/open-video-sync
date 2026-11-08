@@ -47,6 +47,7 @@ import {
 } from '../../sync/controller';
 import { APIError, request, type Snapshot } from '../../transport/api';
 import { playbackRates, type MediaDescriptor } from '../../transport/contracts';
+import type { HistoryVideo } from '../../transport/history';
 import type {
   Readiness,
   ReadinessStatus,
@@ -87,6 +88,7 @@ const emit = defineEmits<{
   episodeSelected: [];
   recheck: [];
   ended: [reason: EndReason];
+  watched: [video: HistoryVideo];
 }>();
 const overlay = ref<HTMLElement>(),
   stage = ref<HTMLElement>();
@@ -665,6 +667,8 @@ let timer: ReturnType<typeof setInterval> | undefined,
 let lastReport = '',
   lastReportAt = 0,
   disposed = false;
+// Quality reloads and deletion of an entry must not record this selection again.
+let lastWatchedSelection = '';
 let probedBarrier = '',
   probingBarrier = '';
 const sync = new SyncController();
@@ -1299,6 +1303,15 @@ async function openMedia(selection?: VideoSelection): Promise<void> {
   await nextTick();
   await mediaPicker.value?.selectBilibili(selection);
 }
+async function selectHistory(selection: HistoryVideo): Promise<void> {
+  if (
+    current.value.media?.kind === 'bilibili' &&
+    sameEpisode(current.value.media, selection)
+  )
+    return;
+  await openMedia(selection);
+  if (canReplace.value) await mediaPicker.value?.prepare();
+}
 const commands = computed<QuickCommand[]>(() => [
   ...(mediaPermitted.value
     ? [
@@ -1480,6 +1493,7 @@ defineExpose({
   selectEpisode,
   episodeActions,
   importMedia,
+  selectHistory,
 });
 async function changeQuality(quality: number): Promise<void> {
   const selected = current.value.media;
@@ -1720,6 +1734,32 @@ async function sample(): Promise<void> {
   )
     return;
   const observation = local.getState();
+  const media = snapshot.media;
+  const watchedSelection = `${snapshot.epoch}:${snapshot.mediaGeneration}`;
+  if (
+    media?.kind === 'bilibili' &&
+    matched &&
+    snapshot.playback.phase === 'playing' &&
+    active.value &&
+    transport.connected &&
+    observation.status === 'ready' &&
+    !observation.paused &&
+    !observation.seeking &&
+    watchedSelection !== lastWatchedSelection
+  ) {
+    lastWatchedSelection = watchedSelection;
+    emit('watched', {
+      kind: 'bilibili',
+      bvid: media.bvid,
+      cid: media.cid,
+      part: media.part,
+      ...(media.episodeId ? { episodeId: media.episodeId } : {}),
+      title: videoTitle.value,
+      episodeTitle:
+        playlist.value?.episodes.find((episode) => sameEpisode(media, episode))
+          ?.title ?? '',
+    });
+  }
   // Failed/disposed players can lose native metadata. Unknown timing must stay null on the wire.
   const timed =
     matched &&
@@ -2469,9 +2509,13 @@ onUnmounted(() => {
           ref="mediaPicker"
           :room-id="current.roomId"
           :disabled="loading"
+          history-enabled
+          inline-history
+          :current-media="current.media"
+          @current="replaceOpen = false"
         />
         <p class="hint">{{ t('player.changeHint') }}</p>
-        <button :disabled="loading">
+        <button :disabled="loading || mediaPicker?.historyOpen">
           {{ t('player.useVideo') }}
         </button>
       </form></Modal

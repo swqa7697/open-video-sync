@@ -166,6 +166,149 @@ beforeEach(() => {
 
 // A component scenario owns player menus and the browser preference lifecycle. The
 // helper regressions separately verify highest/fallback selection from synthetic metadata.
+test('watch history records actual shared playback once across probes, pauses, and quality reloads', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  const media = {
+    kind: 'bilibili' as const,
+    bvid: 'BV1TESTaaaaa',
+    cid: '12',
+    part: 2,
+    durationMs: 10000,
+  };
+  const snapshot = decodeSnapshot({ ...room('waiting', 1), media });
+  const observation = {
+    positionMs: 0,
+    durationMs: 10000,
+    paused: true,
+    seeking: false,
+    status: 'ready' as const,
+  };
+  let selectedQuality = 120;
+  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
+    async (_bvid, _part, _signal, quality) => {
+      selectedQuality = quality ?? 120;
+      return media;
+    },
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
+    (): MediaInfo => ({
+      ...media,
+      duration: 10,
+      title: 'Synthetic history video',
+      parts: 2,
+      quality: selectedQuality,
+      qualities: [120, 80],
+      handle: 'h1-1234',
+      tracks: [],
+      playlist: {
+        title: 'Synthetic history video',
+        episodes: [
+          { bvid: media.bvid, part: 1, title: 'First part' },
+          { bvid: media.bvid, part: 2, title: 'Second part' },
+        ],
+      },
+    }),
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockImplementation(
+    () => observation,
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'play').mockImplementation(async () => {
+    observation.paused = false;
+  });
+  vi.spyOn(BilibiliAdapter.prototype, 'pause').mockImplementation(async () => {
+    observation.paused = true;
+  });
+  vi.spyOn(BilibiliAdapter.prototype, 'seek').mockImplementation(
+    async (position) => {
+      observation.positionMs = position;
+    },
+  );
+  vi.spyOn(BilibiliAdapter.prototype, 'setPlaybackRate').mockResolvedValue();
+  const wrapper = mount(PlayerPanel, {
+    props: { room: snapshot },
+    attachTo: document.body,
+  });
+  fakeMedia(wrapper.get('video').element);
+  const socket = FakeSocket.instances.at(-1)!;
+  socket.readyState = 1;
+  socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
+  try {
+    await flushPromises();
+    expect(wrapper.emitted('watched')).toBeUndefined();
+    for (const text of socket.sent) {
+      const ping = JSON.parse(text) as {
+        type: string;
+        requestId: string;
+        payload: { clientSendMs: number };
+      };
+      if (ping.type !== 'clock.ping') continue;
+      const sent = ping.payload.clientSendMs;
+      socket.onmessage?.({
+        data: JSON.stringify({
+          v: 1,
+          type: 'clock.pong',
+          requestId: ping.requestId,
+          payload: {
+            clientSendMs: sent,
+            serverReceiveMs: sent,
+            serverSendMs: sent,
+          },
+        }),
+      });
+    }
+    const playing = {
+      ...snapshot,
+      revision: 2,
+      barrier: null,
+      playback: {
+        ...snapshot.playback,
+        phase: 'playing',
+        desiredPlaying: true,
+        anchorServerMs: Math.round(performance.now()),
+      },
+    };
+    socket.frame('room.snapshot', playing);
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.emitted('watched')).toHaveLength(1));
+    expect(wrapper.emitted('watched')).toStrictEqual([
+      [
+        {
+          kind: 'bilibili',
+          bvid: media.bvid,
+          cid: media.cid,
+          part: 2,
+          title: 'Synthetic history video',
+          episodeTitle: 'Second part',
+        },
+      ],
+    ]);
+    socket.frame('room.snapshot', {
+      ...playing,
+      revision: 3,
+      playback: { ...playing.playback, phase: 'paused', desiredPlaying: false },
+    });
+    await flushPromises();
+    socket.frame('room.snapshot', { ...playing, revision: 4 });
+    await flushPromises();
+    await wrapper.get('.quality-trigger').trigger('click');
+    await wrapper
+      .findAll('[role="menuitemradio"]')
+      .find((item) => item.text() === '1080p')!
+      .trigger('click');
+    await flushPromises();
+    expect(wrapper.emitted('watched')).toHaveLength(1);
+    socket.frame('room.snapshot', {
+      ...playing,
+      revision: 5,
+      mediaGeneration: 2,
+    });
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.emitted('watched')).toHaveLength(2));
+  } finally {
+    wrapper.unmount();
+  }
+});
+
 test('quality and all danmaku choices survive player recreation', async () => {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('hover: hover'),
@@ -1118,6 +1261,7 @@ test('a room pause that interrupts a pending play is not a player failure', asyn
     'Buffering…',
   );
   expect(reported(socket)).not.toContain('error');
+  expect(wrapper.emitted('watched')).toBeUndefined();
   wrapper.unmount();
 });
 test('a playing seek waits for data at the paused target and stays paused when data arrives', async () => {

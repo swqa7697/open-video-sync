@@ -1,9 +1,33 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/swqa7697/open-video-sync/modules/sync/internal/storage"
 )
+
+func TestDeploymentMigrationNeedsOnlyDataDirectory(t *testing.T) {
+	directory := t.TempDir()
+	getenv := func(key string) string {
+		if key == "OVS_DATA_DIR" {
+			return directory
+		}
+		return "invalid server configuration"
+	}
+	if err := migrate(context.Background(), getenv); err != nil {
+		t.Fatal("migration required server configuration", err)
+	}
+	store, err := storage.Open(context.Background(), directory)
+	if err != nil {
+		t.Fatal("migrated database could not start", err)
+	}
+	defer store.Close()
+	if err := migrate(context.Background(), getenv); err == nil {
+		t.Fatal("migration ignored a running data-directory owner")
+	}
+}
 
 func TestConfigValidation(t *testing.T) {
 	for _, origin := range []string{"http://localhost:8080", "https://watch.example.com", "http://[::1]:8080"} {

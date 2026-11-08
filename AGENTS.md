@@ -27,12 +27,13 @@
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | `modules/sync/cmd/ovs`                                             | Composition, configuration, process lifecycle                                                |
 | `modules/sync/internal/identity`                                   | Anonymous identity, OVS sessions, profile lifecycle                                          |
+| `modules/sync/internal/history`                                    | Personal online-video history and recording preferences                                      |
 | `modules/sync/internal/rooms`                                      | Membership, host rules, media, policies, timelines, room coordinators                        |
 | `modules/sync/internal/transport`                                  | HTTP and WebSocket authentication, framing, connection bounds                                |
 | `modules/sync/internal/contracts`, `modules/sync/internal/storage` | Wire validation, SQLite persistence                                                          |
 | `modules/sync/internal/web`, `modules/sync/internal/helper`        | HTTP delivery of generated frontend and helper assets                                        |
 | `modules/sync/sql`                                                 | Complete, current database definition and Go embedding                                       |
-| `modules/sync/sql/migrations`                                      | Version-to-version schema changes for historical reference only                              |
+| `modules/sync/sql/migrations`                                      | Independently numbered, immutable schema changes executed during deployment                  |
 | `modules/web`                                                      | Vue UI, browser adapters, synchronization engine, frontend tooling                           |
 | `modules/helper`                                                   | Tampermonkey helper source, bridge parser, build and tests                                   |
 | `scripts`                                                          | Independent Go automation module, cross-module builds, releases, deployment and smoke checks |
@@ -44,7 +45,7 @@
 - Domain rules must not import HTTP frameworks, WebSocket implementations, or SQLite drivers. Application services own transaction boundaries; adapters depend inward through small consumer-owned interfaces.
 - One coordinator serializes mutations for each room. HTTP and WebSocket entry points must use the same authorization and mutation path.
 - Load persistent application data into memory at startup. Ordinary reads, authorization, playback, readiness, waiting, heartbeats, and timers must perform no SQLite queries or writes.
-- Persist only low-frequency identity/session, room/settings, membership, invitation, and selected-media changes. Commit each durable change before installing it in memory and acknowledging success; failed writes leave memory unchanged.
+- Persist only low-frequency identity/session, room/settings, membership, invitation, selected-media, and personal viewing-history changes. Keep personal history to 100 online videos per identity, including exact episodes or parts, titles, and last-viewed times; never store room or playback-progress information in history. Commit each durable change before installing it in memory and acknowledging success; failed writes leave memory unchanged.
 - Room coordinators own authoritative playback in memory. Playback acknowledgements mean applied runtime state, not durable storage. Keep revisions, media generations, short-lived command receipts, and wait state in memory only.
 - Keep clocks, random sources, storage, and connection sinks injectable. Prefer concrete functions and small interfaces over generic repositories, plugin frameworks, and speculative abstractions.
 - Separate Vue rendering, shared Pinia state, synchronization logic, and player adapters. Keep player instances, files, provider responses, and timer ownership outside serializable stores.
@@ -90,7 +91,7 @@
 - Trust proxy headers only from configured proxies. Derive public URLs and cookie policy from validated deployment configuration, not arbitrary request headers.
 - Render untrusted names, titles, danmaku, and errors as text. Validate platform messages by exact origin and source window as well as payload shape.
 - Never serialize arbitrary player SDK objects or log raw requests/provider errors. Use synthetic secrets in boundary tests and sanitize retained traces.
-- Keep `modules/sync/sql/schema.sql` as the complete, current SQLite schema and update it whenever the schema changes. Numbered files in `modules/sync/sql/migrations/` record changes between versions for historical reference only; application startup must not execute them. Never silently reset a database or remove data to hide schema failures.
+- Keep `modules/sync/sql/schema.sql` as the complete, current SQLite schema and update it whenever the schema changes. Numbered files in `modules/sync/sql/migrations/` are immutable deployment migrations. Migration IDs are independent of the release-level schema version; one schema release can include multiple migration IDs. Deployment stops OVS and invokes the candidate binary's `ovs migrate` command under the data-directory lock before starting it. Use the applied ledger prefix to select pending migrations and update the schema version only after the batch succeeds atomically. New databases use the complete latest schema directly. Application startup must not migrate existing databases. Never silently reset a database or remove data to hide schema failures.
 - Keep related persistent changes in one short transaction and update only affected records. Do not persist playback or HTTP retry receipts, storage probes, or runtime counters. Use real SQLite tests for initialization, constraints, rollback, and persistent metadata across restart.
 - A failed durable write must not mutate memory or stop unrelated existing playback. Report persistence unavailable; fix storage and restart instead of running automatic probes or recovery transitions.
 - Run one OVS process per data directory and preserve `/data` across container replacement. A manual copy requires stopped OVS and the whole directory, including SQLite sidecars. Do not build backup/restore commands.

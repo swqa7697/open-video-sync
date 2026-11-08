@@ -655,6 +655,143 @@ main {
   width: 17px;
   height: 17px;
 }
+.media-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.media-source-row:empty {
+  display: none;
+}
+.media-source-row .source-tabs {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.history-trigger {
+  flex: none;
+  min-height: 40px;
+  padding-inline: 8px;
+  gap: 5px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.history-back {
+  margin-bottom: 10px;
+}
+.history-dialog {
+  width: min(560px, calc(100% - 32px));
+}
+.watch-history {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.history-recording {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.history-recording input {
+  flex: none;
+}
+.history-clear {
+  flex: none;
+  padding-inline: 7px;
+  font-size: 0.78rem;
+}
+.history-results {
+  min-height: 110px;
+  height: min(38dvh, 350px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-block: 1px solid var(--subtle-border);
+}
+.change-media-dialog .history-results {
+  height: min(25dvh, 200px);
+}
+.history-results > p {
+  padding: 18px 4px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px 36px;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--subtle-border);
+}
+.history-list li:last-child {
+  border-bottom: none;
+}
+.history-video {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 3px;
+  padding: 12px 5px;
+  text-align: left;
+}
+.history-video:disabled {
+  opacity: 0.8;
+}
+.history-video[aria-current='true'] .history-video-title {
+  color: var(--accent);
+}
+.history-video-title,
+.history-episode,
+.history-time {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-video-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.history-episode,
+.history-time {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.history-original {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.history-footnote {
+  margin: 0;
+  line-height: 1.5;
+}
+.history-confirm {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+}
+.history-confirm .actions {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
 .input-action {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;

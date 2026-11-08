@@ -8,6 +8,8 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Added
 
+- Keep the latest 100 Bilibili videos watched by each anonymous identity, including the exact episode or part. Search and reuse history from home selection, video replacement, or Quick actions, with explicit confirmation and room permissions. Delete entries, clear history, or pause recording. Exclude local videos, room details, and playback progress.
+- Apply pending database schema changes automatically during deployment using a migration ledger. Stop OVS before migrating with the candidate image, preserve existing data, and start the replacement only after success. New databases use the latest schema directly; ordinary startup and restart do not migrate.
 - Add shared playback speed from 0.5× to 2× in the player. Apply room control permissions, synchronize all participants, and preserve playback position and play/pause state when changing speed. Reset to 1× when selecting another video or recreating the room runtime.
 - Add an independent room permission for changing videos and episodes, defaulting to the host. Hosts can allow everyone to replace videos through the player, Quick actions, or imports and switch episodes for the room. Members without permission can browse the sidebar episode list but cannot select an episode, and see no episode button in the player.
 
