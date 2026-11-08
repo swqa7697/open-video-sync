@@ -2,6 +2,7 @@ import release from '../../modules/helper/dist/release.json';
 import {
   appContext,
   expect,
+  mockRepository,
   test,
 } from '../../modules/web/playwright-fixtures';
 import {
@@ -667,6 +668,57 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'ready',
   );
   const episodeTrigger = page.locator('.episode-trigger');
+  const checkControls = async (mode: string, width: number, target = page) => {
+    await target.locator('.video-stage').hover({ position: { x: 100, y: 20 } });
+    await target.locator('.quality-trigger').hover();
+    await target.screenshot({
+      path: testInfo.outputPath(`control-bar-${mode}-${width}.png`),
+      animations: 'disabled',
+    });
+    const geometry = await target
+      .locator('.video-stage')
+      .evaluate((surface) => {
+        const bar = surface
+          .querySelector('.control-bar')!
+          .getBoundingClientRect();
+        const seek = surface
+          .querySelector('.seek-track')!
+          .getBoundingClientRect();
+        return {
+          coarse: matchMedia('(pointer: coarse)').matches,
+          above: bar.top - (seek.top + seek.height / 2),
+          below: surface.getBoundingClientRect().bottom - bar.bottom,
+          buttons: Array.from(
+            surface.querySelectorAll('.control-end button'),
+            (button) => {
+              const bounds = button.getBoundingClientRect();
+              return {
+                width: bounds.width,
+                height: bounds.height,
+                icon: button.classList.contains('icon-button'),
+              };
+            },
+          ),
+        };
+      });
+    await testInfo.attach(`control-geometry-${mode}-${width}`, {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+    expect(geometry.coarse).toBe(mode === 'touch');
+    expect(Math.abs(geometry.above - geometry.below)).toBeLessThanOrEqual(1);
+    for (const button of geometry.buttons) {
+      if (geometry.coarse) {
+        expect(button.width).toBeGreaterThanOrEqual(44);
+        expect(button.height).toBeGreaterThanOrEqual(44);
+      } else {
+        expect(button.height).toBeLessThanOrEqual(32);
+        expect(button.width).toBeGreaterThanOrEqual(button.height);
+      }
+      if (button.icon)
+        expect(Math.abs(button.width - button.height)).toBeLessThan(1);
+    }
+  };
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1024, height: 768 },
@@ -674,6 +726,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   ]) {
     await page.setViewportSize(viewport);
     await expectFittedPlayer(page);
+    await checkControls('embedded', viewport.width);
     await clickPlayerControl(page, 'Episodes');
     const menu = page.getByRole('menu', { name: 'Episodes', exact: true });
     await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
@@ -695,6 +748,18 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await expect(page.locator('video')).toHaveJSProperty('paused', true);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await clickPlayerControl(page, 'Browser-window fullscreen');
+  await checkControls('window', 1440);
+  await clickPlayerControl(page, 'Fullscreen locally');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await checkControls('native', 1440);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(false);
+  await page.keyboard.press('s');
   await page.getByRole('tab', { name: /Episodes/ }).click();
   await openQuickActions(page, '换集');
   const palette = page.locator('.command-palette'),
@@ -830,7 +895,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
   // A separate identity receives video selection permission independently of playback.
-  const guest = await appContext(browser);
+  const guest = await browser.newContext({ hasTouch: true });
+  await mockRepository(guest);
   try {
     await guest.addInitScript(helperBootstrap);
     const other = await guest.newPage();
@@ -852,6 +918,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await settings(page, false, false, true);
     await expect(other.locator('.episode-trigger')).toHaveCount(1);
     await expect(other.locator('.episode-button').first()).toBeEnabled();
+    await checkControls('touch', 1440, other);
     await expect(
       other.getByRole('button', { name: 'Play together', exact: true }),
     ).toBeDisabled();
@@ -906,6 +973,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await expect(other.locator('.video-stage')).toBeFocused();
     await expect(other.locator('.episode-button').first()).toBeDisabled();
     await other.setViewportSize({ width: 390, height: 844 });
+    await checkControls('touch', 390, other);
     await other.getByRole('button', { name: /Members and episodes/ }).click();
     await other.getByRole('tab', { name: /Episodes/ }).click();
     await expect(other.locator('.episode-button').first()).toBeDisabled();

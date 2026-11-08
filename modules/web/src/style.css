@@ -1445,7 +1445,8 @@ fieldset > label {
   left: 0;
   right: 0;
   z-index: 4;
-  padding: 32px 18px 10px;
+  /* Match half the seek target below the row to balance progress-to-edge spacing. */
+  padding: 32px 18px 12px;
   background: linear-gradient(transparent, #060a1080);
   color: var(--text);
   opacity: 1;
@@ -1527,6 +1528,7 @@ fieldset > label {
     .danmaku-settings-trigger,
     .display-controls > :where(.icon-button)
   ) {
+  min-width: 32px;
   min-height: 32px;
   height: 32px;
   padding: 0 8px;
@@ -1936,6 +1938,10 @@ fieldset > label {
     min-height: 44px;
     height: 44px;
   }
+  .player-choice-menu button {
+    min-height: 44px;
+    height: 44px;
+  }
 }
 .video-information {
   display: flex;
@@ -2025,7 +2031,7 @@ fieldset > label {
 }
 .video-stage:fullscreen .player-controls,
 .video-stage.window-fullscreen .player-controls {
-  padding-bottom: max(18px, env(safe-area-inset-bottom));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 .modal .members-heading {
   padding: 0 0 12px;
@@ -2320,14 +2326,10 @@ fieldset > label {
 /* Controls adapt to the fitted video surface, including portrait sources on desktop. */
 @container player-surface (max-width: 760px) {
   .player-controls {
-    padding: 25px 8px 8px;
+    padding: 25px 8px 12px;
   }
   .danmaku-overlay {
     bottom: 144px;
-  }
-  .player-controls button.icon-button {
-    width: 44px;
-    min-height: 44px;
   }
   .control-bar {
     flex-wrap: wrap;
@@ -2341,13 +2343,6 @@ fieldset > label {
   .danmaku-control {
     gap: 0;
     margin-right: 0;
-  }
-  .player-controls
-    .control-end
-    :is(.danmaku-control > .icon-button, .display-controls > .icon-button) {
-    width: 44px;
-    min-height: 44px;
-    height: 44px;
   }
   .control-start,
   .control-end {
@@ -2364,17 +2359,11 @@ fieldset > label {
     width: 44px;
   }
   .player-controls .control-end .player-choice-trigger {
-    min-height: 44px;
-    height: 44px;
     padding-inline: 6px;
     font-size: 0.75rem;
   }
   .control-end .player-choice-trigger > svg {
     display: none;
-  }
-  .player-choice-menu button {
-    min-height: 44px;
-    height: 44px;
   }
   .display-controls {
     gap: 0;
@@ -2512,7 +2501,7 @@ fieldset > label {
     text-overflow: ellipsis;
   }
   .player-controls {
-    padding: 0 8px 4px;
+    padding: 0 8px 12px;
   }
   .home {
     padding-block: 8px;
