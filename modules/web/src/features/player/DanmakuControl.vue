@@ -28,81 +28,26 @@ const root = ref<HTMLElement>(),
   panel = ref<HTMLElement>();
 const panelId = useId(),
   titleId = useId();
-let hovered = false,
-  ignoreClick = false;
-let closing: ReturnType<typeof setTimeout> | undefined;
-let holding: ReturnType<typeof setTimeout> | undefined;
-let touchStart: { x: number; y: number } | undefined;
 
 function close(restoreFocus = false): void {
-  clearTimeout(closing);
   emit('update:open', false);
   if (restoreFocus) trigger.value?.focus({ preventScroll: true });
 }
-function scheduleClose(): void {
-  clearTimeout(closing);
-  closing = setTimeout(() => {
-    if (!hovered && !panel.value?.contains(document.activeElement)) close();
-  }, 150);
-}
-function enter(event: PointerEvent): void {
+function focusOut(event: FocusEvent): void {
+  // The surface click closes menus before it can toggle playback.
   if (
-    event.pointerType !== 'mouse' ||
-    !matchMedia('(hover: hover) and (pointer: fine)').matches
+    event.relatedTarget === props.stage ||
+    event.relatedTarget === props.stage?.querySelector('video')
   )
     return;
-  hovered = true;
-  clearTimeout(closing);
-  emit('update:open', true);
-}
-function leave(event: PointerEvent): void {
-  if (event.pointerType !== 'mouse') return;
-  hovered = false;
-  scheduleClose();
-}
-function focusOut(event: FocusEvent): void {
   if (
     !(event.relatedTarget instanceof Node) ||
     !root.value?.contains(event.relatedTarget)
   )
-    scheduleClose();
+    close();
 }
-async function openAndFocus(): Promise<void> {
-  clearTimeout(closing);
+function openSettings(): void {
   emit('update:open', true);
-  await nextTick();
-  panel.value
-    ?.querySelector<HTMLInputElement>('input')
-    ?.focus({ preventScroll: true });
-}
-function touchDown(event: PointerEvent): void {
-  if (event.pointerType === 'touch' && touchStart) return;
-  ignoreClick = false;
-  if (event.pointerType !== 'touch') return;
-  touchStart = { x: event.clientX, y: event.clientY };
-  holding = setTimeout(() => {
-    ignoreClick = true;
-    void openAndFocus();
-  }, 500);
-}
-function cancelHold(): void {
-  clearTimeout(holding);
-  touchStart = undefined;
-}
-function touchMove(event: PointerEvent): void {
-  if (
-    touchStart &&
-    Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) > 10
-  )
-    cancelHold();
-}
-function toggle(event: MouseEvent): void {
-  if (ignoreClick && event.detail > 0) {
-    ignoreClick = false;
-    return;
-  }
-  ignoreClick = false;
-  emit('toggle');
 }
 function outside(event: PointerEvent): void {
   if (
@@ -114,11 +59,7 @@ function outside(event: PointerEvent): void {
     close();
 }
 function resized(): void {
-  cancelHold();
-  close();
-}
-function contextMenu(event: MouseEvent): void {
-  if (touchStart || ignoreClick) event.preventDefault();
+  close(!!panel.value?.contains(document.activeElement));
 }
 function changeDensity(event: Event): void {
   emit('update:density', Number((event.target as HTMLInputElement).value));
@@ -139,8 +80,12 @@ watch(
   async (value) => {
     if (!value) return;
     await nextTick();
-    if (panel.value && trigger.value && props.stage)
+    if (!props.open || !panel.value) return;
+    if (trigger.value && props.stage)
       positionPlayerPopover(panel.value, trigger.value, props.stage, 272);
+    panel.value
+      .querySelector<HTMLInputElement>('input')
+      ?.focus({ preventScroll: true });
   },
 );
 onMounted(() => {
@@ -148,41 +93,37 @@ onMounted(() => {
   window.addEventListener('resize', resized);
 });
 onUnmounted(() => {
-  clearTimeout(closing);
-  cancelHold();
   document.removeEventListener('pointerdown', outside);
   window.removeEventListener('resize', resized);
 });
 </script>
 
 <template>
-  <div
-    ref="root"
-    class="danmaku-control"
-    @pointerenter="enter"
-    @pointerleave="leave"
-    @focusout="focusOut"
-  >
+  <div ref="root" class="danmaku-control" @focusout="focusOut">
     <button
-      ref="trigger"
       type="button"
       class="icon-button danmaku-toggle"
       :aria-label="t(visible ? 'commands.hideDanmaku' : 'player.showDanmaku')"
       :aria-pressed="visible"
+      :title="`${t(visible ? 'commands.hideDanmaku' : 'player.showDanmaku')} (D)`"
+      aria-keyshortcuts="D"
+      @click="emit('toggle')"
+    >
+      <Icon :name="visible ? 'chat' : 'chat-off'" />
+    </button>
+    <button
+      ref="trigger"
+      type="button"
+      class="icon-button danmaku-settings-trigger"
+      :aria-label="t('player.danmakuSettings')"
       :aria-expanded="open"
       :aria-controls="panelId"
       aria-haspopup="dialog"
-      :title="t('player.danmakuSettingsHint')"
-      aria-keyshortcuts="D ArrowDown"
-      @click="toggle"
-      @keydown.down.stop.prevent="openAndFocus"
-      @pointerdown="touchDown"
-      @pointermove="touchMove"
-      @pointerup="cancelHold"
-      @pointercancel="cancelHold"
-      @contextmenu="contextMenu"
+      :title="t('player.danmakuSettings')"
+      @click="emit('update:open', !open)"
+      @keydown.down.stop.prevent="openSettings"
     >
-      <Icon :name="visible ? 'chat' : 'chat-off'" />
+      <Icon name="chat-settings" />
     </button>
     <div
       v-if="open"

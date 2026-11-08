@@ -10,8 +10,11 @@ const props = defineProps<{
   label: string;
   text: string;
   value: number;
-  options: { value: number; label: string }[];
+  options: { value: number; label: string; disabled?: boolean }[];
   triggerClass: string;
+  menuClass?: string;
+  menuWidth?: number;
+  note?: string;
   stage: HTMLElement | undefined;
   disabled?: boolean;
   unavailable?: boolean;
@@ -35,8 +38,13 @@ function toggle(): void {
   if (!props.unavailable) emit('update:open', !props.open);
 }
 function select(value: number): void {
+  if (
+    props.unavailable ||
+    props.options.find((option) => option.value === value)?.disabled
+  )
+    return;
   close(true);
-  if (!props.unavailable) emit('select', value);
+  emit('select', value);
 }
 function keyboard(event: KeyboardEvent): void {
   const items = Array.from(
@@ -91,7 +99,12 @@ watch(
     }
     await nextTick();
     if (!panel.value || !trigger.value || !props.stage) return;
-    positionPlayerPopover(panel.value, trigger.value, props.stage, 176);
+    positionPlayerPopover(
+      panel.value,
+      trigger.value,
+      props.stage,
+      props.menuWidth ?? 176,
+    );
     const selected =
       panel.value.querySelector<HTMLButtonElement>('[aria-checked="true"]') ??
       panel.value.querySelector<HTMLButtonElement>('button');
@@ -137,12 +150,16 @@ onUnmounted(() => {
       ref="panel"
       v-keyboard-boundary="() => close(true)"
       class="player-menu player-choice-menu"
-      :class="triggerClass === 'playback-rate' ? 'rate-menu' : 'quality-menu'"
+      :class="
+        menuClass ??
+        (triggerClass === 'playback-rate' ? 'rate-menu' : 'quality-menu')
+      "
       role="menu"
       :aria-label="label"
       @keydown="keyboard"
     >
       <div class="menu-title" aria-hidden="true">{{ label }}</div>
+      <p v-if="note" class="menu-note">{{ note }}</p>
       <button
         v-for="option in options"
         :key="option.value"
@@ -151,10 +168,10 @@ onUnmounted(() => {
         class="quiet"
         tabindex="-1"
         :aria-checked="value === option.value"
-        :aria-disabled="unavailable"
+        :aria-disabled="unavailable || option.disabled"
         @click="select(option.value)"
       >
-        <span>{{ option.label }}</span>
+        <span class="player-option-label">{{ option.label }}</span>
         <Icon v-if="value === option.value" name="check" :size="16" />
       </button>
     </div>

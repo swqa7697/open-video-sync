@@ -241,6 +241,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   });
   while (await notifications.count()) await notifications.first().click();
   await expect(page.getByRole('tab', { name: /Episodes/ })).toHaveCount(0);
+  await expect(page.locator('.episode-trigger')).toHaveCount(0);
   const stage = page.locator('.video-stage');
   const playerMenu = page.getByRole('menu', { name: 'Player menu' });
   const statistics = page.getByRole('region', {
@@ -286,7 +287,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     await openAppPanel(page, 'Appearance');
     await page.getByRole('radio', { name, exact: true }).check();
     await page.keyboard.press('Escape');
-    await page.locator('.danmaku-toggle').press('ArrowDown');
+    await page.locator('.danmaku-settings-trigger').press('ArrowDown');
     await expect(page.locator('.danmaku-menu')).toBeVisible();
     const colors = await page.evaluate(() => {
       const button = document.querySelector('.playback-toggle')!;
@@ -349,7 +350,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(1);
     const bottoms: number[] = [];
     for (const [trigger, popup] of [
-      ['.danmaku-toggle', '.danmaku-menu'],
+      ['.danmaku-settings-trigger', '.danmaku-menu'],
       ['.playback-rate', '.rate-menu'],
       ['.quality-trigger', '.quality-menu'],
     ]) {
@@ -664,6 +665,35 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'data-state',
     'ready',
   );
+  const episodeTrigger = page.locator('.episode-trigger');
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectFittedPlayer(page);
+    await clickPlayerControl(page, 'Episodes');
+    const menu = page.getByRole('menu', { name: 'Episodes', exact: true });
+    await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(
+      menu.getByRole('menuitemradio', { checked: true }),
+    ).toContainText('Opening');
+    const bounds = (await menu.boundingBox())!;
+    const surface = (await page.locator('.video-stage').boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(surface.x);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+      surface.x + surface.width,
+    );
+    expect(bounds.y).toBeGreaterThanOrEqual(surface.y);
+    await page.keyboard.press('End');
+    await expect(menu.getByRole('menuitemradio').last()).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(episodeTrigger).toBeFocused();
+    await expect(page.locator('video')).toHaveJSProperty('paused', true);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('tab', { name: /Episodes/ }).click();
   await openQuickActions(page, '换集');
   const palette = page.locator('.command-palette'),
@@ -759,7 +789,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await settings(page, 'host', false);
   await clickPlayerControl(page, 'Play together');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
-  await page.getByRole('button', { name: /Finale/ }).click();
+  await clickPlayerControl(page, 'Episodes');
+  await page.getByRole('menuitemradio', { name: /Finale/ }).click();
   await expect
     .poll(
       async () =>
@@ -1342,11 +1373,16 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     'Platform access unavailable',
   );
   const danmaku = page.locator('.danmaku-toggle');
+  const danmakuSettings = page.locator('.danmaku-settings-trigger');
   const preferences = page.getByRole('dialog', {
     name: 'Danmaku settings',
     exact: true,
   });
   await danmaku.hover();
+  await expect(preferences).toHaveCount(0);
+  await danmakuSettings.hover();
+  await expect(preferences).toHaveCount(0);
+  await danmakuSettings.click();
   await expect(preferences).toBeVisible();
   await expect(preferences.getByRole('status')).toHaveCount(0);
   expect(
@@ -1359,8 +1395,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     .hover();
   await expect(preferences).toBeVisible();
   await page.mouse.move(0, 0);
+  await expect(preferences).toBeVisible();
+  await danmakuSettings.click();
   await expect(preferences).toHaveCount(0);
-  await danmaku.press('ArrowDown');
+  await danmakuSettings.press('ArrowDown');
   await expect(
     page.getByRole('slider', { name: 'Danmaku density', exact: true }),
   ).toBeFocused();
@@ -1408,14 +1446,10 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   const panelKeys = await observePageKeyboard(page);
   await page.keyboard.press('Control+k');
   await expect(page.locator('.command-palette')).toHaveCount(0);
-  // Hover can open a panel while keyboard focus remains in the player beneath it.
-  await danmaku.hover();
-  const playerVolume = page.getByRole('slider', {
-    name: 'Local volume',
-    exact: true,
-  });
-  await playerVolume.focus();
-  await expect(playerVolume).toBeFocused();
+  // The open settings panel owns shortcuts even if focus is moved underneath.
+  const playerSurface = page.locator('.video-stage');
+  await playerSurface.focus();
+  await expect(playerSurface).toBeFocused();
   const volume = await page.locator('#local-volume').inputValue();
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('m');
@@ -1423,7 +1457,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect(page.locator('#local-volume')).toHaveValue(volume);
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   await page.keyboard.press('Escape');
-  await expect(danmaku).toBeFocused();
+  await expect(danmakuSettings).toBeFocused();
   await expect(preferences).toHaveCount(0);
   expect(await panelKeys.evaluate((state) => state.events)).toEqual([]);
   await panelKeys.evaluate((state) => state.stop());
@@ -1445,11 +1479,11 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
   await expect
     .poll(() => page.evaluate(() => !!document.fullscreenElement))
     .toBe(true);
-  await danmaku.press('ArrowDown');
+  await danmakuSettings.press('ArrowDown');
   await expect(preferences).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(preferences).toHaveCount(0);
-  await expect(danmaku).toBeFocused();
+  await expect(danmakuSettings).toBeFocused();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await openPlayerMenu(page, 'keyboard');
   await page
@@ -1498,7 +1532,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
     );
     await danmaku.focus();
-    await danmaku.press('ArrowDown');
+    await danmakuSettings.press('ArrowDown');
     await expect(preferences).toBeVisible();
     await expect(danmaku).toHaveAttribute('aria-pressed', 'false');
     await expect(density).toHaveValue('40');
@@ -1520,7 +1554,7 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
       preferences.getByRole('button', { name: 'Reload danmaku', exact: true }),
     ).toHaveCount(0);
     await page.keyboard.press('Escape');
-    await expect(danmaku).toBeFocused();
+    await expect(danmakuSettings).toBeFocused();
     await expect(preferences).toHaveCount(0);
   }
   await danmaku.press('Enter');

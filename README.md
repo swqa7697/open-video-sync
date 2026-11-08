@@ -86,9 +86,9 @@ Paste a normal video link or BV identifier, or a bangumi link in the form `https
 
 OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
 
-Selecting another episode from **Episodes** starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
+For videos with multiple episodes, select **Episodes** in the player controls to open the episode menu. The menu marks the current episode and uses the same style as the quality and playback-speed menus. Everyone can browse; only the host can switch. Selecting another episode starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
 
-The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Reload danmaku is available in this menu; hovering the danmaku toggle opens its display preferences.
+The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Click the danmaku toggle in the player controls to show or hide comments. Click the separate danmaku settings button, shown as a chat bubble with a gear, to open display preferences. Neither button opens settings on hover or long press.
 
 Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Only the host can switch; members can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
 

@@ -1470,6 +1470,9 @@ fieldset select {
   gap: 2px;
   min-width: 0;
 }
+.control-end {
+  gap: 4px;
+}
 .display-controls {
   display: flex;
   align-items: center;
@@ -1505,6 +1508,10 @@ fieldset select {
   align-items: center;
   flex-shrink: 0;
 }
+.danmaku-control {
+  gap: 2px;
+  margin-right: 4px;
+}
 .player-controls .player-choice-trigger {
   gap: 5px;
   font-size: 0.8rem;
@@ -1520,17 +1527,18 @@ fieldset select {
   :is(
     .player-choice-trigger,
     .danmaku-toggle,
-    .display-controls > .icon-button
+    .danmaku-settings-trigger,
+    .display-controls > :where(.icon-button)
   ) {
-  min-height: 26px;
-  height: 26px;
-  padding: 0 7px;
-  border-radius: 6px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
 }
 .player-controls
   .control-end
-  :is(.danmaku-toggle, .display-controls > .icon-button) {
-  width: 28px;
+  :is(.danmaku-control > .icon-button, .display-controls > .icon-button) {
+  width: 32px;
   padding: 0;
 }
 .player-controls button[aria-expanded='true'] {
@@ -1851,6 +1859,12 @@ fieldset select {
   font-size: 0.7rem;
   font-weight: 500;
 }
+.player-menu .menu-note {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
 .player-choice-menu button {
   width: 100%;
   min-height: 36px;
@@ -1870,6 +1884,19 @@ fieldset select {
 }
 .player-choice-menu button[aria-checked='true'] > svg {
   color: var(--primary);
+}
+.episode-menu .player-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.player-controls .episode-menu button {
+  height: auto;
+  padding-block: 9px;
+  text-align: left;
+}
+.episode-menu button > svg {
+  flex-shrink: 0;
 }
 .danmaku-menu label {
   display: flex;
@@ -1905,6 +1932,13 @@ fieldset select {
 }
 .danmaku-toggle[aria-pressed='true'] {
   color: var(--primary);
+}
+@media (pointer: coarse) {
+  .player-controls .control-end :is(.icon-button, .player-choice-trigger) {
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
 }
 .video-information {
   display: flex;
@@ -2303,6 +2337,20 @@ fieldset select {
   }
   .control-end {
     margin-left: auto;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .danmaku-control {
+    gap: 0;
+    margin-right: 0;
+  }
+  .player-controls
+    .control-end
+    :is(.danmaku-control > .icon-button, .display-controls > .icon-button) {
+    width: 44px;
+    min-height: 44px;
+    height: 44px;
   }
   .control-start,
   .control-end {
@@ -2318,11 +2366,14 @@ fieldset select {
   .volume-slider {
     width: 44px;
   }
-  .player-controls .player-choice-trigger {
+  .player-controls .control-end .player-choice-trigger {
     min-height: 44px;
     height: 44px;
-    padding-inline: 8px;
+    padding-inline: 6px;
     font-size: 0.75rem;
+  }
+  .control-end .player-choice-trigger > svg {
+    display: none;
   }
   .player-choice-menu button {
     min-height: 44px;

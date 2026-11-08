@@ -12,7 +12,7 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ### Changed
 
-- Align player controls with compact buttons and clearer hover, press, and keyboard feedback. Give playback a distinct circular button, use a slim volume bar without a thumb, and improve time readability. Match playback controls, volume, and danmaku sliders to the selected accent. Use matching translucent danmaku and quality menus anchored above the control bar.
+- Align player controls with compact buttons and clearer hover, press, and keyboard feedback. Give playback a distinct circular button, use a slim volume bar without a thumb, and improve time readability. Match playback controls, volume, and danmaku sliders to the selected accent. Use matching translucent danmaku, quality, playback-speed, and episode menus anchored above the control bar. Separate the click-operated danmaku visibility and settings buttons, identify settings with a chat-and-gear icon, and remove hover and long-press activation. Show the player episode menu only for multiple episodes, with current-episode marking and host-only switching. Balance control spacing, match the visible width and height of the four right-side icons including the settings gear, and preserve usable touch targets on narrow players.
 
 ## [2026-11-05]
 

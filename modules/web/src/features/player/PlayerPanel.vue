@@ -197,6 +197,7 @@ const position = ref(0),
   danmakuMenu = ref(false),
   qualityMenu = ref(false),
   rateMenu = ref(false),
+  episodeMenu = ref(false),
   replaceOpen = ref(false),
   hoveredTime = ref<number>(),
   seekPointerOffset = ref(0),
@@ -220,6 +221,7 @@ function closeContextMenu(restoreFocus = true): void {
   if (restoreFocus) focusPlayerSilently();
 }
 function showContextMenu(x: number, y: number): void {
+  episodeMenu.value = false;
   danmakuMenu.value = false;
   qualityMenu.value = false;
   rateMenu.value = false;
@@ -401,6 +403,7 @@ const controlsPinned = computed(
     danmakuMenu.value ||
     qualityMenu.value ||
     rateMenu.value ||
+    episodeMenu.value ||
     dragging.value ||
     seekPointerDown.value,
 );
@@ -874,6 +877,7 @@ function clearMedia(): void {
     stage.value?.focus({ preventScroll: true });
   qualityMenu.value = false;
   rateMenu.value = false;
+  episodeMenu.value = false;
   selection.abort();
   selection = new AbortController();
   selectionGeneration++;
@@ -947,10 +951,16 @@ function clickSurface(event: MouseEvent): void {
     return;
   }
   stage.value?.focus({ preventScroll: true });
-  if (danmakuMenu.value || qualityMenu.value || rateMenu.value) {
+  if (
+    danmakuMenu.value ||
+    qualityMenu.value ||
+    rateMenu.value ||
+    episodeMenu.value
+  ) {
     danmakuMenu.value = false;
     qualityMenu.value = false;
     rateMenu.value = false;
+    episodeMenu.value = false;
     return;
   }
   togglePlayback();
@@ -2162,6 +2172,7 @@ onUnmounted(() => {
                     if (value) {
                       qualityMenu = false;
                       rateMenu = false;
+                      episodeMenu = false;
                     }
                   }
                 "
@@ -2192,6 +2203,54 @@ onUnmounted(() => {
                 "
               />
               <PlayerChoiceMenu
+                v-if="
+                  current.media?.kind === 'bilibili' &&
+                  playlist &&
+                  playlist.episodes.length > 1
+                "
+                :open="episodeMenu"
+                trigger-class="episode-trigger"
+                menu-class="episode-menu"
+                :menu-width="320"
+                :label="t('episodes.title')"
+                :text="t('episodes.title')"
+                :note="episodeActions.note"
+                :value="
+                  playlist.episodes.findIndex(
+                    (episode) =>
+                      current.media?.kind === 'bilibili' &&
+                      sameEpisode(current.media, episode),
+                  )
+                "
+                :options="
+                  playlist.episodes.map((episode, index) => ({
+                    value: index,
+                    label: `${index + 1}. ${episode.title}`,
+                    disabled:
+                      !canReplace ||
+                      (current.media?.kind === 'bilibili' &&
+                        sameEpisode(current.media, episode)),
+                  }))
+                "
+                :stage="stage"
+                @update:open="
+                  (value) => {
+                    episodeMenu = value;
+                    if (value) {
+                      danmakuMenu = false;
+                      qualityMenu = false;
+                      rateMenu = false;
+                    }
+                  }
+                "
+                @select="
+                  (value) => {
+                    const episode = playlist?.episodes[value];
+                    if (episode) void selectEpisode(episode);
+                  }
+                "
+              />
+              <PlayerChoiceMenu
                 :open="rateMenu"
                 trigger-class="playback-rate"
                 :label="t('player.playbackSpeed')"
@@ -2211,6 +2270,7 @@ onUnmounted(() => {
                     if (value) {
                       danmakuMenu = false;
                       qualityMenu = false;
+                      episodeMenu = false;
                     }
                   }
                 "
@@ -2240,6 +2300,7 @@ onUnmounted(() => {
                     if (value) {
                       danmakuMenu = false;
                       rateMenu = false;
+                      episodeMenu = false;
                     }
                   }
                 "

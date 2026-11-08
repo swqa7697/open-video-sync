@@ -343,10 +343,14 @@ test('quality and all danmaku choices survive player recreation', async () => {
     );
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Player settings"]').exists()).toBe(false);
-    const trigger = wrapper.get('.danmaku-toggle');
+    const toggle = wrapper.get('.danmaku-toggle');
+    const trigger = wrapper.get('.danmaku-settings-trigger');
     await wrapper
       .get('.danmaku-control')
       .trigger('pointerenter', { pointerType: 'mouse' });
+    await flushPromises();
+    expect(wrapper.find('.danmaku-menu').exists()).toBe(false);
+    await trigger.trigger('click');
     await flushPromises();
     expect(wrapper.get('.danmaku-menu').text()).toContain('Danmaku settings');
     expect(wrapper.get('.danmaku-menu').text()).not.toContain('Reload danmaku');
@@ -379,8 +383,8 @@ test('quality and all danmaku choices survive player recreation', async () => {
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-size"]').element.value,
     ).toBe('24');
-    await trigger.trigger('click');
-    expect(trigger.attributes('aria-pressed')).toBe('false');
+    await toggle.trigger('click');
+    expect(toggle.attributes('aria-pressed')).toBe('false');
     expect(area.element.value).toBe('0.25');
     expect(
       wrapper.get<HTMLInputElement>('input[id$="-speed"]').element.value,
@@ -394,9 +398,9 @@ test('quality and all danmaku choices survive player recreation', async () => {
     await wrapper
       .get('.danmaku-control')
       .trigger('pointerleave', { pointerType: 'mouse' });
-    await vi.waitFor(() =>
-      expect(wrapper.find('.danmaku-menu').exists()).toBe(false),
-    );
+    expect(wrapper.find('.danmaku-menu').exists()).toBe(true);
+    await trigger.trigger('click');
+    expect(wrapper.find('.danmaku-menu').exists()).toBe(false);
     await trigger.trigger('keydown', { key: 'ArrowDown' });
     await flushPromises();
     expect(
@@ -418,7 +422,7 @@ test('quality and all danmaku choices survive player recreation', async () => {
       '0.4',
     );
     await wrapper
-      .get('.danmaku-toggle')
+      .get('.danmaku-settings-trigger')
       .trigger('keydown', { key: 'ArrowDown' });
     await flushPromises();
     const restored = wrapper.get<HTMLSelectElement>('select[id$="-area"]');
@@ -687,14 +691,23 @@ test('host episode selection publishes resolved metadata and retains the list du
         .map((raw) => JSON.parse(raw))
         .filter((q) => q.type === 'media.select'),
     ).toHaveLength(0);
-    const selecting = panel.selectEpisode(second);
+    await wrapper.get('.episode-trigger').trigger('click');
+    expect(wrapper.get('.episode-menu [aria-checked="true"]').text()).toContain(
+      'First',
+    );
+    await wrapper.get('.episode-menu [aria-checked="true"]').trigger('click');
+    expect(wrapper.find('.episode-menu').exists()).toBe(true);
+    await wrapper
+      .findAll('.episode-menu [role="menuitemradio"]')[1]!
+      .trigger('click');
+    expect(wrapper.find('.episode-menu').exists()).toBe(false);
     await flushPromises();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
     expect(panel.canReplace).toBe(false);
     expect(panel.episodeActions.selection?.phase).toBe('loading');
     expect(panel.playlist).toEqual(playlist);
     finish?.();
-    await selecting;
+    await flushPromises();
     const commands = socket.sent
       .map((raw) => JSON.parse(raw))
       .filter((q) => q.type === 'media.select');
@@ -761,6 +774,7 @@ test('host episode selection publishes resolved metadata and retains the list du
     });
     await flushPromises();
     expect(panel.playlist).toBeUndefined();
+    expect(wrapper.find('.episode-trigger').exists()).toBe(false);
     expect(panel.episodeActions.selection).toBeUndefined();
     expect(wrapper.find('.codec-label').exists()).toBe(false);
   } finally {

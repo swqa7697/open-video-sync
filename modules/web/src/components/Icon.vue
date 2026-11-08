@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 
 const props = defineProps<{ name: string; size?: number }>();
+const chatSettingsMaskId = useId();
 const filled = computed(
   () =>
     props.name === 'window-fullscreen' ||
@@ -18,7 +19,7 @@ const paths: Record<string, string> = {
   bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
   sliders: 'M4 3v7m0 4v7M12 3v13m0 4v1M20 3v1m0 4v13M1 10h6m2 6h6m2-12h6',
   'chat-off':
-    'm3 3 18 18M8 2h10a3 3 0 0 1 3 3v10M17 18H8l-5 4V8M10 7h7M14 12h3',
+    'm2.85 2.85 18.3 18.3M8 2.85h10.45a2.7 2.7 0 0 1 2.7 2.7V14.5M17 17.5H8l-5.15 3.65V8M10 7.4h7M14 12h3',
   search: 'M21 21l-5-5M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0',
   info: 'M12 8h.01M11 12h1v5m-1 0h2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
   language:
@@ -35,7 +36,7 @@ const paths: Record<string, string> = {
   replay: 'M3 10a9 9 0 1 1 1 8M3 4v6h6',
   volume: 'm11 5-6 4H2v6h3l6 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
   mute: 'm11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6',
-  fullscreen: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
+  fullscreen: 'M8 2.85H2.85V8M16 2.85h5.15V8M2.85 16v5.15H8M21.15 16v5.15H16',
   'window-fullscreen': `${windowFrame}M5 5v5h2V7h3V5ZM14 5v2h3v3h2V5ZM5 14v5h5v-2H7v-3ZM17 14v3h-3v2h5v-5Z`,
   'window-restore': `${windowFrame}M8 5v3H5v2h5V5ZM14 5v5h5V8h-3V5ZM5 14v2h3v3h2v-5ZM14 14v5h2v-3h3v-2Z`,
   settings:
@@ -50,7 +51,8 @@ const paths: Record<string, string> = {
   screen: 'M3 4h18v14H3ZM8 22h8m-4-4v4',
   check: 'm5 12 4 4L19 6',
   leave: 'M9 4H3v16h6m5-13 5 5-5 5M8 12h13',
-  chat: 'M21 15a3 3 0 0 1-3 3H8l-5 4V5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3ZM7 7h10M7 12h7',
+  // A 1.7-unit stroke keeps the chat and fullscreen contours inside the same 20-unit square as windowFrame.
+  chat: 'M21.15 14.8a2.7 2.7 0 0 1-2.7 2.7H8l-5.15 3.65V5.55a2.7 2.7 0 0 1 2.7-2.7h12.9a2.7 2.7 0 0 1 2.7 2.7ZM7 7.4h10M7 12h7',
   chevron: 'm8 10 4 4 4-4',
   copy: 'M9 9h12v12H9ZM15 5V2H2v13h3',
   shield: 'm12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6Z',
@@ -68,11 +70,33 @@ const paths: Record<string, string> = {
     stroke-linejoin="round"
     aria-hidden="true"
   >
+    <defs v-if="name === 'chat-settings'">
+      <mask
+        :id="chatSettingsMaskId"
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="24"
+        height="24"
+      >
+        <rect width="24" height="24" fill="white" stroke="none" />
+        <circle cx="16.55" cy="16.65" r="6" fill="black" stroke="none" />
+      </mask>
+    </defs>
     <path
-      :d="paths[name] ?? paths.screen"
+      :d="name === 'chat-settings' ? paths.chat : (paths[name] ?? paths.screen)"
+      :mask="
+        name === 'chat-settings' ? `url(#${chatSettingsMaskId})` : undefined
+      "
       :fill="filled ? 'currentColor' : undefined"
       :stroke="filled ? 'none' : undefined"
       fill-rule="evenodd"
+    />
+    <path
+      v-if="name === 'chat-settings'"
+      :d="paths.settings"
+      transform="translate(10.55 10.65) scale(0.5)"
+      stroke-width="3.4"
     />
   </svg>
 </template>
