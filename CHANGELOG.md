@@ -6,6 +6,8 @@ with date-only release sections. Module versions use [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [2026-11-08]
+
 ### Added
 
 - Keep the latest 100 Bilibili videos watched by each anonymous identity, including the exact episode or part. Search and reuse history from home selection, video replacement, or Quick actions, with explicit confirmation and room permissions. Delete entries, clear history, or pause recording. Exclude local videos, room details, and playback progress.
