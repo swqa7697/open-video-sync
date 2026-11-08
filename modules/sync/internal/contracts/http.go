@@ -74,12 +74,12 @@ func CanonicalDigest(value []any) string {
 
 // SettingsArray defines the version-2 digest order.
 func SettingsArray(s RoomSettings) []any {
-	return []any{s.Controllers, s.WaitForAll}
+	return []any{s.EveryoneCanControl, s.EveryoneCanSelectMedia, s.WaitForAll}
 }
 
 // DefaultSettings constructs the initial host preferences.
 func DefaultSettings() RoomSettings {
-	return RoomSettings{"host", true}
+	return RoomSettings{EveryoneCanControl: false, EveryoneCanSelectMedia: false, WaitForAll: true}
 }
 
 // NormalizeCode applies only the specified ASCII Crockford aliases/separators.

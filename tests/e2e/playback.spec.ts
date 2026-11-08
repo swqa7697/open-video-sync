@@ -83,7 +83,7 @@ test('two independent local players match, play, change speed, seek, pause, reco
     await expect(
       other.getByRole('button', { name: 'Playback speed', exact: true }),
     ).toBeDisabled();
-    await settings(page, 'everyone');
+    await settings(page, true);
     await expect(
       page.getByRole('status').filter({ hasText: 'Preferences saved.' }),
     ).toBeVisible();

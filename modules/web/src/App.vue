@@ -971,10 +971,15 @@ onUnmounted(() => {
                     class="quiet icon-button"
                     :title="
                       t('settings.summary', {
-                        controllers: t(
-                          draftSettings.controllers === 'host'
-                            ? 'app.hostControls'
-                            : 'app.everyoneControls',
+                        everyoneCanControl: t(
+                          draftSettings.everyoneCanControl
+                            ? 'app.everyoneControls'
+                            : 'app.hostControls',
+                        ),
+                        everyoneCanSelectMedia: t(
+                          draftSettings.everyoneCanSelectMedia
+                            ? 'settings.everyoneMediaSummary'
+                            : 'settings.hostMediaSummary',
                         ),
                         waiting: t(
                           draftSettings.waitForAll

@@ -5,9 +5,9 @@
       "ovs-http-v2",
       "rooms.create",
       "Room <>& \ud83d\ude00\u2028\u2029 \\u2028 \"quoted\"",
-      ["host", true]
+      [false, false, true]
     ],
-    "digest": "4aade5a3ea9080346f561e93fad769dfd09d73a6d0abb68ee8da645c9c257bbd"
+    "digest": "20066c529f912161c772ab81a6e7cdf4843209b1aea8c928edfe2a0d826e65ae"
   },
   {
     "name": "redeem normalized code",

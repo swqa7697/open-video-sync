@@ -461,7 +461,11 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
   expect(wrapper.get('.playback-rate').attributes('disabled')).toBeDefined();
   const snapshot = {
     ...room('playing', 2),
-    settings: { controllers: 'everyone', waitForAll: false },
+    settings: {
+      ...roomFixture.settings,
+      everyoneCanControl: true,
+      waitForAll: false,
+    },
   };
   socket.frame('room.snapshot', snapshot);
   const stage = wrapper.get<HTMLElement>('.video-stage');
@@ -610,177 +614,237 @@ test('player controls distinguish playing idle, paused hover, leaving, and seek 
 });
 
 // Media replacement is owned by the player, independently of the sidebar's presentation.
-test('host episode selection publishes resolved metadata and retains the list during loading', async () => {
-  vi.stubGlobal('matchMedia', () => ({ matches: false }));
-  const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'First' },
-    second = { bvid: 'BV1TESTaaaab', part: 2, title: 'Second' },
-    playlist: Playlist = { title: 'Collection', episodes: [first, second] };
-  let media = {
-    kind: 'bilibili' as const,
-    bvid: first.bvid,
-    cid: '1',
-    part: 1,
-    durationMs: 10000,
-  };
-  const snapshot = decodeSnapshot({
-    ...roomFixture,
-    mediaGeneration: 1,
-    media,
-    playback: { ...roomFixture.playback, phase: 'paused' },
-  });
-  let finish: (() => void) | undefined;
-  vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
-    async (bvid, part) => {
-      if (bvid === second.bvid)
-        await new Promise<void>((resolve) => {
-          finish = resolve;
-        });
-      media = { ...media, bvid, part, cid: bvid === first.bvid ? '1' : '2' };
-      return media;
-    },
-  );
-  vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
-    (): MediaInfo => ({
-      ...media,
-      duration: 10,
-      title: 'Synthetic collection',
-      parts: 2,
-      playlist,
-      quality: 80,
-      qualities: [80],
-      handle: 'h1-1234',
-      tracks: [
-        {
-          id: 80,
-          codec: 'avc1.64001E',
-          mime: 'video/mp4',
-          init: [0, 31],
-          index: [32, 63],
-        },
-      ],
-    }),
-  );
-  vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
-    positionMs: 0,
-    durationMs: 10000,
-    paused: true,
-    seeking: false,
-    status: 'ready',
-  });
-  const wrapper = mount(PlayerPanel, {
-    props: { room: snapshot },
-    attachTo: document.body,
-  });
-  const panel = wrapper.vm as unknown as {
-    playlist: Playlist | undefined;
-    canReplace: boolean;
-    selectEpisode: (episode: Episode) => Promise<void>;
-    episodeActions: EpisodeActions;
-  };
-  try {
-    fakeMedia(wrapper.get('video').element);
-    const socket = FakeSocket.instances.at(-1)!;
-    socket.readyState = 1;
-    socket.frame('session.welcome', { connectionId: 'c'.repeat(32), snapshot });
-    await flushPromises();
-    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AVC');
-    await panel.selectEpisode(first);
-    await panel.selectEpisode({ ...second, part: 3 });
-    expect(
-      socket.sent
-        .map((raw) => JSON.parse(raw))
-        .filter((q) => q.type === 'media.select'),
-    ).toHaveLength(0);
-    await wrapper.get('.episode-trigger').trigger('click');
-    expect(wrapper.get('.episode-menu [aria-checked="true"]').text()).toContain(
-      'First',
-    );
-    await wrapper.get('.episode-menu [aria-checked="true"]').trigger('click');
-    expect(wrapper.find('.episode-menu').exists()).toBe(true);
-    await wrapper
-      .findAll('.episode-menu [role="menuitemradio"]')[1]!
-      .trigger('click');
-    expect(wrapper.find('.episode-menu').exists()).toBe(false);
-    await flushPromises();
-    expect(wrapper.find('.codec-label').exists()).toBe(false);
-    expect(panel.canReplace).toBe(false);
-    expect(panel.episodeActions.selection?.phase).toBe('loading');
-    expect(panel.playlist).toEqual(playlist);
-    finish?.();
-    await flushPromises();
-    const commands = socket.sent
-      .map((raw) => JSON.parse(raw))
-      .filter((q) => q.type === 'media.select');
-    expect(commands).toHaveLength(1);
-    expect(commands[0].payload.autoPlay).toBe(true);
-    expect(commands[0].payload.media).toEqual({
-      kind: 'bilibili',
-      bvid: second.bvid,
-      cid: '2',
-      part: 2,
+test.each(['host', 'participant'] as const)(
+  '%s episode selection publishes resolved metadata and retains the list during loading',
+  async (role) => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    const first = { bvid: 'BV1TESTaaaaa', part: 1, title: 'First' },
+      second = { bvid: 'BV1TESTaaaab', part: 2, title: 'Second' },
+      playlist: Playlist = { title: 'Collection', episodes: [first, second] };
+    let media = {
+      kind: 'bilibili' as const,
+      bvid: first.bvid,
+      cid: '1',
+      part: 1,
       durationMs: 10000,
-    });
-    expect(JSON.stringify(commands)).not.toContain('playlist');
-    expect(panel.episodeActions.selection?.phase).toBe('pending');
-    socket.frame('command.result', {
-      commandId: 'f'.repeat(32),
-      accepted: true,
-      revision: 2,
-      error: null,
-    });
-    expect(panel.episodeActions.selection?.phase).toBe('pending');
-    socket.frame('command.result', {
-      commandId: commands[0].commandId,
-      accepted: false,
-      revision: null,
-      error: {
-        code: 'storage_unavailable',
-        message: 'Synthetic storage failure',
-        requestId: 'f'.repeat(32),
-        retryable: true,
+    };
+    const snapshot = decodeSnapshot({
+      ...roomFixture,
+      selfMemberId: role === 'host' ? roomFixture.selfMemberId : 'f'.repeat(32),
+      settings: {
+        ...roomFixture.settings,
+        everyoneCanSelectMedia: role !== 'host',
       },
-    });
-    expect(panel.episodeActions.selection?.phase).toBe('failed');
-    expect(panel.episodeActions.selection?.error).toContain('save');
-    const retry = panel.selectEpisode(second);
-    await flushPromises();
-    finish?.();
-    await retry;
-    const retried = socket.sent
-      .map((raw) => JSON.parse(raw))
-      .filter((frame) => frame.type === 'media.select')
-      .at(-1);
-    socket.frame('command.result', {
-      commandId: retried.commandId,
-      accepted: true,
-      revision: 2,
-      error: null,
-    });
-    expect(panel.episodeActions.selection?.phase).toBe('accepted');
-    socket.frame('room.snapshot', {
-      ...snapshot,
-      revision: 2,
-      mediaGeneration: 2,
+      members:
+        role === 'host'
+          ? roomFixture.members
+          : [
+              ...roomFixture.members,
+              {
+                memberId: 'f'.repeat(32),
+                displayName: 'Viewer',
+                role: 'participant',
+                presence: 'connected',
+                readiness: null,
+              },
+            ],
+      mediaGeneration: 1,
       media,
+      playback: { ...roomFixture.playback, phase: 'paused' },
     });
-    await flushPromises();
-    expect(panel.playlist).toEqual(playlist);
-    expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe('AVC');
-    socket.frame('room.snapshot', {
-      ...snapshot,
-      revision: 3,
-      mediaGeneration: 3,
-      media: room('paused', 3).media,
+    let finish: (() => void) | undefined;
+    vi.spyOn(BilibiliAdapter.prototype, 'load').mockImplementation(
+      async (bvid, part) => {
+        if (bvid === second.bvid)
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+        media = { ...media, bvid, part, cid: bvid === first.bvid ? '1' : '2' };
+        return media;
+      },
+    );
+    vi.spyOn(BilibiliAdapter.prototype, 'mediaInfo', 'get').mockImplementation(
+      (): MediaInfo => ({
+        ...media,
+        duration: 10,
+        title: 'Synthetic collection',
+        parts: 2,
+        playlist,
+        quality: 80,
+        qualities: [80],
+        handle: 'h1-1234',
+        tracks: [
+          {
+            id: 80,
+            codec: 'avc1.64001E',
+            mime: 'video/mp4',
+            init: [0, 31],
+            index: [32, 63],
+          },
+        ],
+      }),
+    );
+    vi.spyOn(BilibiliAdapter.prototype, 'getState').mockReturnValue({
+      positionMs: 0,
+      durationMs: 10000,
+      paused: true,
+      seeking: false,
+      status: 'ready',
     });
-    await flushPromises();
-    expect(panel.playlist).toBeUndefined();
-    expect(wrapper.find('.episode-trigger').exists()).toBe(false);
-    expect(panel.episodeActions.selection).toBeUndefined();
-    expect(wrapper.find('.codec-label').exists()).toBe(false);
-  } finally {
-    wrapper.unmount();
-  }
-});
+    const wrapper = mount(PlayerPanel, {
+      props: { room: snapshot },
+      attachTo: document.body,
+    });
+    const panel = wrapper.vm as unknown as {
+      playlist: Playlist | undefined;
+      canReplace: boolean;
+      selectEpisode: (episode: Episode) => Promise<void>;
+      episodeActions: EpisodeActions;
+    };
+    try {
+      fakeMedia(wrapper.get('video').element);
+      const socket = FakeSocket.instances.at(-1)!;
+      socket.readyState = 1;
+      socket.frame('session.welcome', {
+        connectionId: 'c'.repeat(32),
+        snapshot,
+      });
+      await flushPromises();
+      expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
+        'AVC',
+      );
+      await panel.selectEpisode(first);
+      await panel.selectEpisode({ ...second, part: 3 });
+      expect(
+        socket.sent
+          .map((raw) => JSON.parse(raw))
+          .filter((q) => q.type === 'media.select'),
+      ).toHaveLength(0);
+      await wrapper.get('.episode-trigger').trigger('click');
+      expect(
+        wrapper.get('.episode-menu [aria-checked="true"]').text(),
+      ).toContain('First');
+      await wrapper.get('.episode-menu [aria-checked="true"]').trigger('click');
+      expect(wrapper.find('.episode-menu').exists()).toBe(true);
+      await wrapper
+        .findAll('.episode-menu [role="menuitemradio"]')[1]!
+        .trigger('click');
+      expect(wrapper.find('.episode-menu').exists()).toBe(false);
+      await flushPromises();
+      expect(wrapper.find('.codec-label').exists()).toBe(false);
+      expect(panel.canReplace).toBe(false);
+      expect(panel.episodeActions.selection?.phase).toBe('loading');
+      expect(panel.playlist).toEqual(playlist);
+      finish?.();
+      await flushPromises();
+      const commands = socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((q) => q.type === 'media.select');
+      expect(commands).toHaveLength(1);
+      expect(commands[0].payload.autoPlay).toBe(true);
+      expect(commands[0].payload.media).toEqual({
+        kind: 'bilibili',
+        bvid: second.bvid,
+        cid: '2',
+        part: 2,
+        durationMs: 10000,
+      });
+      expect(JSON.stringify(commands)).not.toContain('playlist');
+      expect(panel.episodeActions.selection?.phase).toBe('pending');
+      socket.frame('command.result', {
+        commandId: 'f'.repeat(32),
+        accepted: true,
+        revision: 2,
+        error: null,
+      });
+      expect(panel.episodeActions.selection?.phase).toBe('pending');
+      socket.frame('command.result', {
+        commandId: commands[0].commandId,
+        accepted: false,
+        revision: null,
+        error: {
+          code: 'storage_unavailable',
+          message: 'Synthetic storage failure',
+          requestId: 'f'.repeat(32),
+          retryable: true,
+        },
+      });
+      expect(panel.episodeActions.selection?.phase).toBe('failed');
+      expect(panel.episodeActions.selection?.error).toContain('save');
+      const retry = panel.selectEpisode(second);
+      await flushPromises();
+      finish?.();
+      await retry;
+      const retried = socket.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((frame) => frame.type === 'media.select')
+        .at(-1);
+      socket.frame('command.result', {
+        commandId: retried.commandId,
+        accepted: true,
+        revision: 2,
+        error: null,
+      });
+      expect(panel.episodeActions.selection?.phase).toBe('accepted');
+      socket.frame('room.snapshot', {
+        ...snapshot,
+        revision: 2,
+        mediaGeneration: 2,
+        media,
+      });
+      await flushPromises();
+      expect(panel.playlist).toEqual(playlist);
+      expect(wrapper.get('.codec-label [aria-hidden="true"]').text()).toBe(
+        'AVC',
+      );
+      if (role === 'participant') {
+        await wrapper.get('.episode-trigger').trigger('click');
+        const authoritativeMedia = media;
+        const inFlight = panel.selectEpisode(first);
+        const selectionsBefore = socket.sent
+          .map((raw) => JSON.parse(raw))
+          .filter((frame) => frame.type === 'media.select').length;
+        socket.frame('room.snapshot', {
+          ...snapshot,
+          revision: 3,
+          mediaGeneration: 2,
+          media: authoritativeMedia,
+          settings: { ...snapshot.settings, everyoneCanSelectMedia: false },
+        });
+        await inFlight;
+        await flushPromises();
+        finish?.();
+        await flushPromises();
+        expect(wrapper.find('.episode-trigger').exists()).toBe(false);
+        expect(wrapper.find('.episode-menu').exists()).toBe(false);
+        expect(wrapper.find('.change-media').exists()).toBe(false);
+        expect(document.activeElement).toBe(
+          wrapper.get('.video-stage').element,
+        );
+        expect(panel.canReplace).toBe(false);
+        await panel.selectEpisode(first);
+        expect(
+          socket.sent
+            .map((raw) => JSON.parse(raw))
+            .filter((frame) => frame.type === 'media.select'),
+        ).toHaveLength(selectionsBefore);
+      }
+      socket.frame('room.snapshot', {
+        ...snapshot,
+        revision: 4,
+        mediaGeneration: 3,
+        media: room('paused', 3).media,
+      });
+      await flushPromises();
+      expect(panel.playlist).toBeUndefined();
+      expect(wrapper.find('.episode-trigger').exists()).toBe(false);
+      expect(panel.episodeActions.selection).toBeUndefined();
+      expect(wrapper.find('.codec-label').exists()).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  },
+);
 
 test('a failed Bilibili player keeps readiness valid and video replacement available', async () => {
   vi.useFakeTimers();
@@ -1080,7 +1144,7 @@ test('a playing seek waits for data at the paused target and stays paused when d
     }
     const playing = {
       ...room('playing', 2),
-      settings: { ...roomFixture.settings, controllers: 'everyone' },
+      settings: { ...roomFixture.settings, everyoneCanControl: true },
       playback: {
         phase: 'playing',
         rate: 1,

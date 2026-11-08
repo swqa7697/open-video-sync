@@ -534,7 +534,10 @@ const host = computed(
   () => current.value.selfMemberId === current.value.hostMemberId,
 );
 const permitted = computed(
-  () => host.value || current.value.settings.controllers === 'everyone',
+  () => host.value || current.value.settings.everyoneCanControl,
+);
+const mediaPermitted = computed(
+  () => host.value || current.value.settings.everyoneCanSelectMedia,
 );
 let commandDelayTimer: ReturnType<typeof setTimeout> | undefined;
 const commandRecovery = ref<HTMLButtonElement>();
@@ -564,12 +567,36 @@ const canPlay = computed(
 const canControl = computed(() => controls.value && !!current.value.media);
 const canReplace = computed(
   () =>
-    host.value &&
+    mediaPermitted.value &&
     !loading.value &&
     connected.value &&
     active.value &&
     !pendingCommand.value,
 );
+const mediaNote = computed(() => {
+  if (replaced.value) return t('player.controlReplaced');
+  if (!connected.value || !active.value) return t('player.controlReconnecting');
+  if (pendingCommand.value) return t('player.controlPending');
+  if (!mediaPermitted.value) return t('episodes.viewerHint');
+  if (loading.value) return t('common.preparingVideo');
+  return '';
+});
+watch(mediaPermitted, async (allowed) => {
+  if (allowed) return;
+  const focused = document.activeElement;
+  const restoreFocus =
+    focused instanceof Element &&
+    !!focused.closest(
+      '.episode-menu, .episode-trigger, .change-media, .change-media-dialog',
+    );
+  episodeMenu.value = false;
+  replaceOpen.value = false;
+  if (restoreFocus) {
+    await nextTick();
+    if (!disposed && !mediaPermitted.value)
+      stage.value?.focus({ preventScroll: true });
+  }
+});
 const shownStatus = computed<ReadinessStatus>(() =>
   loading.value ? 'loading' : mediaStatus.value,
 );
@@ -702,11 +729,11 @@ const transport = new RoomSocket(
           clearMedia();
         publishing = false;
       }
-      if (snapshot.settings.controllers === 'host') hostNotice.value = false;
+      if (!snapshot.settings.everyoneCanControl) hostNotice.value = false;
       const previousHost = current.value.members.find((m) => m.role === 'host');
       if (
-        current.value.settings.controllers === 'host' &&
-        snapshot.settings.controllers === 'everyone' &&
+        !current.value.settings.everyoneCanControl &&
+        snapshot.settings.everyoneCanControl &&
         previousHost &&
         snapshot.members.find((m) => m.memberId === previousHost.memberId)
           ?.presence !== 'connected'
@@ -812,7 +839,7 @@ function importMedia(request: ImportRequest): Promise<ImportResult> {
   if (previous && importedCommand?.waiting) return importedCommand.waiting;
   if (!previous) {
     const s = current.value;
-    if (!host.value || !transport.active || !transport.connected)
+    if (!mediaPermitted.value || !transport.active || !transport.connected)
       return Promise.resolve({ status: 'unavailable' });
     if (pendingCommand.value) return Promise.resolve({ status: 'busy' });
     if (
@@ -857,7 +884,7 @@ function importMedia(request: ImportRequest): Promise<ImportResult> {
 }
 const importHandoff = new ImportHandoff({
   room: () =>
-    host.value && transport.active && transport.connected
+    mediaPermitted.value && transport.active && transport.connected
       ? {
           roomId: current.value.roomId,
           epoch: current.value.epoch,
@@ -1084,6 +1111,12 @@ async function chooseBilibili(
       selected.episodeId,
     );
     if (signal.aborted || generation !== selectionGeneration) return;
+    if (publishMedia && !mediaPermitted.value) {
+      autoAttempt = '';
+      clearMedia();
+      void autoLoad();
+      return;
+    }
     streamInfo.value = local.mediaInfo;
     playlist.value =
       local.mediaInfo?.playlist ?? (autoPlay ? playlist.value : undefined);
@@ -1092,7 +1125,7 @@ async function chooseBilibili(
     subscription = local.subscribe(() => {
       void sample();
     });
-    if (publishMedia && host.value) {
+    if (publishMedia && mediaPermitted.value) {
       publishing = true;
       transport.command({ media, ...(autoPlay ? { autoPlay: true } : {}) });
     }
@@ -1145,6 +1178,12 @@ async function loadLocal(
       local.load(file, signal),
     ]);
     if (signal.aborted || generation !== selectionGeneration) return;
+    if (publishMedia && !mediaPermitted.value) {
+      autoAttempt = '';
+      clearMedia();
+      void autoLoad();
+      return;
+    }
     descriptor.value = {
       kind: 'local',
       fingerprintVersion: 1,
@@ -1156,7 +1195,7 @@ async function loadLocal(
       void sample();
     });
     sync.invalidate();
-    if (publishMedia && host.value) {
+    if (publishMedia && mediaPermitted.value) {
       const media = descriptor.value;
       publishing = true;
       transport.command({ media });
@@ -1216,7 +1255,7 @@ async function retryMedia(): Promise<void> {
 async function replaceMedia(): Promise<void> {
   if (!canReplace.value) return;
   const selected = await mediaPicker.value?.prepare();
-  if (!selected) return;
+  if (!selected || !canReplace.value) return;
   replaceOpen.value = false;
   if (selected.media.kind === 'local' && selected.file)
     await loadLocal(selected.file, selected.media, true);
@@ -1261,7 +1300,7 @@ async function openMedia(selection?: VideoSelection): Promise<void> {
   await mediaPicker.value?.selectBilibili(selection);
 }
 const commands = computed<QuickCommand[]>(() => [
-  ...(host.value
+  ...(mediaPermitted.value
     ? [
         {
           id: 'video',
@@ -1271,9 +1310,7 @@ const commands = computed<QuickCommand[]>(() => [
           shortcut: '/video',
           aliases: 'replace change video bilibili link 更换 替换 视频 链接',
           disabled: !canReplace.value,
-          detail: !canReplace.value
-            ? controlNote.value || t('common.preparingVideo')
-            : t('commands.videoHint'),
+          detail: !canReplace.value ? mediaNote.value : t('commands.videoHint'),
           run: (selection?: VideoSelection) => {
             void openMedia(selection);
           },
@@ -1418,10 +1455,7 @@ const episodeActions = computed<EpisodeActions>(() => {
         ? { ...media, title: videoTitle.value }
         : undefined,
     canSelect: canReplace.value,
-    note: !host.value
-      ? t('episodes.viewerHint')
-      : controlNote.value ||
-        (loading.value ? t('common.preparingVideo') : t('episodes.hostHint')),
+    note: mediaNote.value || t('episodes.hostHint'),
     unavailable: !media
       ? t('episodes.noMedia')
       : media.kind === 'local'
@@ -2204,6 +2238,7 @@ onUnmounted(() => {
               />
               <PlayerChoiceMenu
                 v-if="
+                  mediaPermitted &&
                   current.media?.kind === 'bilibili' &&
                   playlist &&
                   playlist.episodes.length > 1
@@ -2384,7 +2419,7 @@ onUnmounted(() => {
           </p>
         </div>
         <button
-          v-if="host"
+          v-if="mediaPermitted"
           class="quiet change-media"
           :disabled="!canReplace && !pendingCommand"
           :aria-disabled="!canReplace"
@@ -2425,6 +2460,7 @@ onUnmounted(() => {
     </div>
     <Modal
       v-if="replaceOpen"
+      class="change-media-dialog"
       :title="t('player.changeTitle')"
       @close="replaceOpen = false"
       @keydown.enter="confirmMedia"

@@ -284,7 +284,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 		if _, err := previous.host.Call(ctx, "PATCH", "/me", map[string]any{"displayName": hostName}); err != nil {
 			return previous, err
 		}
-		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"controllers": "everyone", "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
+		value, err := previous.host.Call(ctx, "POST", "/rooms", map[string]any{"title": roomTitle, "settings": map[string]any{"everyoneCanControl": true, "everyoneCanSelectMedia": false, "waitForAll": false}, "media": map[string]any{"kind": "bilibili", "bvid": "BV1TESTaaaaa", "cid": "1", "part": 1, "durationMs": 100000}})
 		if err != nil {
 			return previous, err
 		}
@@ -335,7 +335,7 @@ func checkApplication(ctx context.Context, name string, previous applicationStat
 	if snap.RoomID != previous.roomID || snap.Title != roomTitle {
 		return previous, errors.New("container replacement lost room")
 	}
-	if snap.Settings.Controllers != "everyone" || snap.Settings.WaitForAll {
+	if !snap.Settings.EveryoneCanControl || snap.Settings.EveryoneCanSelectMedia || snap.Settings.WaitForAll {
 		return previous, errors.New("container lost settings")
 	}
 	names := map[string]string{}

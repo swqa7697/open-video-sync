@@ -28,10 +28,11 @@ type ProfilePatch struct {
 	DisplayName string `json:"displayName"`
 }
 
-// RoomSettings contains the two version-2 host preferences.
+// RoomSettings contains the room's host-managed preferences.
 type RoomSettings struct {
-	Controllers string `json:"controllers"`
-	WaitForAll  bool   `json:"waitForAll"`
+	EveryoneCanControl     bool `json:"everyoneCanControl"`
+	EveryoneCanSelectMedia bool `json:"everyoneCanSelectMedia"`
+	WaitForAll             bool `json:"waitForAll"`
 }
 
 // MediaDescriptor contains only allowlisted matching metadata. Kind determines
@@ -69,15 +70,16 @@ func DecodeRoomSettings(data []byte) (RoomSettings, error) {
 	if err != nil {
 		return RoomSettings{}, err
 	}
-	if !shape(object, "controllers", "waitForAll") {
+	if !shape(object, "everyoneCanControl", "everyoneCanSelectMedia", "waitForAll") {
 		return RoomSettings{}, ErrInvalidInput
 	}
-	controllers, c := choice(object["controllers"], "host", "everyone")
+	controls, c := object["everyoneCanControl"].(bool)
+	selectMedia, m := object["everyoneCanSelectMedia"].(bool)
 	wait, w := object["waitForAll"].(bool)
-	if !c || !w {
+	if !c || !m || !w {
 		return RoomSettings{}, ErrInvalidInput
 	}
-	return RoomSettings{Controllers: controllers, WaitForAll: wait}, nil
+	return RoomSettings{EveryoneCanControl: controls, EveryoneCanSelectMedia: selectMedia, WaitForAll: wait}, nil
 }
 
 // DecodeMedia validates a local or Bilibili stable descriptor.

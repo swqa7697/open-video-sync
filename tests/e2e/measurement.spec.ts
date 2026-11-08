@@ -168,7 +168,7 @@ test('three independent nearby trials observe decoded frames separately from con
       await expect(
         guest.getByRole('status').filter({ hasText: 'Clock calibrated' }),
       ).toBeVisible();
-      await settings(host, 'host', false);
+      await settings(host, false, false);
       const file = {
         name: 'generated-timecode.webm',
         mimeType: 'video/webm',

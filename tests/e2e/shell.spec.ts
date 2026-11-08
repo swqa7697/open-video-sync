@@ -724,7 +724,7 @@ test('independent identities manage a private room over direct HTTP', async ({
     expect(guestIdentity.identity.identityId).not.toBe(
       firstIdentity.identity.identityId,
     );
-    await settings(page, 'everyone', false);
+    await settings(page, true, false);
     // Real pointer seeking inside the custom player changes the observed media position.
     const player = page.locator('.video-stage');
     const playerControls = page.locator('.player-controls');
@@ -1964,9 +1964,9 @@ test.describe('interface language', () => {
     await expect(page.locator('.modal b')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '房间设置', exact: true }).click();
-    await expect(page.getByLabel('播放控制权限', { exact: true })).toHaveValue(
-      'host',
-    );
+    await expect(
+      page.getByLabel('允许所有人控制播放', { exact: true }),
+    ).not.toBeChecked();
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 375, height: 812 });
     await page.emulateMedia({ colorScheme: 'dark' });

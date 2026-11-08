@@ -258,10 +258,33 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 		}
 		return err
 	}
-	if err := send(h, contracts.ClientFrame{Type: "media.select", AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "local", FingerprintVersion: 1, Digest: strings.Repeat("a", 64), SizeBytes: 1, DurationMs: 60000}}); err != nil {
+	selection := contracts.ClientFrame{Type: "media.select", AutoPlay: true, Media: contracts.MediaDescriptor{Kind: "bilibili", BVID: "BV1TESTaaaaa", CID: "9000000000001", Part: 1, DurationMs: 60000, EpisodeID: "9000000000011"}}
+	expectCode(t, send(g, selection), "forbidden")
+	grant := mutation(snap, "settings")
+	grant.Settings = snap.Settings
+	grant.Settings.EveryoneCanControl = true
+	granted, _, err := service.Mutate(ctx, host, snap.RoomID, grant)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Barrier == nil || len(snap.Barrier.RequiredMemberIDs) != 2 {
+	snap = granted.Snapshot
+	// Playback authority alone must never grant media replacement.
+	expectCode(t, send(g, selection), "forbidden")
+	grant = mutation(snap, "settings")
+	grant.Settings = snap.Settings
+	grant.Settings.EveryoneCanControl = false
+	grant.Settings.EveryoneCanSelectMedia = true
+	granted, _, err = service.Mutate(ctx, host, snap.RoomID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap = granted.Snapshot
+	// A media controller can start the selected episode through the ordinary wait
+	// policy, while subsequent playback commands still require playback authority.
+	if err := send(g, selection); err != nil {
+		t.Fatal(err)
+	}
+	if snap.Media == nil || *snap.Media != selection.Media || snap.MediaGeneration != 1 || snap.Barrier == nil || len(snap.Barrier.RequiredMemberIDs) != 2 {
 		t.Fatal("play did not freeze cohort")
 	}
 	oldBarrier := snap.Barrier.BarrierID
@@ -313,7 +336,8 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	}
 	change := mutation(snap, "settings")
 	change.Settings = snap.Settings
-	change.Settings.Controllers = "everyone"
+	change.Settings.EveryoneCanControl = true
+	change.Settings.EveryoneCanSelectMedia = false
 
 	updated, _, err := service.Mutate(ctx, host, snap.RoomID, change)
 	if err != nil {
@@ -322,6 +346,12 @@ func TestWaitingSeekSettingsAndSessionRevocation(t *testing.T) {
 	snap = updated.Snapshot
 	if snap.Playback.Phase != "playing" {
 		t.Fatal("non-waiting settings paused playback")
+	}
+	beforeRejected := snap
+	expectCode(t, send(g, selection), "forbidden")
+	refresh()
+	if snap.Media == nil || snap.Revision != beforeRejected.Revision || snap.MediaGeneration != beforeRejected.MediaGeneration || snap.Playback.Phase != "playing" || *snap.Media != *beforeRejected.Media {
+		t.Fatal("revoked media controller changed the room")
 	}
 	if err := send(g, contracts.ClientFrame{Type: "playback.command", Action: "rate", Rate: 2}); err != nil {
 		t.Fatal("everyone controls did not permit a speed change", err)
@@ -553,7 +583,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				}
 				service.Disconnect(hostConn) // An old owner's eventual close cannot drop the replacement.
 				before, _ := service.Snapshot(ctx, guest, id)
-				if before.Settings.Controllers != "host" || before.Epoch != snap.Epoch {
+				if before.Settings.EveryoneCanControl || before.Epoch != snap.Epoch {
 					t.Fatal("reconnect prematurely changed ownership")
 				}
 				service.Disconnect(returned)
@@ -575,7 +605,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 					if notices > 0 {
 						break
 					}
-				} else if snap.Settings.Controllers == "everyone" {
+				} else if snap.Settings.EveryoneCanControl {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -587,7 +617,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				t.Fatal("host departure interrupted playback")
 			}
 			if mode == "failed-write" {
-				if snap.Settings.Controllers != "host" {
+				if snap.Settings.EveryoneCanControl {
 					t.Fatal("failed write granted playback permission")
 				}
 				writes := repository.rejections.Load()
@@ -610,7 +640,7 @@ func TestDepartureGraceHostFallbackAndAtomicClosure(t *testing.T) {
 				t.Fatal(err)
 			}
 			latest, _ = service.Snapshot(ctx, host, id)
-			if latest.Settings.Controllers != "everyone" {
+			if !latest.Settings.EveryoneCanControl {
 				t.Fatal("host return revoked participant controls")
 			}
 			_, _, err = service.Mutate(ctx, host, id, mutation(latest, "leave"))

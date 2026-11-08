@@ -5,7 +5,8 @@ export interface ProfilePatch {
 }
 
 export interface RoomSettings {
-  controllers: 'host' | 'everyone';
+  everyoneCanControl: boolean;
+  everyoneCanSelectMedia: boolean;
   waitForAll: boolean;
 }
 
@@ -126,10 +127,16 @@ export function decodeProfilePatch(value: unknown): ProfilePatch {
 
 export function decodeRoomSettings(value: unknown): RoomSettings {
   const input = object(value);
-  shape(input, ['controllers', 'waitForAll']);
-  if (typeof input.waitForAll !== 'boolean') return invalid();
+  shape(input, ['everyoneCanControl', 'everyoneCanSelectMedia', 'waitForAll']);
+  if (
+    typeof input.everyoneCanControl !== 'boolean' ||
+    typeof input.everyoneCanSelectMedia !== 'boolean' ||
+    typeof input.waitForAll !== 'boolean'
+  )
+    return invalid();
   const settings: RoomSettings = {
-    controllers: choice(input.controllers, ['host', 'everyone']),
+    everyoneCanControl: input.everyoneCanControl,
+    everyoneCanSelectMedia: input.everyoneCanSelectMedia,
     waitForAll: input.waitForAll,
   };
   return settings;

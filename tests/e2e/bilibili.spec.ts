@@ -36,8 +36,8 @@ const syntheticVideos = [
 test('playing Bilibili seeks recover decoded video through the real adapter and helper', async ({
   page,
   browser,
-}) => {
-  test.setTimeout(90000);
+}, testInfo) => {
+  test.setTimeout(120000);
   const tracks = await generatedDASHMedia(browser);
   const fixturePage = await browser.newPage();
   const sheets = await fixturePage.evaluate(() =>
@@ -61,7 +61,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
   await fixturePage.close();
   const response = await page.request.get('/userscripts/ovs-bilibili.user.js');
   const script = await response.text();
-  await page.addInitScript({
+  const helperBootstrap = {
     content: `(() => {
     sessionStorage.setItem('hold-thumbnails', '1');
     sessionStorage.setItem('thumbnail-requests', '0');
@@ -219,7 +219,8 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     };
     ${script}
   })();`,
-  });
+  };
+  await page.addInitScript(helperBootstrap);
   await page.goto('/');
   await page
     .getByLabel('Video URL or identifier')
@@ -786,7 +787,7 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     'ready',
   );
   await page.getByRole('tab', { name: /Episodes/ }).click();
-  await settings(page, 'host', false);
+  await settings(page, false, false);
   await clickPlayerControl(page, 'Play together');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await clickPlayerControl(page, 'Episodes');
@@ -799,6 +800,122 @@ test('playing Bilibili seeks recover decoded video through the real adapter and 
     .toBe('9000000000012');
   await expect(page.locator('video')).toHaveJSProperty('paused', false);
   await expect.poll(() => decodedFrame(page)).toBeGreaterThan(5);
+  await clickPlayerControl(page, 'Pause together');
+  await page
+    .getByRole('button', { name: 'Room settings', exact: true })
+    .click();
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole('dialog').getByRole('checkbox')).toHaveCount(3);
+    await expect(
+      page.getByLabel('Allow everyone to change videos and episodes', {
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await page.getByRole('dialog').evaluate(async (dialog) => {
+      await Promise.all(
+        dialog.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `media-permission-settings-${viewport.width}.png`,
+      ),
+      animations: 'disabled',
+    });
+  }
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // A separate identity receives video selection permission independently of playback.
+  const guest = await appContext(browser);
+  try {
+    await guest.addInitScript(helperBootstrap);
+    const other = await guest.newPage();
+    await other.goto(await invitationLink(page));
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await other.setViewportSize({ width: 1440, height: 900 });
+    await other.getByRole('tab', { name: /Episodes/ }).click();
+    await expect(other.locator('.episode-button')).toHaveCount(2);
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await expect(other.locator('.episode-trigger')).toHaveCount(0);
+    await expect(other.locator('.change-media')).toHaveCount(0);
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-denied-desktop.png'),
+      animations: 'disabled',
+    });
+    await settings(page, false, false, true);
+    await expect(other.locator('.episode-trigger')).toHaveCount(1);
+    await expect(other.locator('.episode-button').first()).toBeEnabled();
+    await expect(
+      other.getByRole('button', { name: 'Play together', exact: true }),
+    ).toBeDisabled();
+    await clickPlayerControl(other, 'Episodes');
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-granted-desktop.png'),
+      animations: 'disabled',
+    });
+    await other.getByRole('menuitemradio', { name: /Opening/ }).click();
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(roomPath)).json()).media.episodeId,
+      )
+      .toBe('9000000000011');
+    await expect(page.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await other
+      .getByRole('button', { name: 'Change video', exact: true })
+      .click();
+    await other.getByLabel('Video URL or identifier').fill('ep9000000000012');
+    await other
+      .getByRole('button', { name: 'Preview video', exact: true })
+      .click();
+    await other
+      .getByRole('button', { name: 'Use this video', exact: true })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(roomPath)).json()).media.episodeId,
+      )
+      .toBe('9000000000012');
+    await expect(other.getByTestId('playback-phase')).toHaveAttribute(
+      'data-state',
+      'paused',
+    );
+    await expect(other.getByTestId('media-status')).toHaveAttribute(
+      'data-state',
+      'ready',
+    );
+    await clickPlayerControl(other, 'Episodes');
+    await settings(page, false, false, false);
+    await expect(other.locator('.episode-trigger')).toHaveCount(0);
+    await expect(other.locator('.episode-menu')).toHaveCount(0);
+    await expect(other.locator('.video-stage')).toBeFocused();
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await other.setViewportSize({ width: 390, height: 844 });
+    await other.getByRole('button', { name: /Members and episodes/ }).click();
+    await other.getByRole('tab', { name: /Episodes/ }).click();
+    await expect(other.locator('.episode-button').first()).toBeDisabled();
+    await other.screenshot({
+      path: testInfo.outputPath('media-permission-denied-mobile.png'),
+      animations: 'disabled',
+    });
+  } finally {
+    await guest.close();
+  }
   await closeRoom(page);
 });
 
@@ -1351,7 +1468,11 @@ test('Bilibili helper failures preserve local playback and dispose closed rooms'
     },
     data: {
       title: 'Bilibili helper boundaries',
-      settings: { controllers: 'host', waitForAll: true },
+      settings: {
+        everyoneCanControl: false,
+        everyoneCanSelectMedia: false,
+        waitForAll: true,
+      },
       media: {
         kind: 'bilibili',
         bvid: 'BV1TESTaaaaa',

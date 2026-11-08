@@ -19,7 +19,7 @@
 - Do not declare first-release scope complete with only local playback. Bilibili and danmaku remain required release gates.
 - Carry accepted live-platform and network validation forward from the previous release PR. Repeat only checks affected by changed integration contracts or an identified regression; a version increase alone does not reopen them. Record explicit user confirmation as user-confirmed acceptance in the PR. Artifacts under `.misc/` are volatile; missing artifacts do not invalidate accepted results.
 - Keep direct HTTP functional. Core features must not depend on certificate provisioning or browser APIs available only in secure contexts without a working HTTP-compatible path.
-- Keep room settings to controller permission and wait for everyone. Do not add technical tuning, alternative late-join policies, per-member exclusions, backup/invalidation commands, metric services, or automatic database recovery.
+- Keep room settings to playback control permission, video selection permission, and wait for everyone. Do not add technical tuning, alternative late-join policies, per-member exclusions, backup/invalidation commands, metric services, or automatic database recovery.
 
 ## Architecture and ownership
 

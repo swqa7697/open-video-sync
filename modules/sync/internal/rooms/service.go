@@ -459,7 +459,7 @@ func (s *Service) Mutate(ctx context.Context, p identity.Session, id string, m M
 		oldSettings := r.Settings
 		switch m.Operation {
 		case "host_leave":
-			r.Settings.Controllers = "everyone"
+			r.Settings.EveryoneCanControl = true
 			removed = m.MemberID
 		case "settings":
 			r.Settings = m.Settings

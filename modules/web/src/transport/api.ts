@@ -453,7 +453,8 @@ export function requestKey(): string {
 }
 export function defaultSettings(): RoomSettings {
   return {
-    controllers: 'host',
+    everyoneCanControl: false,
+    everyoneCanSelectMedia: false,
     waitForAll: true,
   };
 }

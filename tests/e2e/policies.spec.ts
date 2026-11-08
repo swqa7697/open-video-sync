@@ -35,7 +35,7 @@ test('waiting, buffering, ready late joining, and host absence preserve controll
     await expect(
       page.getByRole('status').filter({ hasText: 'Clock calibrated' }),
     ).toBeVisible();
-    await settings(page, 'everyone');
+    await settings(page, true);
     const roomURL = page.url(),
       invitation = await invitationLink(page);
     const other = await guest.newPage();
@@ -155,7 +155,7 @@ test('waiting, buffering, ready late joining, and host absence preserve controll
     );
 
     // Explicit host departure changes server permission while preserving actual playback.
-    await settings(returned, 'host');
+    await settings(returned, false);
     await returned.getByRole('button', { name: 'Leave', exact: true }).click();
     await returned
       .getByRole('button', { name: 'Confirm leave', exact: true })

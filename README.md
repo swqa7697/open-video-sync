@@ -33,7 +33,7 @@ The initial release is in development. OVS supports:
 - **Private rooms** with reusable invitation links and codes, without registration.
 - **Synchronized play, pause, seeking, and playback speed**, with optional waiting for everyone.
 - **Local video files and Bilibili videos** with quality selection, episodes, and danmaku.
-- **Host controls** for room settings, media selection, invitations, and participants.
+- **Host controls** for room settings, invitations, and participants, with separate playback and video selection permissions.
 - **English and Simplified Chinese**, light and dark modes, and browser-local preferences.
 
 > [!NOTE]
@@ -74,25 +74,27 @@ Replace the example address with your server's address. Direct HTTP works withou
 2. Select a Bilibili video or local file on the home page, then create a room.
 3. Share the invitation link or code. Participants open the link or paste the code on the home page.
 4. Each participant prepares the video. For local playback, everyone selects their own copy of the same file.
-5. Select **Play**. The host chooses whether everyone can control playback and whether to wait for everyone.
+5. Select **Play**. The host chooses whether everyone can control playback, change videos and episodes, and whether to wait for everyone.
 
 ### Bilibili
 
 For Bilibili, each participant needs Tampermonkey and the instance-specific **OVS playback helper** offered by OVS. Confirm installation in Tampermonkey, then reload the OVS tab. Each participant uses their own Bilibili access; platform credentials stay in their browser.
 
-The updated helper also adds a small **OVS** action beside Bilibili's video controls, including bangumi pages. Helpers installed from multiple OVS sites share one menu with a separate entry for each site. Select a site to import the current video and part or episode. Preview it in OVS, then create a room or select a room you host and confirm replacing its video for everyone. Replacements start paused at zero. An existing room tab submits the change through its current connection. If no room tab responds, OVS offers to open the room here and take over your playback connection. An unconfirmed result keeps the original request available for checking. Reinstall the helper from each site to enable the entry.
+The updated helper also adds a small **OVS** action beside Bilibili's video controls, including bangumi pages. Helpers installed from multiple OVS sites share one menu with a separate entry for each site. Select a site to import the current video and part or episode. Preview it in OVS, then create a room or select a room where you can change videos and confirm replacing its video for everyone. Replacements start paused at zero. An existing room tab submits the change through its current connection. If no room tab responds, OVS offers to open the room here and take over your playback connection. An unconfirmed result keeps the original request available for checking. Reinstall the helper from each site to enable the entry.
 
-Paste a normal video link or BV identifier, or a bangumi link in the form `https://www.bilibili.com/bangumi/play/ss<season-id>`. Bare `ss<season-id>` (season) and `ep<episode-id>` (episode) identifiers also work; replace the placeholders with the video's decimal IDs. Season links select the first main episode; the host can switch through Episodes. OVS preserves the selected episode when members join or reload. Each member needs their own access, including any required login, subscription, purchase, and region eligibility. A restricted or trial-only response leaves that member unready. Install the updated helper for bangumi support.
+Paste a normal video link or BV identifier, or a bangumi link in the form `https://www.bilibili.com/bangumi/play/ss<season-id>`. Bare `ss<season-id>` (season) and `ep<episode-id>` (episode) identifiers also work; replace the placeholders with the video's decimal IDs. Season links select the first main episode; members with video selection permission can switch through Episodes. OVS preserves the selected episode when members join or reload. Each member needs their own access, including any required login, subscription, purchase, and region eligibility. A restricted or trial-only response leaves that member unready. Install the updated helper for bangumi support.
 
 OVS automatically adjusts buffering and tries available CDN alternatives when delivery is too slow or fails. After upgrading OVS, install the updated helper when prompted, then reload the page.
 
-For videos with multiple episodes, select **Episodes** in the player controls to open the episode menu. The menu marks the current episode and uses the same style as the quality and playback-speed menus. Everyone can browse; only the host can switch. Selecting another episode starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
+For videos with multiple episodes, select **Episodes** in the player controls to open the episode menu. The menu marks the current episode and uses the same style as the quality and playback-speed menus. The player button is visible to members with video selection permission. Everyone can browse the sidebar episode list; members without permission cannot select an episode. Selecting another episode starts it automatically from the beginning and respects **Wait for everyone**. If the browser blocks autoplay, select **Enable playback**.
 
 The video menu also offers **Open on Bilibili**, the local danmaku visibility toggle, and **Reload danmaku**. Click the danmaku toggle in the player controls to show or hide comments. Click the separate danmaku settings button, shown as a chat bubble with a gear, to open display preferences. Neither button opens settings on hover or long press.
 
-Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Only the host can switch; members can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
+Use **Quick actions** (Cmd/Ctrl + K) and type `@` to list the current video's episodes. Type `@12` to find item 12 or `@words` to search titles. Numbers match the original episode list, including after filtering. Choose **Switch episode** to enter this mode from the action list. Use Up/Down to select and Enter or a click to switch. Members with video selection permission can switch; everyone can browse. The panel closes after server confirmation and keeps the search and an error if switching fails.
 
 ### Rooms and preferences
+
+**Room settings** has three checkboxes: **Allow everyone to control playback**, **Allow everyone to change videos and episodes**, and **Wait for everyone**. The first two are unchecked by default, keeping those actions with the host. Waiting is checked by default. Enable video selection independently of playback control.
 
 Invitations remain reusable until the host replaces them or closes the room. A room closes when everyone leaves, with a short grace for disconnected pages. After a server restart, rooms resume paused at the beginning.
 

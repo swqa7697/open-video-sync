@@ -15,8 +15,8 @@ Normalize only ASCII spaces/hyphens, case, and `O→0`, `I/L→1` for codes. Use
 Display names allow up to 48 Unicode scalar values and 192 UTF-8 bytes. Titles require 1–120 scalar values and at most 480 UTF-8 bytes.
 Durations range from 1 ms to seven days. Local file sizes range from 1 byte to 16 TiB. Shared validators enforce descriptor fields and bounds.
 
-`RoomSettings` is exactly `{controllers:"host"|"everyone", waitForAll:boolean}`.
-Defaults are `host` and `true`. Reject unknown settings fields.
+`RoomSettings` is exactly `{everyoneCanControl:boolean, everyoneCanSelectMedia:boolean, waitForAll:boolean}`.
+Defaults are `false`, `false`, and `true`. Reject missing, unknown, or non-Boolean settings fields. `everyoneCanControl` governs playback; `everyoneCanSelectMedia` independently governs video and episode replacement. False restricts that action to the host; true allows all current members. The host always retains both permissions and exclusively manages room settings.
 Local descriptors are `{kind:"local",fingerprintVersion:1,digest,sizeBytes,durationMs,label?}`.
 Bilibili descriptors are `{kind:"bilibili",bvid,cid,part,durationMs,episodeId?}`. Bangumi includes `episodeId`, a positive decimal string of at most 15 digits without leading zeros, and uses `part:1`. Resolve season inputs to one concrete episode in the browser before sending a descriptor. No URLs, files, paths, cookies, handles, or provider payloads are accepted.
 
@@ -119,7 +119,7 @@ The replaced page pauses and does not reconnect until explicitly reloaded or reo
 Mutation envelopes are `{v:2,type,commandId,epoch,mediaGeneration,expectedRevision,payload}`:
 
 - `playback.command`: `{action:"play"|"pause"|"replay"}`, `{action:"seek",positionMs}`, or `{action:"rate",rate}`. Memory-only. Seek always pauses at the target and clears waiting and automatic play intent. Rate uses the snapshot bounds, reanchors the current position, and preserves phase, waiting, and play intent. Controller permissions apply to every action.
-- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Host only; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
+- `media.select`: `{media:MediaDescriptor,autoPlay?:boolean}`. Allow the host, or any current member when `everyoneCanSelectMedia` is true; persist the descriptor, then atomically reset runtime playback to zero and advance media generation. Omitted or false `autoPlay` leaves playback paused. Episode-list selection sends true to start through the ordinary play/wait policy with fresh readiness. The playback intent participates in command deduplication and is never persisted.
 
 Readiness uses `{v:2,type:"member.readiness",epoch,payload:Readiness}`.
 Clock and heartbeat use `{v:2,type,requestId,payload}` with a four-timestamp clock exchange and heartbeat reply flag.

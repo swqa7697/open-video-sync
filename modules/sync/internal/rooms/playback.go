@@ -285,7 +285,11 @@ func (s *Service) Handle(ctx context.Context, c *Connection, f contracts.ClientF
 			if f.Type != "playback.command" && f.Type != "media.select" {
 				return contracts.Failure("invalid_command")
 			}
-			if (f.Type == "media.select" || r.Settings.Controllers != "everyone") && r.HostIdentityID != c.Session.IdentityID {
+			permission := r.Settings.EveryoneCanControl
+			if f.Type == "media.select" {
+				permission = r.Settings.EveryoneCanSelectMedia
+			}
+			if !permission && r.HostIdentityID != c.Session.IdentityID {
 				return contracts.Failure("forbidden")
 			}
 			if f.Type == "playback.command" && f.Action == "rate" && !contracts.ValidPlaybackRate(f.Rate) {

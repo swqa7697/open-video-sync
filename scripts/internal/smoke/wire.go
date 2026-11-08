@@ -16,8 +16,9 @@ type Snapshot struct {
 	HostMemberID    string `json:"hostMemberId"`
 	SelfMemberID    string `json:"selfMemberId"`
 	Settings        struct {
-		Controllers string `json:"controllers"`
-		WaitForAll  bool   `json:"waitForAll"`
+		EveryoneCanControl     bool `json:"everyoneCanControl"`
+		EveryoneCanSelectMedia bool `json:"everyoneCanSelectMedia"`
+		WaitForAll             bool `json:"waitForAll"`
 	} `json:"settings"`
 	Playback struct {
 		Phase      string `json:"phase"`

@@ -74,7 +74,7 @@ func TestRoomHTTPJourneyAndSharedMutationPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := contracts.DefaultSettings()
-	settings.Controllers = "everyone"
+	settings.EveryoneCanControl = true
 	patch, _ := json.Marshal(map[string]any{"epoch": snap.Epoch, "expectedRevision": snap.Revision, "settings": settings})
 	var wg sync.WaitGroup
 	wg.Add(2)

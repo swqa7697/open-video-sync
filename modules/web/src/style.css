@@ -928,9 +928,6 @@ legend {
 fieldset > label {
   margin-bottom: 20px;
 }
-fieldset select {
-  margin-top: 8px;
-}
 .checkbox {
   display: flex;
   align-items: center;
@@ -2547,10 +2544,6 @@ fieldset select {
     display: none;
   }
 }
-#playback-controls {
-  margin: 0 0 20px;
-}
-
 .played-track {
   position: absolute;
   height: 3px;
